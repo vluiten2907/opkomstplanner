@@ -4,16 +4,15 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 
 ## Bezig
 
-_(niets)_
+- **Rollenstructuur met beheerders** — vier niveaus: Beheer (totaal) → Beheer (groep, per Scouting-vereniging) → Teamleider → Leiding. vluiten2907@gmail.com wordt voorlopig het hoofdaccount (Beheer totaal). Beheer ziet alle teams en teamleiders, nodigt teamleiders uit en (totaal) nodigt andere Scouting-groepen uit. Een account aanmaken kan alleen nog via een uitnodiging; open registratie verdwijnt. Rechten per rol: Beheer (totaal) wijst toe/nodigt uit als Beheer (groep); Beheer (groep) als Teamleider; Teamleider als Leiding. Elke rol kan zijn eigen rol overdragen aan iemand anders. Beheer (totaal) en Beheer (groep) kunnen ook een mede-beheerder op hun eigen niveau aanstellen. Overlapt met *Uitnodigingen beheren*. Raakt datamodel en `firestore.rules`: eerst ontwerp en migratie voorleggen. Ontwerp en migratieplan liggen ter goedkeuring bij Vincent.
+- **Uitnodigingen beheren** — openstaande uitnodigingen tonen en intrekken in Team & instellingen. Wordt meegenomen in de rollenstructuur.
 
 ## Open
 
 - **Live controle met echt account** — registreren, speltak aanmaken en uitnodiging accepteren op conqueston.nl/opkomst door Vincent (bevestigt e-mail/wachtwoord-login en de gepubliceerde regels).
 - **Uitnodiging per e-mail laten versturen** — nu kopieer/mail-knop; automatisch versturen vereist een mailserver of Cloud Function (Blaze-plan).
 - **Oefenomgeving** — bestond in de losse versie (voorbeelddata met watermerk); nog niet in de online versie.
-- **Uitnodigingen beheren** — openstaande uitnodigingen tonen en intrekken in Team & instellingen.
 - **Wachtwoord vergeten-mail** — controleren of de Firebase-mail aankomt en eventueel de afzender/tekst in het Nederlands zetten (Authentication → Templates).
-- **Rollenstructuur met beheerders** — vier niveaus: Beheer (totaal) → Beheer (groep, per Scouting-vereniging) → Teamleider → Leiding. vluiten2907@gmail.com wordt voorlopig het hoofdaccount (Beheer totaal). Beheer ziet alle teams en teamleiders, nodigt teamleiders uit en (totaal) nodigt andere Scouting-groepen uit. Een account aanmaken kan alleen nog via een uitnodiging; open registratie verdwijnt. Rechten per rol: Beheer (totaal) wijst toe/nodigt uit als Beheer (groep); Beheer (groep) als Teamleider; Teamleider als Leiding. Elke rol kan zijn eigen rol overdragen aan iemand anders. Beheer (totaal) en Beheer (groep) kunnen ook een mede-beheerder op hun eigen niveau aanstellen. Overlapt met *Uitnodigingen beheren*. Raakt datamodel en `firestore.rules`: eerst ontwerp en migratie voorleggen.
 
 ## Klaar
 
