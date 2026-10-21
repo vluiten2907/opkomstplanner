@@ -232,6 +232,26 @@ with sync_playwright() as p:
     check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'opslaan-balk mobiel: geen horizontale scroll'); shot('14-opslaan-mobiel', False)
     sb('Opslaan').click(); w(300); pg.set_viewport_size({'width': 1360, 'height': 900}); pg.click('.side .closex'); w(200)
 
+    # --- afgeronde activiteiten en opkomsten uit de bank verwijderen
+    card = lambda t: pg.locator(f'.bwrap:has(.bcard:has-text("{t}"))')
+    card('Vlaggenroof groot').locator('.carddel').click(); w(150); card('Vlaggenroof groot').locator('text=Verwijderen?').click(); w(600)
+    check(pg.locator('.bcard:has-text("Vlaggenroof groot")').count() == 0 and pg.locator('.bcard:has-text("Vlaggenroof")').count() == 1, 'activiteit verwijderd vanaf de kaart')
+    for t in ('Bankweg', 'Bouwerweg'):
+        pg.click('nav >> text=Opkomstbouwer'); w(300); pg.click('text=Nieuwe opkomst'); w(700); pg.fill('#om-title', t); w(700)
+        pg.click('.plan-head >> button:has-text("In bank")'); w(600)
+    pg.click('nav >> text=Opkomstenbank'); w(500)
+    check(card('Bankweg').locator('.carddel').count() == 1, 'opkomstenbank: verwijderknop op de kaart'); shot('15-bank-verwijderen')
+    card('Bankweg').locator('.carddel').click(); w(150); shot('15b-bank-verwijderen-bevestigen'); card('Bankweg').locator('text=Verwijderen?').click(); w(600)
+    check(pg.locator('.bcard:has-text("Bankweg")').count() == 0, 'afgeronde opkomst verwijderd vanaf de kaart')
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(300)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'opkomstenbank mobiel met verwijderknoppen: geen horizontale scroll'); shot('15c-bank-mobiel', False)
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(300)
+    pg.click('.bcard:has-text("Bouwerweg")'); w(300); pg.click('.side >> text=Bewerken'); w(700)
+    pg.click('.plan-head >> button:has-text("Verwijderen")'); w(200); pg.click('.plan-head >> text=Klik nogmaals om te verwijderen'); w(700)
+    check(pg.url.rstrip('/').endswith('/bouwer') and pg.locator('.pick:has-text("Bouwerweg")').count() == 0, 'bank-opkomst verwijderd vanuit de bouwer')
+    pg.reload(); w(1000); pg.click('nav >> text=Opkomstenbank'); w(500)
+    check(pg.locator('.bcard:has-text("Bankweg"), .bcard:has-text("Bouwerweg")').count() == 0 and pg.locator('.bcard:has-text("Sluipspel")').count() == 1, 'verwijderde bank-opkomsten blijven weg, andere blijven staan')
+
     # --- dashboard, banken, kamp
     pg.click('nav >> text=Dashboard'); w(700); check(pg.locator('.hero').count() == 1, 'dashboard toont komende opkomst'); shot('05-dashboard')
     check(pg.locator('.hero .people .lbl:text-is("Eindverantwoordelijke")').count() == 0 and pg.locator('.hero .people .lbl:text-is("Planning door")').count() == 1, 'dashboard: één vak Planning door')

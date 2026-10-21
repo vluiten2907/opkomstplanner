@@ -3,6 +3,8 @@ import { useSpeltak } from '../store/speltak';
 import { allBlocks, analyze, catOf, isKamp, minNeed, opkCatOf, type Cat, type Opk, type Day } from '../lib/model';
 import { fmtDur, fmtT, plural } from '../lib/time';
 import { makePdf } from '../lib/export';
+import { Trash2 } from 'lucide-react';
+import { ConfirmBtn } from './ui';
 
 /** Pdf maken van een opkomst met de huidige instellingen en aanwezige leiding. */
 export function usePdf() {
@@ -86,4 +88,10 @@ export function SaveBar({ dirty, isNew, title, taken, suggest, onCancel, onSave,
       </div>
     </>}
   </div>;
+}
+
+/** Kaart in een bank met een eigen verwijderknop rechtsonder (twee keer klikken). */
+export function BankCard({ children, onDelete, what }: { children: ReactNode; onDelete?: () => void; what: string }) {
+  return <div className="bwrap transition-transform duration-150 ease-out hover:-translate-y-1 active:translate-y-0.5">{children}
+    {onDelete && <ConfirmBtn className="btn sm ghost carddel" label={<Trash2 size={15} aria-label={what + " verwijderen"} />} confirm="Verwijderen?" title={what + ' verwijderen'} onConfirm={onDelete} />}</div>;
 }

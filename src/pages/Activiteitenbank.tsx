@@ -3,7 +3,7 @@ import { guardLeave, useDirty } from '../store/unsaved';
 import { Plus, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
-import { PageTitle, SaveBar } from '../components/shared';
+import { BankCard, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field } from '../components/ui';
 import { CatSelect, LocInput } from './Bouwer';
 import { clone, fmtDur, plural, uid } from '../lib/time';
@@ -19,6 +19,7 @@ export default function Activiteitenbank() {
   const uses: Record<string, number> = {};
   opks.forEach(o => allBlocks(o).forEach(b => { if (b.libId) uses[b.libId] = (uses[b.libId] || 0) + 1; }));
   const edit = can('bank');
+  const remove = (l: Lib) => { deleteLib(l.id); if (sel === l.id) setSelRaw(null); toast(`"${l.title || 'Activiteit'}" verwijderd${uses[l.id] ? '. Opkomsten die hem gebruiken blijven staan' : ''}`); };
   const create = () => guardLeave(() => { const l = normLib({ id: uid(), cat: (settings.categories[0] || {}).id || '', minLeaders: 1 }); setFresh(l); setSelRaw(l.id); setQ(''); setCat(''); setTimeout(() => document.getElementById('lf-title')?.focus(), 30); });
   const L = sel ? lib.find(l => l.id === sel) || (fresh && fresh.id === sel ? fresh : undefined) : undefined;
   const isNew = !!L && !lib.some(l => l.id === L.id);
@@ -29,17 +30,17 @@ export default function Activiteitenbank() {
       <div className="catfilter"><Chip on={!cat} onClick={() => setCat('')}>Alle</Chip>{settings.categories.map(c => <Chip key={c.id} on={cat === c.id} onClick={() => setCat(c.id)}><Dot color={c.color} />{c.label}</Chip>)}</div>
     </div>
     <div className="bank">
-      <div>{items.length ? <div className="bank-grid">{items.map(l => { const c = catOf(settings, l.cat); return <button key={l.id} className={'bcard lift transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-1 active:translate-y-0.5' + (sel === l.id ? ' sel' : '')} onClick={() => setSel(l.id)}>
+      <div>{items.length ? <div className="bank-grid">{items.map(l => { const c = catOf(settings, l.cat); return <BankCard key={l.id} what="Activiteit" onDelete={edit ? () => remove(l) : undefined}><button className={'bcard lift transition-[box-shadow] duration-150 ease-out' + (sel === l.id ? ' sel' : '')} onClick={() => setSel(l.id)}>
         <span className="bt"><Dot color={c.color} /><span>{l.title || 'Naamloos'}</span></span>
         <span className="bm"><span>{c.label}</span><span className="mono">{fmtDur(l.dur)}</span><span>min. {l.minLeaders} leiding</span>{l.location && <span>{l.location}</span>}</span>
         {l.short && <span className="bs">{l.short}</span>}
         <span className="hint">{uses[l.id] ? `${uses[l.id]}× gebruikt` : 'Nog niet gebruikt'}</span>
-      </button>; })}</div>
+      </button></BankCard>; })}</div>
         : <div className="empty"><span>{lib.length ? 'Geen activiteiten gevonden met deze filter.' : 'Nog geen activiteiten. Maak er een, of bewaar een onderdeel vanuit de opkomstbouwer.'}</span>{!lib.length && edit && <button className="btn primary" onClick={create}>Nieuwe activiteit</button>}</div>}</div>
       <aside className={'card side sheet' + (L ? ' editing' : '')}>{L ? <LibEditor key={L.id} l={L} isNew={isNew} lib={lib} readOnly={!edit} onClose={() => setSel(null)} onCancelNew={() => { setFresh(null); setSelRaw(null); }}
         onSave={x => { saveLib(x); if (isNew) setFresh(null); toast(isNew ? 'Activiteit opgeslagen in de bank' : 'Activiteit opgeslagen'); }}
         onCopy={x => { saveLib(x); setSelRaw(x.id); toast(`Kopie "${x.title}" opgeslagen`); }}
-        onDelete={() => { deleteLib(L.id); setSelRaw(null); toast('Activiteit verwijderd'); }} />
+        onDelete={() => remove(L)} />
         : <div className="pad stack"><h3>Activiteit bewerken</h3><p className="muted">Kies een activiteit om hem te bekijken{edit ? ' of te bewerken' : ''}. In de opkomstbouwer sleep je activiteiten vanuit het zijpaneel op de tijdlijn.</p></div>}</aside>
       <div className={'scrim' + (L ? ' on' : '')} onClick={() => setSel(null)} />
     </div>
@@ -69,7 +70,7 @@ function LibEditor({ l, isNew, lib, readOnly, onClose, onCancelNew, onSave, onCo
     <Field label="Uitgebreide beschrijving" htmlFor="lf-desc"><textarea id="lf-desc" rows={6} readOnly={readOnly} value={d.desc} onChange={e => upd(() => { d.desc = e.target.value; })} /></Field>
     <Field label="Voorbereiding" htmlFor="lf-prep"><textarea id="lf-prep" rows={3} readOnly={readOnly} value={d.prep} onChange={e => upd(() => { d.prep = e.target.value; })} /></Field>
     <Field label="Materiaal" htmlFor="lf-mat"><textarea id="lf-mat" rows={4} readOnly={readOnly} value={d.materials} onChange={e => upd(() => { d.materials = e.target.value; })} placeholder="Eén ding per regel" /></Field>
-    {!readOnly && !isNew && <div className="row"><ConfirmBtn label="Verwijderen" confirm="Klik nogmaals om te verwijderen" onConfirm={onDelete} /></div>}
+    {!readOnly && !isNew && <div className="stack" style={{ gap: 4 }}><div className="row"><ConfirmBtn label="Uit de bank verwijderen" confirm="Klik nogmaals om te verwijderen" onConfirm={onDelete} /></div><p className="hint">Opkomsten waarin hij al staat, blijven gewoon staan.</p></div>}
     {!readOnly && <SaveBar dirty={dirty} isNew={isNew} title={d.title} taken={taken} suggest={freeName(lib, d.title || l.title)} onCancel={cancel} onSave={save} onCopy={copy} />}
   </div>;
 }

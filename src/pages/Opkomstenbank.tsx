@@ -5,7 +5,7 @@ import { CalendarDays, Copy, ExternalLink, Plus, Users, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal, withFreeName } from '../store/modal';
-import { Strip, CatTags, PageTitle, SaveBar } from '../components/shared';
+import { BankCard, Strip, CatTags, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field } from '../components/ui';
 import { clone, fmtDur, fmtT, plural } from '../lib/time';
 import { allBlocks, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, newOpk, opkCatList, opkCatOf, type Cat, type Opk } from '../lib/model';
@@ -33,7 +33,8 @@ export default function Opkomstenbank() {
   const own = opks.filter(o => o.state === 'bank');
   const total = own.length;
   const T = !g && sel ? opks.find(o => o.id === sel && o.state === 'bank') : undefined;
-  const remove = (o: Opk) => { const e = entryOfOpk(o); if (e) savePlan({ ...e, opkId: null }); deleteOpk(o.id); if (sel === o.id) setSelRaw(null); toast('Opkomst verwijderd'); };
+  const remove = (o: Opk) => { const e = entryOfOpk(o); if (e) savePlan({ ...e, opkId: null }); deleteOpk(o.id); if (sel === o.id) setSelRaw(null);
+    toast(o.state === 'draft' ? 'Concept verwijderd' : `"${o.title || 'Opkomst'}" uit de bank verwijderd${uses[o.id] ? '. Ingeplande opkomsten blijven staan' : ''}`); };
 
   // groepsbank (zonder je eigen gedeelde opkomsten)
   const others = (shared || []).filter(x => x.sid !== sid);
@@ -84,14 +85,14 @@ export default function Opkomstenbank() {
           : <div className="empty"><span>{others.length ? 'Niets gevonden.' : 'Andere speltakken hebben nog niets gedeeld. Wat zij in hun opkomstenbank zetten, verschijnt hier.'}</span></div>}
       </div>
         : <div className="stack" style={{ gap: 18 }}>
-          {bank.length ? <div className="bank-grid">{bank.map(t => <button key={t.id} className={'bcard lift transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-1 active:translate-y-0.5' + (sel === t.id ? ' sel' : '')} onClick={() => setSel(t.id)}>
+          {bank.length ? <div className="bank-grid">{bank.map(t => <BankCard key={t.id} what="Opkomst" onDelete={can('bank') ? () => remove(t) : undefined}><button className={'bcard lift transition-[box-shadow] duration-150 ease-out' + (sel === t.id ? ' sel' : '')} onClick={() => setSel(t.id)}>
             <span className="bt"><span>{t.title || 'Naamloos'}</span>{groupOn && t.shared && <span className="shared-ico" title="Gedeeld met de groep" aria-label="Gedeeld met de groep"><Users size={14} /></span>}</span>
             <CatTags o={t} />
             <CardMeta o={t} />
             <Strip o={t} />
             {t.short && <span className="bs">{t.short}</span>}
             <span className="hint">{uses[t.id] ? `${uses[t.id]}× ingepland` : 'Nog niet ingepland'}</span>
-          </button>)}</div>
+          </button></BankCard>)}</div>
             : <div className="empty"><span>{total ? 'Niets gevonden.' : 'Nog leeg. Bewaar een opkomst met "In bank".'}</span></div>}
           {drafts.length > 0 && <section className="stack"><h2>Concepten</h2>
             <div className="picklist">{drafts.map(o => <div key={o.id} className="pick"><div className="info"><b>{o.title || 'Naamloze opkomst'}</b><span className="hint">{isKamp(o) ? 'Weekendkamp · ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(allBlocks(o).length, 'onderdeel', 'onderdelen')}</span></div>
@@ -145,7 +146,8 @@ function TplEditor({ t, own, groupOn, onClose, onDelete, onCopied }: { t: Opk; o
     {t.fromShared && <p className="hint">Gekopieerd uit de groepsbank{src ? `, van ${src.speltakName}` : ''}.</p>}
     <div className="row">{can('plan') && <button className="btn primary" onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: t.id }))}><CalendarDays size={16} />Inplannen</button>}<button className="btn" onClick={() => guardLeave(() => nav(`/s/${sid}/bouwer/${t.id}`))}><ExternalLink size={16} />{ro ? 'Bekijken' : 'Bewerken'}</button></div>
     <BlockList o={t} />
-    {!ro && <div className="row"><ConfirmBtn label="Uit de bank verwijderen" confirm="Klik nogmaals om te verwijderen" onConfirm={onDelete} /></div>}
+    {!ro && <div className="stack" style={{ gap: 4 }}><div className="row"><ConfirmBtn label="Uit de bank verwijderen" confirm="Klik nogmaals om te verwijderen" onConfirm={onDelete} /></div>
+      <p className="hint">Ingeplande opkomsten blijven staan.{groupOn && t.shared ? ' Hij verdwijnt ook uit de groepsbank; kopieën van andere speltakken blijven.' : ''}</p></div>}
     {!ro && <SaveBar dirty={dirty} title={d.title} taken={(n, c) => nameTaken(own, n, c ? null : t.id)} suggest={freeName(own, d.title || t.title)} onCancel={cancel} onSave={save} onCopy={copy} />}
   </div>;
 }

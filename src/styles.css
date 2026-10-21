@@ -929,3 +929,9 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
 .hero .time-edit select { background: rgba(255,255,255,.1); color: #fff; border: 0; border-radius: 6px; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.4); padding: 2px 4px; font: inherit; }
 .hero .time-edit select option { color: #14202E; }
 .hero .time-edit .btn.sm { padding: 2px 10px; }
+
+/* bankkaart met verwijderknop */
+.bwrap { position: relative; display: grid; }
+.bwrap > .bcard .hint { padding-right: 36px; }
+.bwrap .carddel { position: absolute; z-index: 1; right: 8px; bottom: 8px; min-height: 30px; padding: 4px 8px; }
+.bwrap .carddel[data-armed] { background: color-mix(in srgb, var(--danger) 14%, var(--paper)); color: var(--danger); }

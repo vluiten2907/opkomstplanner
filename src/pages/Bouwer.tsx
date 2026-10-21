@@ -26,14 +26,15 @@ export default function Bouwer() {
     {can('build') && <div className="row"><button className="btn primary" onClick={() => create(false)}><Plus size={16} />Nieuwe opkomst</button><button className="btn" onClick={() => create(true)}><Tent size={16} />Weekendkamp</button></div>}
     {drafts.length > 0 && <><h2>Concepten</h2><div className="picklist">{drafts.map(x => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
       extra={can('build') ? <ConfirmBtn className="btn sm ghost" label={<><Trash2 size={14} />Verwijderen</>} confirm="Klik nogmaals" title="Concept verwijderen" onConfirm={() => delDraft(x)} /> : undefined} />)}</div></>}
-    {bank.length > 0 && <><h2>Uit de opkomstenbank</h2><div className="picklist">{bank.map(x => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)} />)}</div></>}
+    {bank.length > 0 && <><h2>Uit de opkomstenbank</h2><div className="picklist">{bank.map(x => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
+      extra={can('bank') ? <ConfirmBtn className="btn sm ghost" label={<><Trash2 size={14} />Verwijderen</>} confirm="Klik nogmaals" title="Uit de opkomstenbank verwijderen" onConfirm={() => delDraft(x)} /> : undefined} />)}</div></>}
   </div>;
 }
 
 /** Concept verwijderen; een eventuele koppeling in de jaarplanning gaat eerst los. */
 function useDeleteDraft() {
   const { deleteOpk, entryOfOpk, savePlan } = useSpeltak();
-  return (o: Opk) => { const e = entryOfOpk(o); if (e) savePlan({ ...e, opkId: null }); deleteOpk(o.id); toast('Concept verwijderd'); };
+  return (o: Opk) => { const e = entryOfOpk(o); if (e) savePlan({ ...e, opkId: null }); deleteOpk(o.id); toast(o.state === 'bank' ? `"${o.title || 'Opkomst'}" uit de bank verwijderd. Ingeplande opkomsten blijven staan` : 'Concept verwijderd'); };
 }
 
 /* ============ Bouwer ============ */
@@ -137,7 +138,7 @@ function Builder({ o: stored }: { o: Opk }) {
   };
   const pdfBtn = <button className="btn primary" onClick={() => pdf(o)}><Download size={16} />PDF maken</button>;
   const actions = readOnly ? pdfBtn : o.state === 'draft' ? <><button className="btn" onClick={toBank}><Bookmark size={16} />In bank</button><button className="btn" onClick={() => openModal({ kind: 'toplan', oid: o.id })}><CalendarDays size={16} />Inplannen</button>{pdfBtn}{can('build') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Concept verwijderen" onConfirm={() => { nav(`/s/${sid}/bouwer`); delDraft(o); }} />}</>
-    : o.state === 'bank' ? <><button className="btn" onClick={dup}><Copy size={16} />Kopie</button><button className="btn" onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: o.id }))}><CalendarDays size={16} />Inplannen</button>{pdfBtn}</>
+    : o.state === 'bank' ? <><button className="btn" onClick={dup}><Copy size={16} />Kopie</button><button className="btn" onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: o.id }))}><CalendarDays size={16} />Inplannen</button>{pdfBtn}{can('bank') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Uit de opkomstenbank verwijderen" onConfirm={() => { nav(`/s/${sid}/bouwer`); delDraft(o); }} />}</>
       : <><button className="btn" onClick={toBank}><Bookmark size={16} />In bank</button><button className="btn" onClick={() => go(`/s/${sid}/jaarplanning?focus=${e ? e.id : ''}`)}><CalendarDays size={16} />Jaarplanning</button>{pdfBtn}</>;
   const w = whole.warn;
   return <div className="stack pt-5 md:pt-7" style={{ gap: 16 }}>
