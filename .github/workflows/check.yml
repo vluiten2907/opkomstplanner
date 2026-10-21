@@ -1,17 +1,27 @@
-# Controleert bij elke pull request of de app nog bouwt.
+# Bij elke pull request en elke push naar een andere branch dan main: typecheck, build en rooktest.
 name: Check
 on:
   pull_request:
   push:
     branches-ignore: [main]
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  build:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
       - run: npm ci
-      - run: npx tsc -p tsconfig.app.json --noEmit
-      - run: npm run build
-        env: { VITE_BASE: /opkomst/ }
+      - name: Playwright installeren
+        run: pip install playwright && python -m playwright install --with-deps chromium
+      - name: Typecheck, build en rooktest
+        run: npm run check
+      - name: Screenshots bewaren
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: screenshots, path: test/e2e/out/, if-no-files-found: ignore }
