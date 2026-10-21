@@ -17,7 +17,7 @@ _(niets)_
 - **"Naam" wordt "Opkomst titel" bij Leiding indelen** — het veld heet nu "naam", maar bedoeld is de titel van de opkomst.
 - **Menubalk valt buiten beeld** — op sommige apparaten valt de menubalk bovenin buiten het scherm.
 - **Handmatig toegevoegde leiding telt niet mee** — leiding die je met de hand toevoegt, wordt later niet meegeteld als aanwezige leiding.
-- **Rollenstructuur met beheerders** — vier niveaus: Beheer (totaal) → Beheer (groep, per Scouting-vereniging) → Teamleider → Leiding. vluiten2907@gmail.com wordt voorlopig het hoofdaccount (Beheer totaal). Beheer ziet alle teams en teamleiders, nodigt teamleiders uit en (totaal) nodigt andere Scouting-groepen uit. Een account aanmaken kan alleen nog via een uitnodiging; open registratie verdwijnt. Overlapt met *Uitnodigingen beheren*. Raakt datamodel en `firestore.rules`: eerst ontwerp en migratie voorleggen.
+- **Rollenstructuur met beheerders** — vier niveaus: Beheer (totaal) → Beheer (groep, per Scouting-vereniging) → Teamleider → Leiding. vluiten2907@gmail.com wordt voorlopig het hoofdaccount (Beheer totaal). Beheer ziet alle teams en teamleiders, nodigt teamleiders uit en (totaal) nodigt andere Scouting-groepen uit. Een account aanmaken kan alleen nog via een uitnodiging; open registratie verdwijnt. Rechten per rol: Beheer (totaal) wijst toe/nodigt uit als Beheer (groep); Beheer (groep) als Teamleider; Teamleider als Leiding. Elke rol kan zijn eigen rol overdragen aan iemand anders. Beheer (totaal) en Beheer (groep) kunnen ook een mede-beheerder op hun eigen niveau aanstellen. Overlapt met *Uitnodigingen beheren*. Raakt datamodel en `firestore.rules`: eerst ontwerp en migratie voorleggen.
 
 ## Klaar
 
