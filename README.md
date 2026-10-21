@@ -17,7 +17,7 @@ React + TypeScript + Vite; gegevens en accounts in Firebase (Firestore + Authent
 3. **Authentication → Settings → Authorized domains → Add domain**: `conqueston.nl`.
 4. **Build → Firestore Database → Database maken**: *production mode*, locatie `europe-west4` (Nederland).
 5. **Firestore → Rules**: plak de inhoud van `firestore.rules` en klik **Publish**. (Of met de CLI: `firebase deploy --only firestore:rules`.)
-6. **Projectinstellingen (tandwiel) → Je apps → `</>` Web-app**: naam "Opkomstplanner", Hosting niet nodig → je krijgt een `firebaseConfig`. Die zes waarden gebruik je hieronder.
+6. **Projectinstellingen (tandwiel) → Je apps → `</>` Web-app**: naam "Opkomstplanner", Hosting niet nodig. De `firebaseConfig` van het live project staat al in `.env.production`.
 
 ## Live zetten op Strato (conqueston.nl/opkomst)
 
@@ -26,12 +26,11 @@ De app is statische bestanden; een `.htaccess` in `public/` stuurt alle routes n
 **Automatisch via GitHub (aanbevolen)** — elke push naar `main` bouwt en uploadt naar Strato.
 
 1. In de GitHub-repo: **Settings → Secrets and variables → Actions → New repository secret**, maak aan:
-   - `VITE_FB_API_KEY`, `VITE_FB_AUTH_DOMAIN`, `VITE_FB_PROJECT_ID`, `VITE_FB_STORAGE_BUCKET`, `VITE_FB_SENDER_ID`, `VITE_FB_APP_ID` (uit stap 6 hierboven)
    - `STRATO_FTP_SERVER` (bijv. `ftp.strato.com`), `STRATO_FTP_USER`, `STRATO_FTP_PASSWORD` (Strato-klantenlogin → Website → FTP-toegang)
    - `STRATO_DIR`: de map op de server die bij `conqueston.nl/opkomst/` hoort. Staat conqueston.nl in de hoofdmap, dan `/opkomst/`; staat het domein in een eigen map (bijv. `/conqueston/`), dan `/conqueston/opkomst/`.
 2. Push naar `main` (of **Actions → Deploy naar Strato → Run workflow**). Na een minuut staat de app op <https://conqueston.nl/opkomst/>.
 
-**Handmatig** — `cp .env.example .env`, vul de Firebase-waarden in, `npm install`, `npm run build`, en upload de inhoud van `dist/` (inclusief het verborgen bestand `.htaccess`) naar de map `opkomst` van conqueston.nl.
+**Handmatig** — `npm install`, `npm run build` (de Firebase-config staat al in `.env.production`), en upload de inhoud van `dist/` (inclusief het verborgen bestand `.htaccess`) naar de map `opkomst` van conqueston.nl.
 
 Let op bij Strato: als de map `opkomst` al een eigen `.htaccess` heeft, vervang die door de meegeleverde. Werkt een link als `conqueston.nl/opkomst/jaarplanning` niet na een refresh, dan is `mod_rewrite` niet actief of ontbreekt `.htaccess`.
 
