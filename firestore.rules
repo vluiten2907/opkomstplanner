@@ -69,7 +69,8 @@ service cloud.firestore {
             && get(/databases/$(database)/documents/invites/$(request.resource.data.members[me()].inviteId)).data.sid == sid
             && get(/databases/$(database)/documents/invites/$(request.resource.data.members[me()].inviteId)).data.email == myEmail()
             && get(/databases/$(database)/documents/invites/$(request.resource.data.members[me()].inviteId)).data.usedBy == null
-            && request.resource.data.members[me()].role == get(/databases/$(database)/documents/invites/$(request.resource.data.members[me()].inviteId)).data.role)
+            && request.resource.data.members[me()].role == get(/databases/$(database)/documents/invites/$(request.resource.data.members[me()].inviteId)).data.role
+            && request.resource.data.members[me()].perms == get(/databases/$(database)/documents/invites/$(request.resource.data.members[me()].inviteId)).data.perms)
         // jezelf uit het team halen (niet als laatste teamleider)
         || (isMember() && member().role != 'teamleider'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberIds'])
