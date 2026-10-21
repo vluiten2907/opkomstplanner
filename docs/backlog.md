@@ -4,7 +4,7 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 
 ## Bezig
 
-_(niets)_
+- **Verwijderen uit de banken** (wacht op akkoord) — afgeronde opkomsten en activiteiten makkelijk verwijderen, niet alleen concepten. Knop *Verwijderen* (twee keer klikken) op elke kaart in de opkomstenbank en activiteitenbank, en in de opkomstbouwer bij een bank-opkomst. Bevestiging zegt wat er gebeurt: ingeplande opkomsten en gebruikte onderdelen blijven staan, een gedeelde opkomst verdwijnt ook uit *Groep* (kopieën van andere speltakken blijven). Recht: `bank`. Geen nieuwe regels nodig.
 
 
 ## Open
