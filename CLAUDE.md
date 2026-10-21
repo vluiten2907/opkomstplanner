@@ -11,7 +11,7 @@ Lees aan het begin van elke sessie **`docs/plan.md`** (werkwijze en stappen) en 
 **Coördinator** (start met `/coordinator`): bewaakt het geheel en bouwt zelf niet.
 - Zet nieuwe wensen van Vincent om in afgebakende stappen in `docs/plan.md`: doel, wat wel/niet, acceptatie, "Wat te testen".
 - Geeft per stap de regel waarmee Vincent een nieuwe implementatie-sessie (thread) start, bijv. `/stap 1.3`.
-- Controleert PR's van threads op de regels hieronder, CI en "Wat te testen", en zegt Vincent of hij kan mergen. Na een merge controleert de coördinator de live site.
+- Controleert PR's van threads op de regels hieronder, CI en "Wat te testen", en zegt Vincent of hij kan mergen. Merget als Vincent dat zegt (zie Uitrol) en controleert daarna de live site.
 - Wijzigingen aan de plan- en voortgangsdocumenten gaan ook via een branch en PR.
 
 **Thread / implementatie-sessie** (start met `/stap <nummer>`): voert precies één stap uit.
@@ -21,7 +21,8 @@ Lees aan het begin van elke sessie **`docs/plan.md`** (werkwijze en stappen) en 
 - PR-beschrijving: wat er is gedaan, en een lijst **"Wat te testen"** (stappen die Vincent op conqueston.nl/opkomst kan klikken zonder de code te lezen). Raakt de stap `firestore.rules`, zet dan bovenaan **"Regels publiceren"** met de volledige nieuwe regels.
 
 ## Uitrol
-- **Nooit direct naar `main` pushen** (ook niet geforceerd): altijd branch + PR. Vincent merget; een merge naar `main` zet de app via GitHub Actions (SFTP) live op Strato. GitHub Free kan `main` in een privé-repo niet afschermen, dus deze regel en de weigering in `.claude/settings.json` zijn de bescherming.
+- **Nooit direct naar `main` pushen** (ook niet geforceerd): altijd branch + PR. Een merge naar `main` zet de app via GitHub Actions (SFTP) live op Strato. GitHub Free kan `main` in een privé-repo niet afschermen, dus deze regel en de weigering in `.claude/settings.json` zijn de bescherming.
+- **Mergen alleen op Vincents expliciete opdracht** in de chat ("merge", "merge #3"). Dan: controleer dat CI groen is en de PR mergebaar is, merge via `gh api -X PUT repos/vluiten2907/opkomstplanner/pulls/<nr>/merge -f merge_method=squash`, wacht op "Deploy naar Strato" en controleer de live site. Zonder die opdracht nooit mergen; is CI rood of de PR niet mergebaar, dan niet mergen maar melden.
 - `firestore.rules` gaat **niet** automatisch live: Vincent publiceert regels zelf in de Firebase-console (Firestore → Rules → Publish).
 - Nooit wachtwoorden of tokens in code, commits of logs. SFTP-gegevens staan alleen in GitHub Secrets. De Firebase-webconfig in `.env.production` is niet geheim.
 - Typ nooit wachtwoorden op de live site en maak daar geen accounts aan; Vincent logt zelf in. Live controleren (laden, consolefouten, routes) mag via de ingebouwde browser op Vincents laptop.

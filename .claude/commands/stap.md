@@ -14,4 +14,4 @@ Je bent een **implementatie-thread** voor stap **$ARGUMENTS** van de Opkomstplan
    - **Wat te testen** — genummerde stappen op conqueston.nl/opkomst, zonder code te hoeven lezen
    - **Regels publiceren** — alleen als `firestore.rules` wijzigt: de volledige nieuwe regels
    - **Gezien, niet gedaan** — optioneel
-7. Wacht tot CI ("Check") groen is (`gh api repos/vluiten2907/opkomstplanner/actions/runs?branch=<branch>`) en meld Vincent in twee regels: PR-link en of hij regels moet publiceren. Merge niet zelf.
+7. Wacht tot CI ("Check") groen is (`gh api repos/vluiten2907/opkomstplanner/actions/runs?branch=<branch>`) en meld Vincent in twee regels: PR-link en of hij regels moet publiceren. Merge alleen als Vincent "merge" zegt (CI groen; `gh api -X PUT repos/vluiten2907/opkomstplanner/pulls/<nr>/merge -f merge_method=squash`), en controleer daarna de live site.

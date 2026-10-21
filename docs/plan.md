@@ -8,7 +8,7 @@ Dit is het werkplan dat Claude Code-sessies lezen. De coördinator houdt het bij
 3. De thread werkt op een eigen branch (`claude/<stap>-<naam>`), nooit op `main`. Grote of onduidelijke stappen: eerst in **Plan**-modus.
 4. `npm run check` groen; CI groen. PR-beschrijving: wat er gedaan is + **"Wat te testen"** (+ **"Regels publiceren"** als `firestore.rules` wijzigt).
 5. In dezelfde PR: `docs/voortgang.md` bijwerken (vinkje, datum, PR-nummer).
-6. De coördinator controleert de PR; Vincent merget → automatisch live op conqueston.nl/opkomst; de coördinator controleert de live site.
+6. De coördinator controleert de PR. Vincent zegt "merge" (of merget zelf op GitHub) → automatisch live op conqueston.nl/opkomst; de coördinator controleert de live site.
 
 Een stap is klein genoeg voor één PR die Vincent in een paar minuten kan testen. Stappen die elkaar niet raken mogen tegelijk in aparte threads; de coördinator geeft aan welke dat zijn.
 

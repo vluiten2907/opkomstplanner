@@ -51,9 +51,9 @@ Zelfde opzet als Conqueston. Details in `CLAUDE.md` en `docs/plan.md`.
 
 1. **Coördinator**: start een Claude Code-sessie op deze repo en typ `/coordinator`. Vertel je wens; de coördinator zet hem als stap in `docs/plan.md` en geeft je een startregel, bijv. `/stap 1.3`.
 2. **Thread**: start een *nieuwe* sessie op deze repo en typ die startregel. De thread bouwt op een eigen branch, draait de tests en opent een PR met "Wat te testen".
-3. **Controle**: zeg tegen de coördinator "check PR #…". Is het goed, dan merge jij de PR op GitHub → automatisch live. Zeg "gemerged", dan controleert de coördinator de live site.
+3. **Controle**: zeg tegen de coördinator "check PR #…". Is het goed, zeg dan "merge" (of merge zelf op GitHub) → automatisch live, en de coördinator controleert de live site.
 
-Pushen naar `main` en mergen door Claude is geblokkeerd (`.claude/settings.json`); dat doe jij.
+Claude merget alleen als jij "merge" zegt en CI groen is. Rechtstreeks naar `main` pushen is geblokkeerd (`.claude/settings.json`).
 
 ## Lokaal ontwikkelen
 
