@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useSpeltak } from '../store/speltak';
 import { allBlocks, analyze, catOf, isKamp, minNeed, opkCatOf, type Cat, type Opk, type Day } from '../lib/model';
 import { fmtDur, fmtT, plural } from '../lib/time';
@@ -54,7 +55,8 @@ export function OpkMeta({ o }: { o: Opk }) {
   return <span className="hint">{isKamp(o) ? 'Weekendkamp · ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(allBlocks(o).length, 'onderdeel', 'onderdelen')}{n ? ' · min. ' + n + ' leiding' : ''}{o.short ? ' · ' + o.short : ''}</span>;
 }
 
-export function PickOpk({ o, label, onPick, primary = true }: { o: Opk; label: string; onPick: () => void; primary?: boolean }) {
+export function PickOpk({ o, label, onPick, primary = true, extra }: { o: Opk; label: string; onPick: () => void; primary?: boolean; extra?: ReactNode }) {
+  const btn = <button className={'btn sm' + (primary ? ' primary' : '')} onClick={onPick}>{label}</button>;
   return <div className="pick"><div className="info"><b>{o.title || 'Naamloze opkomst'}</b><OpkMeta o={o} /><CatTags o={o} /><Strip o={o} /></div>
-    <button className={'btn sm' + (primary ? ' primary' : '')} onClick={onPick}>{label}</button></div>;
+    {extra ? <div className="row">{btn}{extra}</div> : btn}</div>;
 }

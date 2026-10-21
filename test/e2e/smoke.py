@@ -178,6 +178,17 @@ with sync_playwright() as p:
     check(pg.locator('.modal h2:has-text("Opkomst overnemen")').count() == 1, 'overnemen uit bank opent overneemvenster')
     pg.click('.modal >> text=Klaar'); w(300)
 
+    # --- concepten verwijderen (in de bouwer en vanaf de startpagina)
+    pg.click('nav >> text=Opkomstbouwer'); w(300); pg.click('text=Nieuwe opkomst'); w(700); pg.fill('#om-title', 'Weg ermee'); w(700)
+    pg.click('.plan-head >> button:has-text("Verwijderen")'); w(200); pg.click('.plan-head >> text=Klik nogmaals om te verwijderen'); w(700)
+    check(pg.url.rstrip('/').endswith('/bouwer') and pg.locator('.pick:has-text("Weg ermee")').count() == 0, 'concept verwijderd vanuit de bouwer')
+    pg.click('text=Nieuwe opkomst'); w(700); pg.fill('#om-title', 'Ook weg'); w(700)
+    pg.click('nav >> text=Opkomstbouwer'); w(500); shot('06-concepten')
+    pg.click('.pick:has-text("Ook weg") >> button:has-text("Verwijderen")'); w(200); pg.click('.pick:has-text("Ook weg") >> text=Klik nogmaals'); w(700)
+    check(pg.locator('.pick:has-text("Ook weg")').count() == 0, 'concept verwijderd vanaf de startpagina van de bouwer')
+    pg.reload(); w(1000)
+    check(pg.locator('.pick:has-text("Ook weg"), .pick:has-text("Weg ermee")').count() == 0, 'verwijderde concepten blijven weg na herladen')
+
     # --- dashboard, banken, kamp
     pg.click('nav >> text=Dashboard'); w(700); check(pg.locator('.hero').count() == 1, 'dashboard toont komende opkomst'); shot('05-dashboard')
     pg.click('nav >> text=Activiteitenbank'); w(400); check(pg.locator('.bcard').count() >= 1, 'activiteitenbank gevuld')
@@ -186,7 +197,9 @@ with sync_playwright() as p:
     check(pg.locator('.blk').count() == 3, 'weekendkamp: 3 maaltijden op zaterdag'); shot('06-kamp')
 
     # --- mobiel
-    pg.set_viewport_size({'width': 390, 'height': 800}); pg.click('nav >> text=Jaarplanning'); w(500)
+    pg.set_viewport_size({'width': 390, 'height': 800}); pg.click('nav a[href$="/bouwer"]'); w(500)
+    check(pg.locator('.pick button:has-text("Verwijderen")').count() >= 1 and pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'mobiel: concepten met verwijderknop, geen horizontale scroll'); shot('06-concepten-mobiel')
+    pg.click('nav >> text=Jaarplanning'); w(500)
     check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'mobiel: geen horizontale scroll')
     shot('07-mobiel', False)
     pg.click('nav >> text=Dashboard'); w(500)
