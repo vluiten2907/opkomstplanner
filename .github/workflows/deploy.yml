@@ -4,7 +4,8 @@
 #   STRATO_SFTP_HOST      SFTP-server uit het Strato-klantmenu (bijv. ssh.strato.de)
 #   STRATO_SFTP_USER      SFTP-gebruikersnaam
 #   STRATO_SFTP_PASSWORD  SFTP-wachtwoord
-#   STRATO_DIR            map die bij conqueston.nl/opkomst/ hoort, bijv. /opkomst of /conqueston/opkomst
+#   STRATO_DIR            map die bij conqueston.nl/opkomst/ hoort, bijv. /opkomst of /conqueston/opkomst.
+#                         Mag de SFTP-gebruiker alleen in die map zelf (zo is het nu), vul dan `inlogmap` in.
 # Optioneel: STRATO_SFTP_PORT (standaard 22)
 name: Deploy naar Strato
 
@@ -35,8 +36,9 @@ jobs:
           DIR: ${{ secrets.STRATO_DIR }}
         run: |
           if [ -z "$HOST" ] || [ -z "$DIR" ]; then echo "::error::STRATO_SFTP_HOST en STRATO_DIR moeten als secret zijn ingesteld."; exit 1; fi
-          # Veiligheid: nooit de hoofdmap van de webruimte overschrijven.
-          case "${DIR%/}" in ""|"/"|".") echo "::error::STRATO_DIR mag niet de hoofdmap zijn; gebruik bijv. /opkomst"; exit 1;; esac
+          # Veiligheid: nooit per ongeluk de hoofdmap van de webruimte overschrijven.
+          # Een SFTP-gebruiker die alleen de opkomst-map ziet, gebruikt bewust `inlogmap`.
+          case "${DIR%/}" in ""|"/"|".") echo "::error::STRATO_DIR mag niet de hoofdmap zijn; gebruik bijv. /opkomst, of 'inlogmap' als de SFTP-gebruiker alleen de opkomst-map ziet"; exit 1;; esac
           test -f dist/.htaccess || { echo "::error::dist/.htaccess ontbreekt"; exit 1; }
       - name: Upload naar Strato (SFTP)
         env:
@@ -48,6 +50,7 @@ jobs:
         run: |
           sudo apt-get install -y -qq lftp > /dev/null
           DIR="${DIR%/}"
+          [ "$DIR" = "inlogmap" ] && DIR="."
           # Eerst alles uploaden; daarna alleen in assets/ oude (gehashte) bestanden opruimen.
           lftp -p "${PORT:-22}" -u "$USER","$PASS" "sftp://$HOST" -e "
             set sftp:auto-confirm yes;
