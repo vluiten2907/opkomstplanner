@@ -1,24 +1,23 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { TentTree } from 'lucide-react';
 import { useAuth, authError } from '../store/auth';
 import { Field } from '../components/ui';
 
 export default function AuthPage({ mode }: { mode: 'login' | 'register' | 'reset' }) {
   const { login, register, reset, user, ready } = useAuth();
-  const nav = useNavigate();
   const loc = useLocation();
   const next = (loc.state as any)?.next || '/';
   const [name, setName] = useState(''); const [email, setEmail] = useState(''); const [pw, setPw] = useState('');
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false); const [done, setDone] = useState(false);
-  if (ready && user && mode !== 'reset') { nav(next, { replace: true }); return null; }
+  // Na inloggen/registreren zet de auth-store de gebruiker; dan sturen we hier door.
+  if (ready && user && mode !== 'reset') return <Navigate to={next} replace />;
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setErr(''); setBusy(true);
     try {
       if (mode === 'login') await login(email, pw);
       else if (mode === 'register') { if (!name.trim()) throw { code: 'name' }; await register(name, email, pw); }
       else { await reset(email); setDone(true); }
-      if (mode !== 'reset') nav(next, { replace: true });
     } catch (e: any) { setErr(e?.code === 'name' ? 'Vul je naam in.' : authError(e)); }
     setBusy(false);
   };
