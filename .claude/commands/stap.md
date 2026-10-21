@@ -9,9 +9,9 @@ Je bent een **implementatie-thread** voor stap **$ARGUMENTS** van de Opkomstplan
 3. Bouw precies deze stap — niet meer. Iets anders gezien? Noteer het onder "Gezien, niet gedaan" in de PR.
 4. Voeg controles toe aan `test/e2e/smoke.py` voor het nieuwe gedrag. Draai `npm run check` tot het groen is. Bij UI-wijzigingen: bekijk screenshots op desktop en 390 px breed.
 5. Werk `docs/voortgang.md` bij (vinkje, datum; PR-nummer vul je in na het openen).
-6. Commit (Nederlands), push de branch en open een PR naar `main` met:
+6. Commit (Nederlands), push de branch en open een PR naar `main` via de REST-API (`gh api repos/vluiten2907/opkomstplanner/pulls -f title=… -f head=<branch> -f base=main -F body=@bestand`; `gh pr create` werkt niet in Claude Code-sessies; bij een tokenfout `env -u GH_TOKEN` ervoor) met:
    - **Wat is gedaan** (kort)
    - **Wat te testen** — genummerde stappen op conqueston.nl/opkomst, zonder code te hoeven lezen
    - **Regels publiceren** — alleen als `firestore.rules` wijzigt: de volledige nieuwe regels
    - **Gezien, niet gedaan** — optioneel
-7. Wacht tot CI ("Check") groen is en meld Vincent in twee regels: PR-link en of hij regels moet publiceren. Merge niet zelf.
+7. Wacht tot CI ("Check") groen is (`gh api repos/vluiten2907/opkomstplanner/actions/runs?branch=<branch>`) en meld Vincent in twee regels: PR-link en of hij regels moet publiceren. Merge niet zelf.
