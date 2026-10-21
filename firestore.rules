@@ -35,6 +35,17 @@ service cloud.firestore {
       allow read, write: if signedIn() && uid == me();
     }
 
+    // ---- accounts: opzoeken op e-mailadres om iemand direct toe te voegen ----
+    match /accounts/{email} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create, update: if signedIn() && email == myEmail()
+        && request.resource.data.uid == me()
+        && request.resource.data.email == myEmail()
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'updatedAt']);
+      allow delete: if false;
+    }
+
     // ---- Beheer (totaal) ----
     match /beheer/{docId} {
       allow get: if docId == 'totaal' && signedIn() && (resource == null || me() in resource.data.ids);
@@ -232,7 +243,8 @@ service cloud.firestore {
             && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([me()])
             && !(me() in request.resource.data.memberIds))
       );
-      allow delete: if false;
+      // speltak helemaal weggooien: alleen de beheerder van de groep (of Beheer totaal)
+      allow delete: if isAdminOf(spGid(resource.data));
 
       function joinOk(i) {
         return i.sid == sid
@@ -252,14 +264,17 @@ service cloud.firestore {
       match /opkomsten/{id} {
         allow read: if isMember() || isAdmin();
         allow write: if can('build') || can('bank');
+        allow delete: if isAdmin();
       }
       match /activiteiten/{id} {
         allow read: if isMember() || isAdmin();
         allow write: if can('bank') || can('build');
+        allow delete: if isAdmin();
       }
       match /planning/{id} {
         allow read: if isMember() || isAdmin();
         allow write: if can('plan') || can('build');
+        allow delete: if isAdmin();
       }
     }
   }

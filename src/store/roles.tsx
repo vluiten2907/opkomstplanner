@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { collection, doc, getDoc, onSnapshot, query, setDoc, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './auth';
+import { saveAccount } from './beheer';
 import { ROOT_EMAIL, type Groep, type Root } from '../lib/types';
 
 /*
@@ -34,6 +35,8 @@ export function RolesProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setRoot(null); setRootReady(false);
     if (!user) return;
+    // Vindbaar op e-mailadres, zodat beheer en teamleiders je direct kunnen toevoegen.
+    saveAccount(user.uid, user.displayName || '', user.email || '').catch(() => {});
     const ref = doc(db, 'beheer', 'totaal');
     let stop = () => {};
     let alive = true;

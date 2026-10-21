@@ -16,6 +16,7 @@ _(niets)_
 - **Wachtwoord vergeten-mail** — controleren of de Firebase-mail aankomt en eventueel de afzender/tekst in het Nederlands zetten (Authentication → Templates).
 
 ## Klaar
+- Beheer: bestaand account direct toevoegen (teamleider/leiding), leidingoverzicht per groep met verwijderen en teamleider wisselen (opvolger kiezen), speltak volledig verwijderen, beheerder groep alleen uit de leiding. Nieuwe regels: accounts + verwijderen.
 
 - 2026-10-21 — Opkomsten delen binnen de groep: opkomstenbank met tabbladen *Onze bank* en *Groep*. Bank-opkomsten worden standaard (zonder namen) gedeeld met de andere speltakken van de Scouting-groep; per opkomst uit te zetten. Vanuit *Groep* met één knop kopiëren naar de eigen bank (losse kopie, categorieën op naam gekoppeld), filteren per speltak en categorie, "Al in onze bank" en teller. Nieuwe `firestore.rules` (`groepen/{gid}/gedeeld` en `leden`, 23 extra emulatortests).
 - Beheer: groepen standaard ingeklapt (klik op de naam), beheerder groep maakt bij bestaande leden/teamleiders aan (vinkje), leiding uitnodigen per speltak vanaf Beheer.

@@ -181,6 +181,27 @@ await t('groepsbank: wie de speltak verlaat leest niet meer', async () => {
   await assertFails(getDocs(collection(wn, 'groepen/g1/gedeeld')));
 });
 
+/* ---- accounts, direct toevoegen, verwijderen ---- */
+await seed();
+await t('account: eigen account opslaan', () => assertSucceeds(setDoc(doc(as('x', 'x@t.nl'), 'accounts/x@t.nl'), { uid: 'x', name: 'X', email: 'x@t.nl', updatedAt: 1 })));
+await t('account: andermans e-mailadres niet', () => assertFails(setDoc(doc(as('x', 'x@t.nl'), 'accounts/y@t.nl'), { uid: 'x', name: 'X', email: 'y@t.nl', updatedAt: 1 })));
+await t('account: met andere uid niet', () => assertFails(setDoc(doc(as('x', 'x@t.nl'), 'accounts/x@t.nl'), { uid: 'tl', name: 'X', email: 'x@t.nl', updatedAt: 1 })));
+await t('account: opzoeken met account', () => assertSucceeds(getDoc(doc(as('tl', 'tl@t.nl'), 'accounts/x@t.nl'))));
+await t('account: opzoeken zonder account niet', () => assertFails(getDoc(doc(anon(), 'accounts/x@t.nl'))));
+await t('account: lijst niet', () => assertFails(getDocs(collection(as('tl', 'tl@t.nl'), 'accounts'))));
+const ga3 = as('ga', 'ga@t.nl'), tl3 = as('tl', 'tl@t.nl');
+await t('groep: bestaand account direct als leiding', () => assertSucceeds(updateDoc(doc(ga3, 'speltakken/s1'), { 'members.x': { name: 'X', email: 'x@t.nl', role: 'leiding', perms: NONE, since: 1 }, memberIds: arrayUnion('x') })));
+await t('teamleider: bestaand account direct als leiding', () => assertSucceeds(updateDoc(doc(tl3, 'speltakken/s1'), { 'members.y': { name: 'Y', email: 'y@t.nl', role: 'leiding', perms: NONE, since: 1 }, memberIds: arrayUnion('y') })));
+await t('groep: teamleider vervangen door opvolger', () => assertSucceeds(updateDoc(doc(ga3, 'speltakken/s1'), { 'members.tl': deleteField(), 'members.ld.role': 'teamleider', memberIds: ['ld', 'x', 'y'], tlIds: ['ld'] })));
+await seed();
+await t('teamleider: speltak verwijderen niet', () => assertFails(deleteDoc(doc(as('tl', 'tl@t.nl'), 'speltakken/s1'))));
+await t('teamleider: opkomst verwijderen mag (bouwen)', () => assertSucceeds(deleteDoc(doc(as('tl', 'tl@t.nl'), 'speltakken/s1/opkomsten/o1'))));
+await seed();
+await t('andere groep: speltak verwijderen niet', () => assertFails(deleteDoc(doc(as('zz', 'zz@t.nl'), 'speltakken/s1'))));
+await t('groep: inhoud speltak verwijderen', () => assertSucceeds(deleteDoc(doc(as('ga', 'ga@t.nl'), 'speltakken/s1/opkomsten/o1'))));
+await t('groep: speltak verwijderen', () => assertSucceeds(deleteDoc(doc(as('ga', 'ga@t.nl'), 'speltakken/s1'))));
+await t('groep: inhoud nog steeds niet bewerken', () => assertFails(setDoc(doc(as('ga', 'ga@t.nl'), 'speltakken/s0/opkomsten/o2'), { title: 'y' })));
+
 await env.cleanup();
 console.log(`\n${n - fails}/${n} geslaagd`);
 process.exit(fails ? 1 : 0);

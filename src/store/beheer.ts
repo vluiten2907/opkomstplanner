@@ -76,8 +76,8 @@ export async function removeRootPerson(uid: string, ids: string[]) {
 }
 
 /* ---------- groepen ---------- */
-export async function createGroep(name: string, me: Me) {
-  const id = mkId() + mkId();
+export const newGroepId = () => mkId() + mkId();
+export async function createGroep(name: string, me: Me, id = newGroepId()) {
   await setDoc(doc(db, 'groepen', id), { name: name.trim(), admins: {}, adminIds: [], createdAt: Date.now(), createdBy: me.uid });
   return id;
 }
@@ -134,4 +134,71 @@ export async function stepDownTeamleider(sp: Speltak, uid: string) {
   const next = cur.filter(x => x !== uid);
   if (!next.length) throw new Error('last');
   await updateDoc(doc(db, 'speltakken', sp.id), { ['members.' + uid]: { ...m, role: 'leiding', perms: ALL_PERMS }, tlIds: next });
+}
+
+/* ---------- bestaande accounts ---------- */
+export type Person = { uid: string; name: string; email: string };
+/** Eigen account vindbaar maken op e-mailadres (bij elke login). */
+export async function saveAccount(uid: string, name: string, email: string) {
+  const em = email.trim().toLowerCase(); if (!em) return;
+  await setDoc(doc(db, 'accounts', em), { uid, name: name || em, email: em, updatedAt: Date.now() });
+}
+/** Account zoeken op e-mailadres; null als die persoon nog nooit heeft ingelogd. */
+export async function findAccount(email: string): Promise<Person | null> {
+  const em = email.trim().toLowerCase();
+  const s = await getDoc(doc(db, 'accounts', em));
+  if (!s.exists()) return null;
+  const d = s.data() as any;
+  return d.uid ? { uid: d.uid, name: d.name || em, email: em } : null;
+}
+
+/** Iemand met een account direct in het team zetten, zonder uitnodiging. */
+export async function addMember(sp: Speltak, p: Person, role: 'teamleider' | 'leiding', perms: Perms) {
+  if (sp.members[p.uid]) throw new Error('member');
+  const member: Member = { name: p.name, email: p.email, role, perms: role === 'teamleider' ? ALL_PERMS : normPerms(perms), since: Date.now() };
+  const patch: Record<string, unknown> = { ['members.' + p.uid]: member, memberIds: arrayUnion(p.uid) };
+  if (role === 'teamleider') patch.tlIds = [...new Set([...(sp.tlIds || tlFromRoles(sp)), p.uid])];
+  else if (!sp.tlIds) patch.tlIds = tlFromRoles(sp);
+  await updateDoc(doc(db, 'speltakken', sp.id), patch);
+}
+
+/**
+ * Iemand uit het team halen (beheerder van de groep). Is het de laatste teamleider,
+ * dan moet er een opvolger zijn: een lid van het team of iemand met een account.
+ */
+export async function removeFromTeam(sp: Speltak, uid: string, successor?: Person | null) {
+  const cur = sp.tlIds || tlFromRoles(sp);
+  let tl = cur.filter(x => x !== uid);
+  const patch: Record<string, unknown> = { ['members.' + uid]: deleteField() };
+  let ids = sp.memberIds.filter(x => x !== uid);
+  if (successor && successor.uid !== uid) {
+    const old = sp.members[successor.uid];
+    patch['members.' + successor.uid] = old ? { ...old, role: 'teamleider', perms: ALL_PERMS } : { name: successor.name, email: successor.email, role: 'teamleider', perms: ALL_PERMS, since: Date.now() };
+    if (!ids.includes(successor.uid)) ids = [...ids, successor.uid];
+    tl = [...new Set([...tl, successor.uid])];
+  }
+  if (cur.includes(uid) && !tl.length) throw new Error('last');
+  patch.memberIds = ids; patch.tlIds = tl;
+  await updateDoc(doc(db, 'speltakken', sp.id), patch);
+}
+
+/** Speltak met alle opkomsten, activiteiten, planning en open uitnodigingen weggooien. Niet terug te draaien. */
+export async function deleteSpeltak(sp: Speltak) {
+  for (const sub of ['opkomsten', 'activiteiten', 'planning']) {
+    const s = await getDocs(collection(db, 'speltakken', sp.id, sub));
+    for (let i = 0; i < s.docs.length; i += 400) {
+      const b = writeBatch(db);
+      s.docs.slice(i, i + 400).forEach(d => b.delete(doc(db, 'speltakken', sp.id, sub, d.id)));
+      await b.commit();
+    }
+  }
+  try {
+    const s = await getDocs(sp.gid ? query(collection(db, 'invites'), where('gid', '==', sp.gid), where('sid', '==', sp.id)) : query(collection(db, 'invites'), where('sid', '==', sp.id)));
+    await Promise.all(s.docs.map(d => deleteDoc(doc(db, 'invites', d.id))));
+  } catch { /* uitnodigingen opruimen is mooi meegenomen */ }
+  if (sp.gid) try {
+    const s = await getDocs(query(collection(db, 'groepen', sp.gid, 'gedeeld'), where('sid', '==', sp.id)));
+    await Promise.all(s.docs.map(d => deleteDoc(doc(db, 'groepen', sp.gid!, 'gedeeld', d.id))));
+  } catch { /* gedeelde opkomsten opruimen is mooi meegenomen */ }
+  await deleteDoc(doc(db, 'speltakken', sp.id));
 }
