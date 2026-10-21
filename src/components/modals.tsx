@@ -223,7 +223,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
   const sub = e ? `${fmtRange(e.date, e.endDate, true)} · week ${isoWeek(e.date)}${e.planners.length ? ' · planning: ' + e.planners.join(', ') : ''}${e.absent.length ? ' · afwezig: ' + e.absent.join(', ') : ''}` : '';
   return <Modal title={fresh ? 'Opkomst overnemen' : 'Leiding indelen'} sub={sub} onClose={onClose} wide>
     <div className="tk-head">
-      <Field label="Naam"><input value={o.title} onChange={ev => upd(() => { o.title = ev.target.value; if (e) savePlan({ ...e, topic: ev.target.value }); })} /></Field>
+      <Field label="Opkomst titel"><input value={o.title} onChange={ev => upd(() => { o.title = ev.target.value; if (e) savePlan({ ...e, topic: ev.target.value }); })} /></Field>
       <Field label="Eindverantwoordelijke"><select value={o.lead} onChange={ev => upd(() => { o.lead = ev.target.value; })}><option value="">Kies leiding</option>{present.map(n => <option key={n}>{n}</option>)}</select></Field>
       {!isKamp(o) && <>
         <Field label="Begintijd"><TimePicker value={o.start} onChange={v => upd(() => { const m = setOpkTime(o, 'start', v); if (m) toast(m); })} from={360} to={1430} /></Field>

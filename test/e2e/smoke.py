@@ -82,6 +82,7 @@ with sync_playwright() as p:
     # --- leiding indelen (tijdlijn naast elkaar)
     pg.click('text=Leiding indelen'); w(500)
     check(pg.locator('.modal .tk-tl .blk').count() >= 2, 'indeelvenster toont tijdlijn')
+    check(pg.locator('.modal .tk-head >> text=Opkomst titel').count() == 1, 'indeelvenster heeft veld Opkomst titel')
     pg.select_option('.modal select >> nth=0', 'Vincent Test'); w(200)
     pg.locator('.modal .blk:has-text("Kompasposten") .tk-names button:has-text("Vincent Test")').first.click(); w(200)
     shot('04-indelen', False)
