@@ -25,7 +25,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await setDoc(doc(db, 'users', cred.user.uid), { name: name.trim(), email: email.trim().toLowerCase(), createdAt: serverTimestamp() }, { merge: true });
       setUser({ ...cred.user, displayName: name.trim() } as User);
     },
-    async reset(email) { await sendPasswordResetEmail(auth, email.trim()); },
+    async reset(email) {
+      // Mail in het Nederlands, met na het resetten een knop terug naar het inlogscherm.
+      auth.languageCode = 'nl';
+      const url = `${window.location.origin}${import.meta.env.BASE_URL}inloggen`;
+      try { await sendPasswordResetEmail(auth, email.trim(), { url }); }
+      catch (e: any) {
+        // Domein niet toegestaan in Firebase (Authorized domains): dan zonder terugknop.
+        if (e?.code === 'auth/unauthorized-continue-uri' || e?.code === 'auth/invalid-continue-uri') await sendPasswordResetEmail(auth, email.trim());
+        else throw e;
+      }
+    },
     async logout() { await signOut(auth); },
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

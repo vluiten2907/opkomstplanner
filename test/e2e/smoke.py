@@ -53,6 +53,10 @@ with sync_playwright() as p:
     def invite_link():
         return pg.locator('.banknote .mono-code').last.inner_text()
 
+    # --- wachtwoord vergeten
+    pg.goto(BASE + '/wachtwoord'); w(); pg.fill('input[type=email]', 'iemand@test.nl'); pg.click('.btn.primary'); w(600)
+    check(pg.locator('text=spammap').count() > 0, 'wachtwoord vergeten → bevestiging met spamtip')
+
     # --- geen open registratie meer
     pg.goto(BASE + '/registreren'); w()
     check('/inloggen' in pg.url, 'registreren zonder uitnodiging bestaat niet meer')

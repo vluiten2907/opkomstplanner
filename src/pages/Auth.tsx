@@ -27,7 +27,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'reset' }) {
       <Field label="E-mailadres" htmlFor="a-email"><input id="a-email" type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required /></Field>
       {mode !== 'reset' && <Field label="Wachtwoord" htmlFor="a-pw"><input id="a-pw" type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete="current-password" minLength={6} required /></Field>}
       {err && <p className="hint" style={{ color: 'var(--danger)', fontWeight: 700 }}>{err}</p>}
-      {done && <p className="hint" style={{ color: 'var(--good)', fontWeight: 700 }}>Als dit adres bekend is, staat er een e-mail klaar om een nieuw wachtwoord te kiezen.</p>}
+      {done && <p className="hint" style={{ color: 'var(--good)', fontWeight: 700 }}>Als dit adres bekend is, staat er een e-mail klaar om een nieuw wachtwoord te kiezen. Niets ontvangen? Kijk ook in je spammap.</p>}
       <button className="btn primary" disabled={busy}>{mode === 'login' ? 'Inloggen' : 'E-mail sturen'}</button>
       <div className="row between" style={{ fontSize: 14 }}>
         {mode === 'login' ? <Link to="/wachtwoord">Wachtwoord vergeten</Link> : <Link to="/inloggen" state={{ next }}>Terug naar inloggen</Link>}
