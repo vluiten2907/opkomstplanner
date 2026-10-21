@@ -142,6 +142,45 @@ await t('oud: teamleider legt tlIds vast', () => assertSucceeds(updateDoc(doc(ot
 await t('oud: groep-beheerder ziet hem niet', () => assertFails(getDoc(doc(ga, 'speltakken/s0'))));
 await t('mijn speltakken lijsten', () => assertSucceeds(getDocs(query(collection(otl, 'speltakken'), where('memberIds', 'array-contains', 'otl')))));
 
+/* ---- groepsbank (opkomsten delen binnen de groep) ---- */
+await seed();
+await env.withSecurityRulesDisabled(async c => {
+  const db = c.firestore();
+  const BANK = { plan: false, build: false, bank: true, settings: false };
+  await setDoc(doc(db, 'speltakken/s2'), { name: 'Welpen', groupName: 'G1', gid: 'g1', createdBy: 'ga', settings: {}, tlIds: [], memberIds: ['w', 'wn'],
+    members: { w: { name: 'W', email: 'w@t.nl', role: 'leiding', perms: BANK, since: 1 }, wn: { name: 'WN', email: 'wn@t.nl', role: 'leiding', perms: NONE, since: 1 } } });
+  await setDoc(doc(db, 'speltakken/s3'), { name: 'Anders', groupName: 'G2', gid: 'g2', createdBy: 'root', settings: {}, tlIds: ['z'], memberIds: ['z'],
+    members: { z: { name: 'Z', email: 'z@t.nl', role: 'teamleider', perms: ALL, since: 1 } } });
+});
+const snapOf = (sid, oid, extra = {}) => ({ sid, oid, speltakName: 'S', catDefs: [], opk: { title: 'Bos', lead: '', blocks: [] }, updatedAt: 1, ...extra });
+const tl1 = as('tl', 'tl@t.nl'), w = as('w', 'w@t.nl'), wn = as('wn', 'wn@t.nl'), z = as('z', 'z@t.nl'), ld1 = as('ld', 'ld@t.nl');
+await t('groepsbank: lid legt groepslidmaatschap vast', () => assertSucceeds(setDoc(doc(tl1, 'groepen/g1/leden/tl'), { sid: 's1', since: 1 })));
+await t('groepsbank: lidmaatschap met speltak van andere groep niet', () => assertFails(setDoc(doc(z, 'groepen/g1/leden/z'), { sid: 's3', since: 1 })));
+await t('groepsbank: lidmaatschap via speltak waar je niet in zit niet', () => assertFails(setDoc(doc(z, 'groepen/g1/leden/z'), { sid: 's1', since: 1 })));
+await t('groepsbank: lidmaatschap voor een ander niet', () => assertFails(setDoc(doc(tl1, 'groepen/g1/leden/ld'), { sid: 's1', since: 1 })));
+await t('groepsbank: teamleider deelt opkomst', () => assertSucceeds(setDoc(doc(tl1, 'groepen/g1/gedeeld/s1_o1'), snapOf('s1', 'o1'))));
+await t('groepsbank: delen met verkeerd id niet', () => assertFails(setDoc(doc(tl1, 'groepen/g1/gedeeld/xx'), snapOf('s1', 'o2'))));
+await t('groepsbank: delen met eindverantwoordelijke niet', () => assertFails(setDoc(doc(tl1, 'groepen/g1/gedeeld/s1_o3'), snapOf('s1', 'o3', { opk: { title: 'x', lead: 'Piet' } }))));
+await t('groepsbank: delen in andere groep niet', () => assertFails(setDoc(doc(tl1, 'groepen/g2/gedeeld/s1_o1'), snapOf('s1', 'o1'))));
+await t('groepsbank: leiding zonder recht deelt niet', () => assertFails(setDoc(doc(ld1, 'groepen/g1/gedeeld/s1_o4'), snapOf('s1', 'o4'))));
+await t('groepsbank: leiding met recht Banken deelt', () => assertSucceeds(setDoc(doc(w, 'groepen/g1/gedeeld/s2_o9'), snapOf('s2', 'o9'))));
+await t('groepsbank: andere speltak overschrijft niet', () => assertFails(setDoc(doc(w, 'groepen/g1/gedeeld/s1_o1'), snapOf('s1', 'o1', { updatedAt: 2 }))));
+await t('groepsbank: lezen zonder lidmaatschap niet', () => assertFails(getDocs(collection(wn, 'groepen/g1/gedeeld'))));
+await t('groepsbank: lid legt vast en leest', async () => { await assertSucceeds(setDoc(doc(wn, 'groepen/g1/leden/wn'), { sid: 's2', since: 1 })); await assertSucceeds(getDocs(collection(wn, 'groepen/g1/gedeeld'))); });
+await t('groepsbank: andere groep leest niet', async () => { await setDoc(doc(z, 'groepen/g2/leden/z'), { sid: 's3', since: 1 }); await assertFails(getDocs(collection(z, 'groepen/g1/gedeeld'))); });
+await t('groepsbank: beheerder groep leest', () => assertSucceeds(getDocs(collection(ga, 'groepen/g1/gedeeld'))));
+await t('groepsbank: kopiëren telt +1', () => assertSucceeds(updateDoc(doc(wn, 'groepen/g1/gedeeld/s1_o1'), { copies: 1 })));
+await t('groepsbank: teller +5 niet', () => assertFails(updateDoc(doc(wn, 'groepen/g1/gedeeld/s1_o1'), { copies: 6 })));
+await t('groepsbank: lid wijzigt inhoud niet', () => assertFails(updateDoc(doc(wn, 'groepen/g1/gedeeld/s1_o1'), { 'opk.title': 'Hack' })));
+await t('groepsbank: eigenaar werkt bij (teller blijft)', () => assertSucceeds(setDoc(doc(tl1, 'groepen/g1/gedeeld/s1_o1'), snapOf('s1', 'o1', { updatedAt: 3 }), { merge: true })));
+await t('groepsbank: eigenaar zet teller niet terug', () => assertFails(setDoc(doc(tl1, 'groepen/g1/gedeeld/s1_o1'), { ...snapOf('s1', 'o1'), copies: 0 }, { merge: true })));
+await t('groepsbank: andere speltak verwijdert niet', () => assertFails(deleteDoc(doc(w, 'groepen/g1/gedeeld/s1_o1'))));
+await t('groepsbank: eigenaar haalt delen weg', () => assertSucceeds(deleteDoc(doc(tl1, 'groepen/g1/gedeeld/s1_o1'))));
+await t('groepsbank: wie de speltak verlaat leest niet meer', async () => {
+  await env.withSecurityRulesDisabled(c => updateDoc(doc(c.firestore(), 'speltakken/s2'), { memberIds: ['w'] }));
+  await assertFails(getDocs(collection(wn, 'groepen/g1/gedeeld')));
+});
+
 await env.cleanup();
 console.log(`\n${n - fails}/${n} geslaagd`);
 process.exit(fails ? 1 : 0);

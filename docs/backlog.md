@@ -8,7 +8,6 @@ _(niets)_
 
 ## Open
 
-- **Opkomsten delen binnen de groep** — gedeelde opkomstenbank per Scouting-groep (bouwt op de rollenstructuur, `groepen/{gid}`). Bij "in de bank zetten" staat delen binnen de groep standaard aan; anderen kopiëren een gedeelde opkomst naar hun eigen opkomstenbank. Overzichtelijk houden (filteren, herkomst tonen). Eerst ontwerp voorleggen.
 - **Bewerken uit de bank bevestigen** — een opkomst of activiteit uit je eigen bank wordt na bewerken niet meer automatisch opgeslagen. Onderaan: *Annuleren*, *Opslaan* en *Opslaan als kopie* (met nieuwe naam). Bestaat de naam al in de bank, dan moet je een andere naam kiezen.
 - **Concepten kunnen verwijderen** — in de opkomstplanner een conceptopkomst kunnen verwijderen.
 - **Live controle met echt account** — registreren, speltak aanmaken en uitnodiging accepteren op conqueston.nl/opkomst door Vincent (bevestigt e-mail/wachtwoord-login en de gepubliceerde regels).
@@ -17,6 +16,8 @@ _(niets)_
 - **Wachtwoord vergeten-mail** — controleren of de Firebase-mail aankomt en eventueel de afzender/tekst in het Nederlands zetten (Authentication → Templates).
 
 ## Klaar
+
+- 2026-10-21 — Opkomsten delen binnen de groep: opkomstenbank met tabbladen *Onze bank* en *Groep*. Bank-opkomsten worden standaard (zonder namen) gedeeld met de andere speltakken van de Scouting-groep; per opkomst uit te zetten. Vanuit *Groep* met één knop kopiëren naar de eigen bank (losse kopie, categorieën op naam gekoppeld), filteren per speltak en categorie, "Al in onze bank" en teller. Nieuwe `firestore.rules` (`groepen/{gid}/gedeeld` en `leden`, 23 extra emulatortests).
 - Beheer: groepen standaard ingeklapt (klik op de naam), beheerder groep maakt bij bestaande leden/teamleiders aan (vinkje), leiding uitnodigen per speltak vanaf Beheer.
 
 - 2026-10-21 — Rollen en beheerders: Beheer (totaal) → Beheer (groep) → Teamleider → Leiding. Beheer-pagina met groepen, speltakken en teamleiders; oude speltakken koppelen aan een groep. Account aanmaken alleen via uitnodiging (30 dagen geldig). Openstaande uitnodigingen zien, link kopiëren en intrekken op elk niveau. Overdragen, mede-beheerders en aftreden. Nieuwe `firestore.rules` (73 emulatortests).

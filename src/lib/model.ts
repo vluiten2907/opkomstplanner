@@ -11,6 +11,10 @@ export type Opk = {
   id: string; state: 'draft' | 'bank' | 'planned'; srcId: string | null; kind: 'opkomst' | 'kamp'; cats: string[]; lead: string;
   title: string; short: string; group: string; location: string; start: number; end: number; prep: number; post: number;
   days: Day[]; blocks: Block[]; createdAt: number; updatedAt: number;
+  /** Bank-opkomst gedeeld met de groep (standaard aan). */
+  shared: boolean;
+  /** Gekopieerd uit de groepsbank: id van de gedeelde opkomst. */
+  fromShared: string | null;
 };
 export type Lib = { id: string; title: string; dur: number; cat: string; minLeaders: number; location: string; short: string; desc: string; prep: string; materials: string; updatedAt: number };
 export type Letter = { needed: boolean; due: string; sent: boolean };
@@ -102,7 +106,8 @@ export function normOpk(o: any, s?: Settings): Opk {
     kind: o.kind === 'kamp' ? 'kamp' : 'opkomst', cats: Array.isArray(o.cats) ? o.cats.filter((x: any) => typeof x === 'string') : [], lead: typeof o.lead === 'string' ? o.lead : '',
     title: o.title || '', short: o.short || '', group: o.group || '', location: o.location || '',
     start: num(o.start, 840), end: num(o.end, 990), prep: num(o.prep, s ? s.prepMin : 0), post: num(o.post, s ? s.postMin : 0),
-    days: [], blocks: (o.blocks || []).map(normBlock), createdAt: o.createdAt || Date.now(), updatedAt: o.updatedAt || Date.now() };
+    days: [], blocks: (o.blocks || []).map(normBlock), createdAt: o.createdAt || Date.now(), updatedAt: o.updatedAt || Date.now(),
+    shared: o.shared !== false, fromShared: typeof o.fromShared === 'string' ? o.fromShared : null };
   if (n.end <= n.start) n.end = n.start + 60;
   if (n.kind === 'kamp') {
     n.prep = 0; n.post = 0; n.blocks = [];
@@ -143,7 +148,7 @@ export function fixedBlocks(s: Settings, start: number, end: number): Block[] {
 }
 export function newOpk(s: Settings): Opk {
   return { id: uid(), state: 'draft', srcId: null, kind: 'opkomst', cats: [], lead: '', title: '', short: '', group: s.speltak || '', location: '',
-    start: s.defStart, end: s.defEnd, prep: s.prepMin, post: s.postMin, days: [], blocks: fixedBlocks(s, s.defStart, s.defEnd), createdAt: Date.now(), updatedAt: Date.now() };
+    start: s.defStart, end: s.defEnd, prep: s.prepMin, post: s.postMin, days: [], blocks: fixedBlocks(s, s.defStart, s.defEnd), createdAt: Date.now(), updatedAt: Date.now(), shared: true, fromShared: null };
 }
 export function kampDaysFor(n: number, firstISO: string | null, st?: number | null, en?: number | null): Day[] {
   const out: Day[] = [];

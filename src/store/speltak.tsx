@@ -8,6 +8,7 @@ import { useRoles } from './roles';
 import { createInvite as mkInvite } from './beheer';
 import { uid as mkId, clone } from '../lib/time';
 import { toast } from './toast';
+import { ensureLid, normGedeeld, snapshotOf, writeShared, removeShared, sharedId, copyFromShared, countCopy, type Gedeeld } from './groepsbank';
 
 type Ctx = {
   sid: string; sp: Speltak | null; loading: boolean; denied: boolean;
@@ -35,6 +36,10 @@ type Ctx = {
   peekEntry: (key: string) => Plan | null;
   entryForDate: (iso: string) => Plan;
   dropAbsent: (e: Plan, quiet?: boolean) => number;
+  /** Groepsbank: null = (nog) niet beschikbaar, bijv. speltak zonder groep. */
+  shared: Gedeeld[] | null;
+  /** Gedeelde opkomst als kopie in de eigen opkomstenbank zetten. */
+  importShared: (g: Gedeeld) => Opk;
 };
 const C = createContext<Ctx>(null as any);
 
@@ -48,13 +53,14 @@ export function SpeltakProvider({ sid, children }: { sid: string; children: Reac
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
+  const [opksReady, setOpksReady] = useState(false);
   // lokale, optimistische kopie: wijzigingen tonen direct, opslaan gebeurt met een korte vertraging
   const pending = useRef(new Map<string, { kind: string; obj: any; t: any }>());
   const [, bump] = useState(0);
 
   useEffect(() => {
     if (!user) return;
-    setLoading(true); setDenied(false);
+    setLoading(true); setDenied(false); setOpksReady(false);
     const err = (e: any) => { if (e?.code === 'permission-denied') setDenied(true); setLoading(false); };
     const u1 = onSnapshot(doc(db, 'speltakken', sid), s => {
       if (!s.exists()) { setSp(null); setDenied(true); setLoading(false); return; }
@@ -71,7 +77,7 @@ export function SpeltakProvider({ sid, children }: { sid: string; children: Reac
         pending.current.forEach((p, key) => { if (key.startsWith(name + ':')) map.set(p.obj.id, p.obj); });
         set([...map.values()]);
       }, err);
-    const u2 = sub('opkomsten', normOpk, setOpks), u3 = sub('activiteiten', normLib, setLib), u4 = sub('planning', normPlan, setPlans);
+    const u2 = sub('opkomsten', normOpk, (v: Opk[]) => { setOpks(v); setOpksReady(true); }), u3 = sub('activiteiten', normLib, setLib), u4 = sub('planning', normPlan, setPlans);
     return () => { u1(); u2(); u3(); u4(); };
   }, [sid, user]);
 
@@ -184,9 +190,56 @@ export function SpeltakProvider({ sid, children }: { sid: string; children: Reac
     savePlan({ ...e, opkId: null });
   };
 
+  /* ---- groepsbank ---- */
+  const gid = sp?.gid || null;
+  const isMemberNow = !!me;
+  const [shared, setShared] = useState<Gedeeld[] | null>(null);
+  useEffect(() => {
+    setShared(null);
+    if (!user || !gid || !(isMemberNow || isAdmin)) return;
+    let stop = () => {}, alive = true, retried = false;
+    const listen = () => {
+      stop = onSnapshot(collection(db, 'groepen', gid, 'gedeeld'), s => setShared(s.docs.map(d => normGedeeld(d.id, d.data()))), async (e: any) => {
+        // lidmaatschap van de groep ontbreekt of hoort bij een speltak waar je niet meer in zit: opnieuw vastleggen
+        if (e?.code === 'permission-denied' && isMemberNow && !retried && alive) { retried = true; try { await ensureLid(gid, user.uid, sid, true); if (alive) listen(); } catch { setShared(null); } }
+      });
+    };
+    (async () => { if (isMemberNow) { try { await ensureLid(gid, user.uid, sid); } catch { /* volgt bij fout hierboven */ } } if (alive) listen(); })();
+    return () => { alive = false; stop(); };
+  }, [user, gid, sid, isMemberNow, isAdmin]);
+
+  // Eigen bank en groepsbank gelijk houden: gedeelde bank-opkomsten erin, de rest eruit.
+  const mayShare = isMemberNow && (can('bank') || can('build'));
+  const inflight = useRef(new Map<string, number>());
+  useEffect(() => {
+    if (!gid || !shared || !mayShare || loading || !opksReady) return;
+    const t = setTimeout(() => {
+      const mine = new Map(shared.filter(g => g.sid === sid).map(g => [g.id, g]));
+      const want = opks.filter(o => o.state === 'bank' && o.shared);
+      want.forEach(o => {
+        const id = sharedId(sid, o.id), cur = mine.get(id);
+        if (cur && cur.updatedAt === o.updatedAt && cur.speltakName === (sp?.name || '')) return;
+        if (inflight.current.get(id) === o.updatedAt) return;
+        inflight.current.set(id, o.updatedAt);
+        writeShared(gid, snapshotOf(o, settings, sid, sp?.name || '')).catch(() => inflight.current.delete(id));
+      });
+      const keep = new Set(want.map(o => sharedId(sid, o.id)));
+      mine.forEach((_, id) => { if (!keep.has(id) && !inflight.current.has('del:' + id)) { inflight.current.set('del:' + id, 1); removeShared(gid, id).finally(() => inflight.current.delete('del:' + id)); } });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [gid, shared, opks, mayShare, loading, opksReady, sp?.name, settings]);
+
+  const importShared = (g: Gedeeld) => {
+    const { opk, add } = copyFromShared(g, settings, can('settings'));
+    if (add.length) saveSettings({ categories: [...settings.categories, ...add] });
+    saveOpk(opk);
+    if (gid) countCopy(gid, g.id).catch(() => {});
+    return opk;
+  };
+
   const value: Ctx = { sid, sp, loading, denied, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
     saveOpk, deleteOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
-    getO, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent };
+    getO, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared };
   return <C.Provider value={value}>{children}</C.Provider>;
 }
 export const useSpeltak = () => useContext(C);

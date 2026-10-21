@@ -1,5 +1,5 @@
 import { useSpeltak } from '../store/speltak';
-import { allBlocks, analyze, catOf, isKamp, minNeed, opkCatOf, type Opk, type Day } from '../lib/model';
+import { allBlocks, analyze, catOf, isKamp, minNeed, opkCatOf, type Cat, type Opk, type Day } from '../lib/model';
 import { fmtDur, fmtT, plural } from '../lib/time';
 import { makePdf } from '../lib/export';
 
@@ -15,16 +15,16 @@ export const PageTitle = ({ title, sub, children }: { title: React.ReactNode; su
     {children && <div className="row">{children}</div>}
   </div>;
 
-/** Gekleurde balk met de verdeling van onderdelen over de tijd. */
-export function Strip({ o }: { o: Opk | Day }) {
+/** Gekleurde balk met de verdeling van onderdelen over de tijd. `cats`: categorieën van een andere speltak (groepsbank). */
+export function Strip({ o, cats }: { o: Opk | Day; cats?: Cat[] }) {
   const { settings } = useSpeltak();
-  if ('kind' in o && isKamp(o)) return <div className="kstrip">{o.days.map(d => <div key={d.id} style={{ flex: Math.max(5, d.end - d.start) }} title={d.label}><Strip o={d} /></div>)}</div>;
+  if ('kind' in o && isKamp(o)) return <div className="kstrip">{o.days.map(d => <div key={d.id} style={{ flex: Math.max(5, d.end - d.start) }} title={d.label}><Strip o={d} cats={cats} /></div>)}</div>;
   const segs: React.ReactNode[] = [];
   let t = o.start;
   [...o.blocks].sort((a, b) => a.start - b.start).forEach(b => {
     const s = Math.max(b.start, o.start), e = Math.min(b.start + b.dur, o.end); if (e <= s) return;
     if (s > t) segs.push(<span key={'g' + t} className="gap" style={{ flex: s - t }} />);
-    if (e > t) segs.push(<span key={b.id} style={{ ['--c' as any]: catOf(settings, b.cat).color, flex: e - Math.max(s, t) }} title={b.title} />);
+    if (e > t) segs.push(<span key={b.id} style={{ ['--c' as any]: (cats?.find(c => c.id === b.cat) || catOf(settings, b.cat)).color, flex: e - Math.max(s, t) }} title={b.title} />);
     t = Math.max(t, e);
   });
   if (t < o.end) segs.push(<span key="end" className="gap" style={{ flex: o.end - t }} />);
@@ -40,9 +40,9 @@ export function StatusPill({ o }: { o: Opk }) {
   return <span className="pill good">Klaar</span>;
 }
 
-export function CatTags({ o }: { o: Opk }) {
+export function CatTags({ o, cats }: { o: Opk; cats?: Cat[] }) {
   const { settings } = useSpeltak();
-  const list = (o.cats || []).map(c => opkCatOf(settings, c)).filter(Boolean) as { id: string; label: string; color: string }[];
+  const list = (o.cats || []).map(c => cats?.find(x => x.id === c) || opkCatOf(settings, c)).filter(Boolean) as { id: string; label: string; color: string }[];
   if (!list.length) return null;
   return <span className="ocats">{list.map(c => <span key={c.id} className="ocat" style={{ ['--c' as any]: c.color }}>{c.label}</span>)}</span>;
 }

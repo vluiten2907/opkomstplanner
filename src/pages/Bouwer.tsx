@@ -96,8 +96,8 @@ function Builder({ o }: { o: Opk }) {
   const pill = o.state === 'bank' ? <span className="pill good">In opkomstenbank</span> : o.state === 'planned' ? <span className="pill acc">Ingepland</span> : <span className="pill neutral">Concept</span>;
   const toBank = () => {
     if (!allBlocks(o).length && !o.title) { toast('Geef de opkomst eerst een titel of een onderdeel.'); return; }
-    if (o.state === 'draft') { upd(() => { o.state = 'bank'; o.lead = ''; allBlocks(o).forEach(b => b.names = []); }); toast('Opgeslagen in de opkomstenbank, zonder namen van leiding'); return; }
-    const b = copyOpk(o); b.state = 'bank'; b.srcId = null; b.lead = ''; allBlocks(b).forEach(x => x.names = []);
+    if (o.state === 'draft') { upd(() => { o.state = 'bank'; o.lead = ''; o.shared = true; allBlocks(o).forEach(b => b.names = []); }); toast(S.sp?.gid ? 'In de opkomstenbank gezet en gedeeld met de groep, zonder namen' : 'Opgeslagen in de opkomstenbank, zonder namen van leiding'); return; }
+    const b = copyOpk(o); b.state = 'bank'; b.srcId = null; b.lead = ''; b.shared = true; b.fromShared = null; allBlocks(b).forEach(x => x.names = []);
     saveOpk(b); upd(() => { o.srcId = b.id; }); toast('Kopie opgeslagen in de opkomstenbank, zonder leiding');
   };
   const dup = () => { const c = copyOpk(o); c.state = 'draft'; c.srcId = null; c.title = (o.title || 'Opkomst') + ' (kopie)'; saveOpk(c); nav(`/s/${sid}/bouwer/${c.id}`); toast('Kopie gemaakt'); };

@@ -88,6 +88,45 @@ service cloud.firestore {
           && invite(request.resource.data.admins[me()].inviteId).gid == gid)
       );
       allow delete: if isRoot();
+
+      // ---- groepsbank: opkomsten die speltakken delen met de hele groep ----
+      function lidPath() { return /databases/$(database)/documents/groepen/$(gid)/leden/$(me()); }
+      function lidSp() { return get(spPath(get(lidPath()).data.sid)).data; }
+      // lid van een speltak in deze groep (vastgelegd in leden/{uid}, en nog steeds lid)
+      function inGroup() { return signedIn() && exists(lidPath()) && me() in lidSp().memberIds && spGid(lidSp()) == gid; }
+      // mag de bank van speltak-data d delen: lid met recht Banken of Opkomsten, speltak hoort bij deze groep
+      function canShare(d) {
+        return signedIn() && spGid(d) == gid && me() in d.memberIds
+          && (tlOf(d) || d.members[me()].perms.bank == true || d.members[me()].perms.build == true);
+      }
+
+      match /leden/{uid} {
+        allow get: if signedIn() && uid == me();
+        allow create, update: if signedIn() && uid == me()
+          && request.resource.data.sid is string
+          && me() in get(spPath(request.resource.data.sid)).data.memberIds
+          && spGid(get(spPath(request.resource.data.sid)).data) == gid;
+        allow delete: if signedIn() && uid == me();
+      }
+
+      match /gedeeld/{id} {
+        allow read: if isAdminOf(gid) || inGroup();
+        // eigenaar: id = {sid}_{opkomst-id}, zonder eindverantwoordelijke
+        function ownerWrite() {
+          return request.resource.data.sid is string && request.resource.data.oid is string
+            && id == request.resource.data.sid + '_' + request.resource.data.oid
+            && request.resource.data.opk.lead == ''
+            && canShare(get(spPath(request.resource.data.sid)).data);
+        }
+        allow create: if ownerWrite() && request.resource.data.get('copies', 0) == 0;
+        allow update: if (ownerWrite()
+            && request.resource.data.sid == resource.data.sid
+            && request.resource.data.get('copies', 0) == resource.data.get('copies', 0))
+          // kopiëren telt mee: elk groepslid mag de teller met 1 ophogen
+          || (inGroup() && changed().hasOnly(['copies'])
+            && request.resource.data.copies == resource.data.get('copies', 0) + 1);
+        allow delete: if canShare(get(spPath(resource.data.sid)).data) || isAdminOf(gid);
+      }
     }
 
     // ---- uitnodigingen ----

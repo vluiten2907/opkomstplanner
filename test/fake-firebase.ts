@@ -53,12 +53,14 @@ class Sentinel { constructor(public op: string, public v?: any) {} }
 export const arrayUnion = (...v: any[]) => new Sentinel('union', v);
 export const arrayRemove = (...v: any[]) => new Sentinel('remove', v);
 export const deleteField = () => new Sentinel('delete');
+export const increment = (n: number) => new Sentinel('inc', n);
 function applyKey(obj: any, key: string, val: any) {
   const parts = key.split('.'); let o = obj;
   for (let i = 0; i < parts.length - 1; i++) { if (typeof o[parts[i]] !== 'object' || o[parts[i]] === null) o[parts[i]] = {}; o = o[parts[i]]; }
   const last = parts[parts.length - 1];
   if (val instanceof Sentinel) {
     if (val.op === 'delete') delete o[last];
+    else if (val.op === 'inc') o[last] = (typeof o[last] === 'number' ? o[last] : 0) + val.v;
     else { const arr = Array.isArray(o[last]) ? [...o[last]] : []; if (val.op === 'union') val.v.forEach((x: any) => { if (!arr.includes(x)) arr.push(x); }); else val.v.forEach((x: any) => { const i = arr.indexOf(x); if (i >= 0) arr.splice(i, 1); }); o[last] = arr; }
   } else o[last] = clone(val);
 }
