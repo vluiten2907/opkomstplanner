@@ -4,7 +4,7 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 
 ## Bezig
 
-- **Huidige speltak duidelijk tonen** — dashboard: speltaknaam als grote titel, groepsnaam klein erboven met knop *Andere speltak*; speltak vet in de menubalk. Klaar op branch, wacht op beurt voor `main`.
+_(niets)_
 
 ## Open
 
