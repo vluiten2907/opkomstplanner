@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { TentTree } from 'lucide-react';
 import { useAuth, authError } from '../store/auth';
-import { acceptInvite, claimName, nameOwner, readInvite } from '../store/beheer';
+import { acceptInvite, claimName, nameOwner, readInvite, saveProfile } from '../store/beheer';
 import { Field } from '../components/ui';
 import { auth } from '../lib/firebase';
 import { inviteExpired, KIND_LABELS, PERM_LABELS, type Invite } from '../lib/types';
@@ -15,6 +15,7 @@ export default function InvitePage() {
   const [inv, setInv] = useState<Invite | null | undefined>(undefined);
   const [mode, setMode] = useState<'register' | 'login'>('register');
   const [name, setName] = useState(''); const [pw, setPw] = useState('');
+  const [first, setFirst] = useState(''); const [last, setLast] = useState('');
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
   useEffect(() => { readInvite(token!).then(setInv).catch(() => setInv(null)); }, [token]);
   if (!ready || inv === undefined) return <div className="loading">Uitnodiging ophalen…</div>;
@@ -48,17 +49,23 @@ export default function InvitePage() {
       try {
         if (mode === 'register') {
           if (!name.trim()) throw { code: 'name' };
+          if (!first.trim() || !last.trim()) throw { code: 'fullname' };
           if (inv.gid && await nameOwner(inv.gid, name).catch(() => null)) throw { code: 'name-taken' };
           await register(name, inv.email, pw);
         }
         else await login(inv.email, pw);
         const u = auth.currentUser; if (!u) throw new Error('niet ingelogd');
+        if (mode === 'register') await saveProfile(u.uid, inv.email, first, last).catch(() => {});
         await accept(u, mode === 'register' ? name.trim() : undefined);
-      } catch (e: any) { setErr(e?.code === 'name' ? 'Vul je naam in.' : joinErr(e)); setBusy(false); }
+      } catch (e: any) { setErr(e?.code === 'name' ? 'Vul je gebruikersnaam in.' : e?.code === 'fullname' ? 'Vul je voor- en achternaam in.' : joinErr(e)); setBusy(false); }
     };
     return box(<form className="stack" onSubmit={submit}>{intro}
       <Field label="E-mailadres"><input type="email" value={inv.email} readOnly aria-readonly="true" /></Field>
-      {mode === 'register' && <Field label="Je naam" htmlFor="i-name" hint={`Je naam is je gebruikersnaam binnen ${inv.groupName || 'de groep'}: hij mag er maar één keer voorkomen.`}><input id="i-name" value={name} onChange={e => setName(e.target.value)} placeholder="Zoals de leiding je kent, bijv. Akela" autoComplete="name" /></Field>}
+      {mode === 'register' && <div className="two">
+        <Field label="Voornaam" htmlFor="i-first"><input id="i-first" value={first} onChange={e => setFirst(e.target.value)} autoComplete="given-name" /></Field>
+        <Field label="Achternaam" htmlFor="i-last"><input id="i-last" value={last} onChange={e => setLast(e.target.value)} autoComplete="family-name" /></Field>
+      </div>}
+      {mode === 'register' && <Field label="Gebruikersnaam" htmlFor="i-name" hint={`Je naam is je gebruikersnaam binnen ${inv.groupName || 'de groep'}: hij mag er maar één keer voorkomen.`}><input id="i-name" value={name} onChange={e => setName(e.target.value)} placeholder="Zoals de leiding je kent, bijv. Akela" autoComplete="name" /></Field>}
       <Field label={mode === 'register' ? 'Kies een wachtwoord' : 'Wachtwoord'} htmlFor="i-pw"><input id="i-pw" type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete={mode === 'register' ? 'new-password' : 'current-password'} minLength={6} required /></Field>
       {err && <p className="hint" style={{ color: 'var(--danger)', fontWeight: 700 }}>{err}</p>}
       <button className="btn primary" disabled={busy}>{mode === 'register' ? 'Account aanmaken en toetreden' : 'Inloggen en toetreden'}</button>

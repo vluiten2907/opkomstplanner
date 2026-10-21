@@ -17,6 +17,7 @@ const Activiteitenbank = lazy(() => import('./pages/Activiteitenbank'));
 const Opkomstenbank = lazy(() => import('./pages/Opkomstenbank'));
 const Instellingen = lazy(() => import('./pages/Instellingen'));
 const Beheer = lazy(() => import('./pages/Beheer'));
+const AccountPage = lazy(() => import('./pages/Account'));
 
 const Loading = () => <div className="loading">Even geduld…</div>;
 
@@ -61,6 +62,7 @@ export default function App() {
       <Route path="/uitnodiging/:token" element={<InvitePage />} />
       <Route path="/speltakken" element={<Gate><SpeltakkenPage /></Gate>} />
       <Route path="/beheer" element={<Gate><Beheer /></Gate>} />
+      <Route path="/account" element={<Gate><AccountPage /></Gate>} />
       <Route path="/s/:sid/*" element={<Gate><SpeltakRoutes /></Gate>} />
       <Route path="/" element={<Gate><Home /></Gate>} />
       <Route path="*" element={<Navigate to="/" replace />} />

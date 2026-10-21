@@ -28,7 +28,8 @@ with sync_playwright() as p:
     shot = lambda n, full=True: pg.screenshot(path=f'{OUT}/{n}.png', full_page=full)
 
     def register(name, email):
-        pg.fill('input:not([type=email]):not([type=password])', name); pg.fill('input[type=password]', 'geheim123')
+        first, _, last = name.partition(' ')
+        pg.fill('#i-first', first); pg.fill('#i-last', last or 'Test'); pg.fill('#i-name', name); pg.fill('input[type=password]', 'geheim123')
         if pg.locator('input[type=email]').is_editable(): pg.fill('input[type=email]', email)
         pg.click('.btn.primary'); w(800)
 
@@ -192,11 +193,17 @@ with sync_playwright() as p:
     check('/uitnodiging/' in pg.url and pg.locator('text=al in gebruik binnen Testgroep').count() == 1, 'naam is uniek binnen de groep')
     register('Greet Beheer', 'ga@test.nl')
     check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'leiding via uitnodiging → dashboard speltak')
+    check(pg.locator('.namenote').count() == 0, 'geen melding: voor- en achternaam bij registreren ingevuld')
+    pg.goto(BASE + '/account'); w(700)
+    check(pg.locator('#ac-first').input_value() == 'Greet' and pg.locator('#ac-last').input_value() == 'Beheer', 'mijn account toont voor- en achternaam')
+    pg.fill('#ac-last', 'de Beheerder'); pg.click('text=Opslaan'); w(600)
+    shot('06-account')
     def login(email, pw):
         logout_to(BASE + '/inloggen'); pg.fill('input[type=email]', email); pg.fill('input[type=password]', pw); pg.click('.btn.primary'); w(1200)
     login('vluiten2907@gmail.com', 'demo123'); open_group()
     lrow = lambda name: pg.locator(f'.leiding .subrow:has-text("{name}")')
     check(lrow('Anna de Vries').count() == 1 and lrow('Vincent Test').count() == 1, 'leidingoverzicht toont alle leiding')
+    check(lrow('Anna de Vries').locator('text=anna@test.nl').count() == 1 and lrow('Anna de Vries').locator('text=Anna de Vries · ').count() + lrow('Anna de Vries').locator('text=· Anna de Vries').count() >= 1, 'leidingoverzicht toont e-mailadres en voor- en achternaam')
     lrow('Greet Beheer').locator('label:has-text("Beheerder") input').check(); w(800)
     check(pg.locator('.groupcard .member:has-text("ga@test.nl")').count() == 1, 'beheerder gekozen uit de leiding')
     lrow('Beheer (demo)').locator('text=Verwijderen').click(); w(150); lrow('Beheer (demo)').locator('text=Zeker?').click(); w(800)

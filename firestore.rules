@@ -42,7 +42,7 @@ service cloud.firestore {
       allow create, update: if signedIn() && email == myEmail()
         && request.resource.data.uid == me()
         && request.resource.data.email == myEmail()
-        && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'updatedAt']);
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'firstName', 'lastName', 'updatedAt']);
       allow delete: if false;
     }
 

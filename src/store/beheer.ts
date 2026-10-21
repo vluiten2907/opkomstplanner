@@ -141,7 +141,22 @@ export type Person = { uid: string; name: string; email: string };
 /** Eigen account vindbaar maken op e-mailadres (bij elke login). */
 export async function saveAccount(uid: string, name: string, email: string) {
   const em = email.trim().toLowerCase(); if (!em) return;
-  await setDoc(doc(db, 'accounts', em), { uid, name: name || em, email: em, updatedAt: Date.now() });
+  await setDoc(doc(db, 'accounts', em), { uid, name: name || em, email: em, updatedAt: Date.now() }, { merge: true });
+}
+/** Voor- en achternaam opslaan: in je profiel en in je account (zodat beheer het ziet). */
+export async function saveProfile(uid: string, email: string, firstName: string, lastName: string) {
+  const f = firstName.trim(), l = lastName.trim(), em = email.trim().toLowerCase();
+  await setDoc(doc(db, 'users', uid), { firstName: f, lastName: l }, { merge: true });
+  if (em) await setDoc(doc(db, 'accounts', em), { uid, email: em, firstName: f, lastName: l, updatedAt: Date.now() }, { merge: true });
+}
+export type AccountInfo = { firstName: string; lastName: string };
+/** Voor- en achternaam bij e-mailadressen ophalen (voor het leidingoverzicht). */
+export async function readAccounts(emails: string[]): Promise<Record<string, AccountInfo>> {
+  const out: Record<string, AccountInfo> = {};
+  await Promise.all([...new Set(emails.filter(Boolean))].map(async em => {
+    try { const s = await getDoc(doc(db, 'accounts', em)); if (s.exists()) { const d = s.data() as any; out[em] = { firstName: d.firstName || '', lastName: d.lastName || '' }; } } catch { /* niet erg */ }
+  }));
+  return out;
 }
 /** Account zoeken op e-mailadres; null als die persoon nog nooit heeft ingelogd. */
 export async function findAccount(email: string): Promise<Person | null> {

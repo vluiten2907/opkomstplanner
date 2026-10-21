@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { TentTree, LogOut, ShieldCheck } from 'lucide-react';
+import { TentTree, LogOut, ShieldCheck, UserRound } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../store/auth';
 import { useRoles } from '../store/roles';
@@ -22,7 +22,7 @@ export default function SpeltakkenPage() {
     <div className="stack" style={{ width: 'min(760px, 100%)', gap: 18 }}>
       <div className="row between page-head">
         <div className="brand flex items-center gap-2.5"><TentTree size={26} strokeWidth={1.9} /><span className="brand-txt"><span>Opkomstplanner</span><small>{user?.displayName || user?.email}</small></span></div>
-        <button className="btn ghost sm" onClick={() => logout().then(() => nav('/inloggen'))}><LogOut size={14} />Uitloggen</button>
+        <div className="row" style={{ gap: 6 }}><Link className="btn ghost sm" to="/account"><UserRound size={14} />Account</Link><button className="btn ghost sm" onClick={() => logout().then(() => nav('/inloggen'))}><LogOut size={14} />Uitloggen</button></div>
       </div>
       <h1 className="display text-5xl md:text-7xl font-black tracking-tighter">Mijn speltakken</h1>
       {isAdmin && <div className="banknote"><span><ShieldCheck size={16} style={{ verticalAlign: -3, marginRight: 6 }} />Je bent {isRoot ? 'Beheer (totaal)' : 'beheerder van een groep'}.</span><div className="row"><Link className="btn sm primary" to="/beheer">Naar beheer</Link></div></div>}

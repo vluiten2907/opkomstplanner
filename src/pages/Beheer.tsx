@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { TentTree, LogOut, Plus, ShieldCheck, Users, UserPlus, ExternalLink, Link2, ChevronRight, Trash2 } from 'lucide-react';
+import { TentTree, LogOut, Plus, ShieldCheck, Users, UserPlus, ExternalLink, Link2, ChevronRight, Trash2, UserRound } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../store/auth';
 import { useRoles } from '../store/roles';
@@ -9,7 +9,7 @@ import { toast } from '../store/toast';
 import { applyAccent } from '../components/Layout';
 import { ConfirmBtn, Field } from '../components/ui';
 import { InviteLink, InviteList, useOpenInvites, type InviteScope } from '../components/Invites';
-import { addMember, claimName, releaseName, syncNames, createGroep, newGroepId, createInvite, createSpeltakInGroep, deleteSpeltak, ensureTlIds, findAccount, removeFromTeam, transferTeamleider, type Person, isEmail, linkSpeltak, removeGroupAdmin, removeRootPerson, renameGroep, setGroupAdmin, setTeamleider } from '../store/beheer';
+import { addMember, claimName, releaseName, syncNames, createGroep, newGroepId, createInvite, createSpeltakInGroep, deleteSpeltak, ensureTlIds, findAccount, readAccounts, removeFromTeam, type AccountInfo, transferTeamleider, type Person, isEmail, linkSpeltak, removeGroupAdmin, removeRootPerson, renameGroep, setGroupAdmin, setTeamleider } from '../store/beheer';
 import { DEFAULT_LEIDING_PERMS, isTeamleider, type Admin, type Member, type Groep, type Invite, type Speltak } from '../lib/types';
 import { normSettings } from '../lib/model';
 import { plural } from '../lib/time';
@@ -46,7 +46,7 @@ export default function BeheerPage() {
 
   const head = <div className="row between page-head">
     <div className="brand flex items-center gap-2.5"><TentTree size={26} strokeWidth={1.9} /><span className="brand-txt"><span>Opkomstplanner</span><small>{me.name}</small></span></div>
-    <div className="row" style={{ gap: 6 }}><Link className="btn ghost sm" to="/speltakken"><Users size={14} />Mijn speltakken</Link><button className="btn ghost sm" onClick={() => logout().then(() => nav('/inloggen'))}><LogOut size={14} />Uitloggen</button></div>
+    <div className="row" style={{ gap: 6 }}><Link className="btn ghost sm" to="/speltakken"><Users size={14} />Mijn speltakken</Link><Link className="btn ghost sm" to="/account"><UserRound size={14} />Account</Link><button className="btn ghost sm" onClick={() => logout().then(() => nav('/inloggen'))}><LogOut size={14} />Uitloggen</button></div>
   </div>;
   const wrap = (body: React.ReactNode) => <div className="auth-wrap" style={{ alignItems: 'start' }}><div className="stack beheer" style={{ width: 'min(960px, 100%)', gap: 18 }}>{head}{body}</div></div>;
   if (!R.ready) return wrap(<p className="hint">Laden…</p>);
@@ -324,18 +324,25 @@ function SpeltakRow({ sp, g, me, pool, all }: { sp: Speltak; g: Groep; me: Me; p
 
 /** Leidingoverzicht van de groep: iedereen per speltak, met teamleider, beheerder en verwijderen. */
 function LeidingOverzicht({ sps, g, me }: { sps: Speltak[]; g: Groep; me: Me }) {
+  // Voor- en achternaam uit de accounts (op e-mailadres)
+  const emails = [...new Set(sps.flatMap(sp => Object.values(sp.members).map(m => (m.email || '').toLowerCase())).filter(Boolean))].sort();
+  const [names, setNames] = useState<Record<string, AccountInfo>>({});
+  useEffect(() => { readAccounts(emails).then(setNames).catch(() => {}); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emails.join(',')]);
   const withPeople = sps.filter(sp => Object.keys(sp.members).length);
   if (!withPeople.length) return <p className="hint">Nog geen leiding in deze groep.</p>;
   return <div className="stack leiding" style={{ gap: 12 }}>{withPeople.map(sp => {
     const members = Object.entries(sp.members).sort((a, b) => Number(isTeamleider(sp, b[0])) - Number(isTeamleider(sp, a[0])) || a[1].name.localeCompare(b[1].name, 'nl'));
     return <div key={sp.id} className="stack" style={{ gap: 6 }}>
       <div className="hint" style={{ fontWeight: 700 }}>{sp.name || 'Speltak'} · {plural(members.length, 'lid', 'leden')}</div>
-      {members.map(([uid, m]) => <LeidingRow key={uid} sp={sp} g={g} me={me} uid={uid} m={m} all={sps} />)}
+      {members.map(([uid, m]) => <LeidingRow key={uid} sp={sp} g={g} me={me} uid={uid} m={m} all={sps} full={fullName(names[(m.email || '').toLowerCase()])} />)}
     </div>;
   })}</div>;
 }
 
-function LeidingRow({ sp, g, me, uid, m, all }: { sp: Speltak; g: Groep; me: Me; uid: string; m: Member; all: Speltak[] }) {
+const fullName = (a?: AccountInfo) => a ? [a.firstName, a.lastName].filter(Boolean).join(' ') : '';
+
+function LeidingRow({ sp, g, me, uid, m, all, full }: { sp: Speltak; g: Groep; me: Me; uid: string; m: Member; all: Speltak[]; full: string }) {
   const isTl = isTeamleider(sp, uid);
   const last = isTl && Object.keys(sp.members).filter(u => isTeamleider(sp, u)).length < 2;
   const [mode, setMode] = useState<null | 'off' | 'remove'>(null);
@@ -354,7 +361,8 @@ function LeidingRow({ sp, g, me, uid, m, all }: { sp: Speltak; g: Groep; me: Me;
   };
   return <div className="subrow stack" style={{ gap: 6 }}>
     <div className="row between" style={{ flexWrap: 'wrap', gap: 6 }}>
-      <div style={{ minWidth: 0, flex: '1 1 180px' }}><b>{m.name}{uid === me.uid ? ' (jij)' : ''}</b><div className="hint ell">{m.email}{m.email ? ' · ' : ''}{isTl ? 'Teamleider' : 'Leiding'}</div></div>
+      <div style={{ minWidth: 0, flex: '1 1 180px' }}><b>{m.name}{uid === me.uid ? ' (jij)' : ''}</b>{full && <span className="hint"> · {full}</span>}
+        <div className="hint ell">{m.email ? <a href={`mailto:${m.email}`}>{m.email}</a> : 'e-mailadres onbekend'} · {isTl ? 'Teamleider' : 'Leiding'}</div></div>
       <div className="row" style={{ gap: 4 }}>
         <label className="toggle-inline"><input type="checkbox" checked={isTl} onChange={e => e.target.checked
           ? setTeamleider(sp, uid, true).then(() => toast(`${m.name} is teamleider`)).catch(er => err(er, 'Aanpassen mislukt.'))

@@ -19,8 +19,10 @@ type RolesCtx = {
   ownGroups: Groep[];
   isAdmin: boolean;
   isGroupAdmin: (gid: string | null | undefined) => boolean;
+  /** Voor- en achternaam uit je profiel; null zolang het laadt. */
+  profile: { firstName: string; lastName: string } | null;
 };
-const Ctx = createContext<RolesCtx>({ ready: false, root: null, isRoot: false, groups: [], ownGroups: [], isAdmin: false, isGroupAdmin: () => false });
+const Ctx = createContext<RolesCtx>({ ready: false, root: null, isRoot: false, groups: [], ownGroups: [], isAdmin: false, isGroupAdmin: () => false, profile: null });
 
 export const normGroep = (id: string, d: any): Groep => ({ id, name: d.name || '', admins: d.admins || {}, adminIds: d.adminIds || [], createdAt: d.createdAt || 0, createdBy: d.createdBy || '' });
 
@@ -30,6 +32,12 @@ export function RolesProvider({ children }: { children: ReactNode }) {
   const [rootReady, setRootReady] = useState(false);
   const [groups, setGroups] = useState<Groep[] | null>(null);
   const uid = user?.uid;
+  const [profile, setProfile] = useState<RolesCtx['profile']>(null);
+  useEffect(() => {
+    setProfile(null);
+    if (!uid) return;
+    return onSnapshot(doc(db, 'users', uid), s => { const d = (s.data() || {}) as any; setProfile({ firstName: d.firstName || '', lastName: d.lastName || '' }); }, () => setProfile({ firstName: '', lastName: '' }));
+  }, [uid]);
 
   // Beheer (totaal) volgen; het hoofdaccount maakt het de eerste keer zelf aan.
   useEffect(() => {
@@ -72,6 +80,7 @@ export function RolesProvider({ children }: { children: ReactNode }) {
     ready: !user || (rootReady && groups !== null), root, isRoot, groups: list, ownGroups,
     isAdmin: isRoot || ownGroups.length > 0,
     isGroupAdmin: gid => isRoot || (!!gid && ownGroups.some(g => g.id === gid)),
+    profile,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
