@@ -46,6 +46,7 @@ Regels die de code bewaakt (niet breken):
 - Tijden in minuten; kampdagen mogen tot 26:00 (na middernacht).
 - Rechten: teamleider alles; leiding per recht `plan` (jaarplanning), `build` (opkomsten), `bank` (banken), `settings`. Lezen mag elk lid. UI verbergt/blokkeert, `firestore.rules` dwingt af — bij nieuwe schrijfacties beide bijwerken.
 - Rollen: Beheer (totaal) `beheer/totaal.ids` → Beheer (groep) `groepen/{gid}.adminIds` → Teamleider `speltakken/{sid}.tlIds` (oude speltakken zonder `tlIds`: `members[uid].role`) → Leiding. Hoofdaccount vluiten2907@gmail.com (`ROOT_EMAIL`, ook in de regels). Beheerders lezen speltakken van hun groep alleen-lezen; alleen de groepsbeheerder stelt een extra teamleider aan; een teamleider kan alleen overdragen/aftreden. Nooit de laatste op een niveau weghalen.
+- Namen zijn uniek per groep (`groepen/{gid}/namen/{naam}` → uid); bij uitnodiging accepteren en direct toevoegen vastleggen, Beheer vult aan.
 - Account aanmaken kan alleen via een uitnodiging (`invites/{token}`, `kind` = rol, 30 dagen geldig, openbaar leesbaar: de link is het geheim). Code: `src/store/roles.tsx`, `src/store/beheer.ts`, `src/pages/Beheer.tsx`.
 
 Stijl: Nederlandse UI-teksten, kort en zonder jargon. Ontwerp "v3": Bricolage Grotesque + Hanken Grotesk, harde schaduwen, marine/koper (accent instelbaar). Geen `transition-all`. Moet werken op 390 px breed zonder horizontaal scrollen.

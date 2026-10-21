@@ -188,7 +188,9 @@ with sync_playwright() as p:
     check(pg.locator('text=Anna de Vries (jij)').count() == 1, 'nieuw lid staat in het team')
 
     # --- Greet wordt leiding; Beheer (totaal) maakt haar beheerder en wisselt de teamleider
-    logout_to(ga_link); register('Greet Beheer', 'ga@test.nl')
+    logout_to(ga_link); register('anna de  vries', 'ga@test.nl')
+    check('/uitnodiging/' in pg.url and pg.locator('text=al in gebruik binnen Testgroep').count() == 1, 'naam is uniek binnen de groep')
+    register('Greet Beheer', 'ga@test.nl')
     check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'leiding via uitnodiging → dashboard speltak')
     def login(email, pw):
         logout_to(BASE + '/inloggen'); pg.fill('input[type=email]', email); pg.fill('input[type=password]', pw); pg.click('.btn.primary'); w(1200)

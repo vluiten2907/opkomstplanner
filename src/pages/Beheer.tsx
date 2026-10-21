@@ -9,14 +9,14 @@ import { toast } from '../store/toast';
 import { applyAccent } from '../components/Layout';
 import { ConfirmBtn, Field } from '../components/ui';
 import { InviteLink, InviteList, useOpenInvites, type InviteScope } from '../components/Invites';
-import { addMember, createGroep, newGroepId, createInvite, createSpeltakInGroep, deleteSpeltak, ensureTlIds, findAccount, removeFromTeam, transferTeamleider, type Person, isEmail, linkSpeltak, removeGroupAdmin, removeRootPerson, renameGroep, setGroupAdmin, setTeamleider } from '../store/beheer';
+import { addMember, claimName, releaseName, syncNames, createGroep, newGroepId, createInvite, createSpeltakInGroep, deleteSpeltak, ensureTlIds, findAccount, removeFromTeam, transferTeamleider, type Person, isEmail, linkSpeltak, removeGroupAdmin, removeRootPerson, renameGroep, setGroupAdmin, setTeamleider } from '../store/beheer';
 import { DEFAULT_LEIDING_PERMS, isTeamleider, type Admin, type Member, type Groep, type Invite, type Speltak } from '../lib/types';
 import { normSettings } from '../lib/model';
 import { plural } from '../lib/time';
 
 const normSp = (id: string, d: any): Speltak => ({ id, name: d.name || '', groupName: d.groupName || '', createdAt: d.createdAt || 0, createdBy: d.createdBy || '',
   settings: normSettings(d.settings), members: d.members || {}, memberIds: d.memberIds || [], gid: d.gid || null, tlIds: Array.isArray(d.tlIds) ? d.tlIds : null });
-const err = (e: any, fallback: string) => toast(e?.message === 'last' ? 'Er moet minstens één beheerder overblijven.' : e?.code === 'permission-denied' ? 'Dat mag je niet (of de nieuwe regels staan nog niet in Firebase).' : fallback);
+const err = (e: any, fallback: string) => toast(e?.message === 'last' ? 'Er moet minstens één beheerder overblijven.' : e?.message === 'name-taken' ? 'Er is al iemand met deze naam in de groep. Namen zijn uniek binnen een groep.' : e?.code === 'permission-denied' ? 'Dat mag je niet (of de nieuwe regels staan nog niet in Firebase).' : fallback);
 
 /** Speltakken die je als beheerder mag zien: alles (totaal) of per groep. */
 function useSpeltakken(isRoot: boolean, gids: string[]) {
@@ -193,6 +193,14 @@ function GroupCard({ g, sps, me, canAll }: { g: Groep; sps: Speltak[]; me: Me; c
     sps.forEach(sp => Object.entries(sp.members).forEach(([u, x]) => m.set(u, { uid: u, name: x.name, email: x.email })));
     return [...m.values()].sort((a, b) => a.name.localeCompare(b.name, 'nl'));
   }, [g, sps, me.uid, me.name, me.email]);
+  // Namen zijn uniek binnen de groep: wie al in een speltak zit, krijgt zijn naam vastgelegd.
+  const namesKey = sps.map(sp => Object.entries(sp.members).map(([u, x]) => u + ':' + x.name).sort().join(',')).join('|');
+  useEffect(() => {
+    const people = new Map<string, string>();
+    sps.forEach(sp => Object.entries(sp.members).forEach(([u, x]) => { if (x.name && !people.has(u)) people.set(u, x.name); }));
+    if (people.size) syncNames(g.id, people).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [g.id, namesKey]);
   const saveName = () => { if (name.trim() && name.trim() !== g.name) renameGroep(g, name, sps.map(s => s.id)).then(() => toast('Naam opgeslagen')).catch(e => err(e, 'Opslaan mislukt.')); };
   const addSp = async () => {
     if (!newSp.trim()) { toast('Vul de naam van de speltak in.'); return; }
@@ -217,7 +225,7 @@ function GroupCard({ g, sps, me, canAll }: { g: Groep; sps: Speltak[]; me: Me; c
       : <p className="hint">{sps.length ? 'Een beheerder kies je uit de leiding van deze groep. Er is nog niemand anders om te kiezen.' : 'Een beheerder kies je uit de leiding van deze groep. Maak eerst een speltak en zet er leiding in.'}</p>}
 
     <h3>Speltakken</h3>
-    <div className="team">{sps.map(sp => <SpeltakRow key={sp.id} sp={sp} g={g} me={me} pool={pool} />)}{!sps.length && <p className="hint">Nog geen speltakken.</p>}</div>
+    <div className="team">{sps.map(sp => <SpeltakRow key={sp.id} sp={sp} g={g} me={me} pool={pool} all={sps} />)}{!sps.length && <p className="hint">Nog geen speltakken.</p>}</div>
     <div className="row"><input className="inp" value={newSp} onChange={e => setNewSp(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addSp(); }} placeholder="Naam nieuwe speltak, bijv. Welpen" list="speltaklist-b" style={{ flex: '1 1 220px' }} />
       <datalist id="speltaklist-b">{['Bevers', 'Welpen', 'Scouts', 'Explorers', 'Roverscouts', 'Stam'].map(x => <option key={x} value={x} />)}</datalist>
       <button className="btn" onClick={addSp}><Plus size={16} />Speltak aanmaken</button></div>
@@ -226,6 +234,12 @@ function GroupCard({ g, sps, me, canAll }: { g: Groep; sps: Speltak[]; me: Me; c
     <LeidingOverzicht sps={sps} g={g} me={me} />
     </>}
   </section>;
+}
+
+/** Naam vrijgeven als iemand na het verwijderen in geen enkele speltak van de groep meer zit. */
+function releaseIfGone(g: Groep, all: Speltak[], exceptSid: string, uid: string, name: string) {
+  if (g.adminIds.includes(uid) || all.some(s => s.id !== exceptSid && s.memberIds.includes(uid))) return;
+  releaseName(g.id, uid, name).catch(() => {});
 }
 
 /** Iemand kiezen die al een account heeft: uit de bekende mensen van de groep, of op e-mailadres. */
@@ -256,7 +270,7 @@ function PersonPicker({ pool, exclude, label, button, onPick, children }: { pool
   </div>;
 }
 
-function SpeltakRow({ sp, g, me, pool }: { sp: Speltak; g: Groep; me: Me; pool: Person[] }) {
+function SpeltakRow({ sp, g, me, pool, all }: { sp: Speltak; g: Groep; me: Me; pool: Person[]; all: Speltak[] }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState(''); const [inv, setInv] = useState<Invite | null>(null); const [busy, setBusy] = useState(false);
   const [kind, setKind] = useState<'leiding' | 'teamleider'>('leiding');
@@ -273,10 +287,10 @@ function SpeltakRow({ sp, g, me, pool }: { sp: Speltak; g: Groep; me: Me; pool: 
     setBusy(false);
   };
   const add = (p: Person) => { const role = tl ? addRole : 'teamleider';
-    return addMember(sp, p, role, DEFAULT_LEIDING_PERMS).then(() => toast(`${p.name} is toegevoegd als ${role}`)).catch(e => err(e, e?.message === 'member' ? 'Deze persoon zit al in het team.' : 'Toevoegen mislukt.')); };
+    return claimName(g.id, p.uid, p.name).then(() => addMember(sp, p, role, DEFAULT_LEIDING_PERMS)).then(() => toast(`${p.name} is toegevoegd als ${role}`)).catch(e => err(e, e?.message === 'member' ? 'Deze persoon zit al in het team.' : 'Toevoegen mislukt.')); };
   const remove = async () => {
     setDeleting(true);
-    try { await deleteSpeltak(sp); if (localStorage.getItem('opk.sid') === sp.id) localStorage.removeItem('opk.sid'); toast(`${word} is verwijderd`); }
+    try { await deleteSpeltak(sp); Object.entries(sp.members).forEach(([u, m]) => releaseIfGone(g, all, sp.id, u, m.name)); if (localStorage.getItem('opk.sid') === sp.id) localStorage.removeItem('opk.sid'); toast(`${word} is verwijderd`); }
     catch (e) { err(e, 'Verwijderen mislukt.'); setDeleting(false); }
   };
   return <div className="member">
@@ -316,12 +330,12 @@ function LeidingOverzicht({ sps, g, me }: { sps: Speltak[]; g: Groep; me: Me }) 
     const members = Object.entries(sp.members).sort((a, b) => Number(isTeamleider(sp, b[0])) - Number(isTeamleider(sp, a[0])) || a[1].name.localeCompare(b[1].name, 'nl'));
     return <div key={sp.id} className="stack" style={{ gap: 6 }}>
       <div className="hint" style={{ fontWeight: 700 }}>{sp.name || 'Speltak'} · {plural(members.length, 'lid', 'leden')}</div>
-      {members.map(([uid, m]) => <LeidingRow key={uid} sp={sp} g={g} me={me} uid={uid} m={m} />)}
+      {members.map(([uid, m]) => <LeidingRow key={uid} sp={sp} g={g} me={me} uid={uid} m={m} all={sps} />)}
     </div>;
   })}</div>;
 }
 
-function LeidingRow({ sp, g, me, uid, m }: { sp: Speltak; g: Groep; me: Me; uid: string; m: Member }) {
+function LeidingRow({ sp, g, me, uid, m, all }: { sp: Speltak; g: Groep; me: Me; uid: string; m: Member; all: Speltak[] }) {
   const isTl = isTeamleider(sp, uid);
   const last = isTl && Object.keys(sp.members).filter(u => isTeamleider(sp, u)).length < 2;
   const [mode, setMode] = useState<null | 'off' | 'remove'>(null);
@@ -333,7 +347,7 @@ function LeidingRow({ sp, g, me, uid, m }: { sp: Speltak; g: Groep; me: Me; uid:
     const to = sp.members[next]; if (!to) { toast('Kies wie de nieuwe teamleider wordt.'); return; }
     try {
       if (mode === 'off') await transferTeamleider(sp, uid, next);
-      else await removeFromTeam(sp, uid, { uid: next, name: to.name, email: to.email });
+      else { await removeFromTeam(sp, uid, { uid: next, name: to.name, email: to.email }); releaseIfGone(g, all, sp.id, uid, m.name); }
       toast(mode === 'off' ? `${to.name} is nu teamleider` : `${to.name} is nu teamleider; ${m.name} is uit ${where} gehaald`);
       setMode(null); setNext('');
     } catch (e) { err(e, 'Aanpassen mislukt.'); }
@@ -349,7 +363,7 @@ function LeidingRow({ sp, g, me, uid, m }: { sp: Speltak; g: Groep; me: Me; uid:
           ? setGroupAdmin(g.id, uid, { name: m.name, email: m.email, since: Date.now() }).then(() => toast(`${m.name} is nu beheerder van ${g.name}`))
           : removeGroupAdmin(g, uid).then(() => toast(`${m.name} is geen beheerder meer`))).catch(er => err(er, 'Aanpassen mislukt.'))} />Beheerder</label>
         {last ? <button className="btn sm ghost danger" onClick={() => setMode('remove')}>Verwijderen</button>
-          : <ConfirmBtn className="btn sm ghost danger" label="Verwijderen" confirm="Zeker?" onConfirm={() => removeFromTeam(sp, uid).then(() => toast(`${m.name} is uit ${where} gehaald`)).catch(e => err(e, 'Verwijderen mislukt.'))} />}
+          : <ConfirmBtn className="btn sm ghost danger" label="Verwijderen" confirm="Zeker?" onConfirm={() => removeFromTeam(sp, uid).then(() => releaseIfGone(g, all, sp.id, uid, m.name)).then(() => toast(`${m.name} is uit ${where} gehaald`)).catch(e => err(e, 'Verwijderen mislukt.'))} />}
       </div>
     </div>
     {mode && <div className="banknote stack" style={{ gap: 8 }}>

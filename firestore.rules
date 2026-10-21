@@ -100,6 +100,19 @@ service cloud.firestore {
       );
       allow delete: if isRoot();
 
+      // ---- namen: elke naam maar één keer per groep, zoals een gebruikersnaam ----
+      match /namen/{key} {
+        // vooraf controleren bij het aanmaken van een account (nog niet ingelogd)
+        allow get: if true;
+        allow list: if isAdminOf(gid);
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['uid', 'name'])
+          && request.resource.data.uid is string && request.resource.data.name is string
+          && (request.resource.data.uid == me() || isAdminOf(gid));
+        allow update: if false;
+        allow delete: if isAdminOf(gid) || (signedIn() && resource.data.uid == me());
+      }
+
       // ---- groepsbank: opkomsten die speltakken delen met de hele groep ----
       function lidPath() { return /databases/$(database)/documents/groepen/$(gid)/leden/$(me()); }
       function lidSp() { return get(spPath(get(lidPath()).data.sid)).data; }

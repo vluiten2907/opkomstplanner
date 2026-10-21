@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { TentTree } from 'lucide-react';
 import { useAuth, authError } from '../store/auth';
-import { acceptInvite, readInvite } from '../store/beheer';
+import { acceptInvite, claimName, nameOwner, readInvite } from '../store/beheer';
 import { Field } from '../components/ui';
 import { auth } from '../lib/firebase';
 import { inviteExpired, KIND_LABELS, PERM_LABELS, type Invite } from '../lib/types';
@@ -33,17 +33,24 @@ export default function InvitePage() {
   if (used || expired) return box(<>{intro}<p className="hint" style={{ color: 'var(--danger)', fontWeight: 700 }}>{used ? 'Deze uitnodiging is al gebruikt.' : 'Deze uitnodiging is verlopen. Vraag om een nieuwe.'}</p><Link className="btn" to="/">Naar de start</Link></>);
 
   const accept = async (u: { uid: string; email: string | null; displayName: string | null }, nm?: string) => {
+    // Namen zijn uniek binnen een groep (zoals een gebruikersnaam).
+    if (inv.gid) await claimName(inv.gid, u.uid, nm || u.displayName || '');
     await acceptInvite(inv, { uid: u.uid, name: nm || u.displayName || u.email || 'Leiding', email: u.email || '' });
     if (inv.sid) { localStorage.setItem('opk.sid', inv.sid); nav(`/s/${inv.sid}`, { replace: true }); }
     else nav('/beheer', { replace: true });
   };
-  const joinErr = (e: any) => e?.code === 'permission-denied' ? 'Toetreden lukt niet: de uitnodiging is al gebruikt, ingetrokken of hoort bij een ander e-mailadres.' : authError(e);
+  const taken = `Deze naam is al in gebruik binnen ${inv.groupName || 'de groep'}. Namen zijn uniek binnen een groep; kies een andere, bijvoorbeeld met je speltak erbij.`;
+  const joinErr = (e: any) => e?.code === 'name-taken' ? taken : e?.message === 'name-taken' ? `Je naam is al in gebruik binnen ${inv.groupName || 'de groep'}. Vraag de beheerder van de groep om hulp.` : e?.code === 'permission-denied' ? 'Toetreden lukt niet: de uitnodiging is al gebruikt, ingetrokken of hoort bij een ander e-mailadres.' : authError(e);
 
   if (!user) {
     const submit = async (e: FormEvent) => {
       e.preventDefault(); setErr(''); setBusy(true);
       try {
-        if (mode === 'register') { if (!name.trim()) throw { code: 'name' }; await register(name, inv.email, pw); }
+        if (mode === 'register') {
+          if (!name.trim()) throw { code: 'name' };
+          if (inv.gid && await nameOwner(inv.gid, name).catch(() => null)) throw { code: 'name-taken' };
+          await register(name, inv.email, pw);
+        }
         else await login(inv.email, pw);
         const u = auth.currentUser; if (!u) throw new Error('niet ingelogd');
         await accept(u, mode === 'register' ? name.trim() : undefined);
@@ -51,7 +58,7 @@ export default function InvitePage() {
     };
     return box(<form className="stack" onSubmit={submit}>{intro}
       <Field label="E-mailadres"><input type="email" value={inv.email} readOnly aria-readonly="true" /></Field>
-      {mode === 'register' && <Field label="Je naam" htmlFor="i-name"><input id="i-name" value={name} onChange={e => setName(e.target.value)} placeholder="Zoals de leiding je kent" autoComplete="name" /></Field>}
+      {mode === 'register' && <Field label="Je naam" htmlFor="i-name" hint={`Je naam is je gebruikersnaam binnen ${inv.groupName || 'de groep'}: hij mag er maar één keer voorkomen.`}><input id="i-name" value={name} onChange={e => setName(e.target.value)} placeholder="Zoals de leiding je kent, bijv. Akela" autoComplete="name" /></Field>}
       <Field label={mode === 'register' ? 'Kies een wachtwoord' : 'Wachtwoord'} htmlFor="i-pw"><input id="i-pw" type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete={mode === 'register' ? 'new-password' : 'current-password'} minLength={6} required /></Field>
       {err && <p className="hint" style={{ color: 'var(--danger)', fontWeight: 700 }}>{err}</p>}
       <button className="btn primary" disabled={busy}>{mode === 'register' ? 'Account aanmaken en toetreden' : 'Inloggen en toetreden'}</button>

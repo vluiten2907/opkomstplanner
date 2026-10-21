@@ -202,6 +202,18 @@ await t('groep: inhoud speltak verwijderen', () => assertSucceeds(deleteDoc(doc(
 await t('groep: speltak verwijderen', () => assertSucceeds(deleteDoc(doc(as('ga', 'ga@t.nl'), 'speltakken/s1'))));
 await t('groep: inhoud nog steeds niet bewerken', () => assertFails(setDoc(doc(as('ga', 'ga@t.nl'), 'speltakken/s0/opkomsten/o2'), { title: 'y' })));
 
+/* ---- namen uniek per groep ---- */
+await seed();
+await t('namen: vrij controleren zonder account', () => assertSucceeds(getDoc(doc(anon(), 'groepen/g1/namen/akela'))));
+await t('namen: eigen naam vastleggen', () => assertSucceeds(setDoc(doc(as('x', 'x@t.nl'), 'groepen/g1/namen/akela'), { uid: 'x', name: 'Akela' })));
+await t('namen: bezette naam niet overnemen', () => assertFails(setDoc(doc(as('y', 'y@t.nl'), 'groepen/g1/namen/akela'), { uid: 'y', name: 'Akela' })));
+await t('namen: voor een ander niet (geen beheerder)', () => assertFails(setDoc(doc(as('x', 'x@t.nl'), 'groepen/g1/namen/baloe'), { uid: 'y', name: 'Baloe' })));
+await t('namen: beheerder legt vast voor een ander', () => assertSucceeds(setDoc(doc(as('ga', 'ga@t.nl'), 'groepen/g1/namen/baloe'), { uid: 'y', name: 'Baloe' })));
+await t('namen: andere groep mag dezelfde naam', () => assertSucceeds(setDoc(doc(as('z', 'z@t.nl'), 'groepen/g2/namen/akela'), { uid: 'z', name: 'Akela' })));
+await t('namen: lijst alleen beheerder', async () => { await assertFails(getDocs(collection(as('x', 'x@t.nl'), 'groepen/g1/namen'))); await assertSucceeds(getDocs(collection(as('ga', 'ga@t.nl'), 'groepen/g1/namen'))); });
+await t('namen: ander verwijdert niet', () => assertFails(deleteDoc(doc(as('y', 'y@t.nl'), 'groepen/g1/namen/akela'))));
+await t('namen: beheerder geeft vrij', () => assertSucceeds(deleteDoc(doc(as('ga', 'ga@t.nl'), 'groepen/g1/namen/akela'))));
+
 await env.cleanup();
 console.log(`\n${n - fails}/${n} geslaagd`);
 process.exit(fails ? 1 : 0);

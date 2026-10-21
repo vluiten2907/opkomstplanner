@@ -202,3 +202,33 @@ export async function deleteSpeltak(sp: Speltak) {
   } catch { /* gedeelde opkomsten opruimen is mooi meegenomen */ }
   await deleteDoc(doc(db, 'speltakken', sp.id));
 }
+
+/* ---------- namen: uniek binnen een groep (zoals een gebruikersnaam) ---------- */
+/** Sleutel voor een naam: hoofdletters en extra spaties tellen niet mee. */
+export const nameKey = (n: string) => n.trim().toLowerCase().replace(/\s+/g, ' ').replace(/\//g, '_').replace(/^\.+$/, '_');
+/** Wie heeft deze naam binnen de groep? uid, of null als hij vrij is. */
+export async function nameOwner(gid: string, name: string): Promise<string | null> {
+  const k = nameKey(name); if (!k) return null;
+  const s = await getDoc(doc(db, 'groepen', gid, 'namen', k));
+  return s.exists() ? ((s.data() as any).uid || null) : null;
+}
+/** Naam vastleggen voor uid binnen de groep. Gooit Error('name-taken') als iemand anders hem al heeft. */
+export async function claimName(gid: string, uid: string, name: string) {
+  const k = nameKey(name); if (!k) return;
+  const owner = await nameOwner(gid, name);
+  if (owner === uid) return;
+  if (owner) throw new Error('name-taken');
+  await setDoc(doc(db, 'groepen', gid, 'namen', k), { uid, name: name.trim() });
+}
+/** Naam vrijgeven als hij nog van uid is. */
+export async function releaseName(gid: string, uid: string, name: string) {
+  if (await nameOwner(gid, name) === uid) await deleteDoc(doc(db, 'groepen', gid, 'namen', nameKey(name)));
+}
+/** Namen van de groep aanvullen (beheerder): iedereen die al in een speltak zit, krijgt zijn naam vastgelegd. */
+export async function syncNames(gid: string, people: Map<string, string>) {
+  const s = await getDocs(collection(db, 'groepen', gid, 'namen'));
+  const have = new Set(s.docs.map(d => d.id));
+  const ops: Promise<unknown>[] = [];
+  people.forEach((name, uid) => { const k = nameKey(name); if (k && !have.has(k)) { have.add(k); ops.push(setDoc(doc(db, 'groepen', gid, 'namen', k), { uid, name: name.trim() })); } });
+  await Promise.all(ops.map(p => p.catch(() => {})));
+}
