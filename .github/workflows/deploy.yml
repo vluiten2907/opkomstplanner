@@ -1,0 +1,48 @@
+# Bouwt de app en zet hem via FTP op Strato (conqueston.nl/opkomst) bij elke push naar main.
+# Vereist in GitHub > Settings > Secrets and variables > Actions:
+#   VITE_FB_API_KEY, VITE_FB_AUTH_DOMAIN, VITE_FB_PROJECT_ID, VITE_FB_STORAGE_BUCKET, VITE_FB_SENDER_ID, VITE_FB_APP_ID
+#   STRATO_FTP_SERVER (bijv. ftp.strato.com), STRATO_FTP_USER, STRATO_FTP_PASSWORD
+#   STRATO_DIR: map op de server die bij conqueston.nl/opkomst/ hoort (bijv. /opkomst/ of /conqueston.nl/opkomst/)
+name: Deploy naar Strato
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: npm run build
+        env:
+          VITE_BASE: /opkomst/
+          VITE_FB_API_KEY: ${{ secrets.VITE_FB_API_KEY }}
+          VITE_FB_AUTH_DOMAIN: ${{ secrets.VITE_FB_AUTH_DOMAIN }}
+          VITE_FB_PROJECT_ID: ${{ secrets.VITE_FB_PROJECT_ID }}
+          VITE_FB_STORAGE_BUCKET: ${{ secrets.VITE_FB_STORAGE_BUCKET }}
+          VITE_FB_SENDER_ID: ${{ secrets.VITE_FB_SENDER_ID }}
+          VITE_FB_APP_ID: ${{ secrets.VITE_FB_APP_ID }}
+      - name: Upload naar Strato
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.STRATO_FTP_SERVER }}
+          username: ${{ secrets.STRATO_FTP_USER }}
+          password: ${{ secrets.STRATO_FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ./dist/
+          server-dir: ${{ secrets.STRATO_DIR }}
+          exclude: |
+            **/.git*
+            **/.git*/**

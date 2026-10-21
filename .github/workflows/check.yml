@@ -1,0 +1,17 @@
+# Controleert bij elke pull request of de app nog bouwt.
+name: Check
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx tsc -p tsconfig.app.json --noEmit
+      - run: npm run build
+        env: { VITE_BASE: /opkomst/ }

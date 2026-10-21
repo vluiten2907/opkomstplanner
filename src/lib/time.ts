@@ -1,0 +1,44 @@
+// Tijd en datum: 24-uurs, dd-mm-jjjj, weken van maandag t/m zondag.
+export const pad2 = (n: number) => String(n).padStart(2, '0');
+export const fmtT = (m: number) => pad2(Math.floor((((m % 1440) + 1440) % 1440) / 60)) + ':' + pad2(((m % 60) + 60) % 60);
+export const fmtDur = (d: number) => d < 60 ? d + ' min' : Math.floor(d / 60) + ' u' + (d % 60 ? ' ' + (d % 60) + ' min' : '');
+export const DAYS = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];
+export const MONTHS = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december'];
+export const toISO = (d: Date) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+export const fromISO = (s: string) => new Date(s + 'T12:00:00');
+export const todayISO = () => toISO(new Date());
+export const addDays = (iso: string, n: number) => { const d = fromISO(iso); d.setDate(d.getDate() + n); return toISO(d); };
+export const dayDiff = (a: string, b: string) => Math.round((fromISO(b).getTime() - fromISO(a).getTime()) / 864e5);
+export const fmtNL = (iso: string) => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}-${m}-${y}`; };
+export const wd2 = (iso: string) => DAYS[fromISO(iso).getDay()].slice(0, 2);
+export const mon3 = (iso: string) => MONTHS[fromISO(iso).getMonth()].slice(0, 3);
+export const fmtShort = (iso: string) => `${wd2(iso)} ${fromISO(iso).getDate()} ${mon3(iso)}`;
+export const fmtLong = (iso: string) => { const d = fromISO(iso); return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
+export const cap = (x: string) => x ? x[0].toUpperCase() + x.slice(1) : x;
+export function fmtRange(d: string, end?: string | null, long?: boolean) {
+  if (!end || end === d) return long ? fmtLong(d) : fmtShort(d);
+  const a = fromISO(d), b = fromISO(end), sameM = a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
+  if (long) return `${DAYS[a.getDay()]} ${a.getDate()}${sameM ? '' : ' ' + MONTHS[a.getMonth()]} t/m ${DAYS[b.getDay()]} ${b.getDate()} ${MONTHS[b.getMonth()]} ${b.getFullYear()}`;
+  return `${wd2(d)} ${a.getDate()}${sameM ? '' : ' ' + mon3(d)} – ${wd2(end)} ${b.getDate()} ${mon3(end)}`;
+}
+export function parseNL(s: string): string | null {
+  const m = /^\s*(\d{1,2})[-./ ](\d{1,2})[-./ ](\d{2,4})\s*$/.exec(s || '');
+  if (!m) return null;
+  let y = +m[3]; if (y < 100) y += 2000;
+  const d = new Date(y, +m[2] - 1, +m[1], 12);
+  if (d.getMonth() !== +m[2] - 1 || d.getDate() !== +m[1]) return null;
+  return toISO(d);
+}
+export function isoWeek(iso: string) {
+  const d = fromISO(iso);
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day);
+  const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return Math.ceil(((t.getTime() - y0.getTime()) / 864e5 + 1) / 7);
+}
+export const splitNames = (s: unknown): string[] => Array.isArray(s) ? s.map(x => String(x).trim()).filter(Boolean) : String(s || '').split(/[,;\n]+/).map(x => x.trim()).filter(Boolean);
+export const splitLines = (s: unknown): string[] => String(s || '').split(/\n+/).map(x => x.replace(/^[-•*]\s*/, '').trim()).filter(Boolean);
+export const plural = (n: number, one: string, more: string) => n + ' ' + (n === 1 ? one : more);
+export const uid = () => Date.now().toString(36).slice(-4) + Math.random().toString(36).slice(2, 8);
+export const num = (v: unknown, d: number) => (v === null || v === undefined || v === '' || !Number.isFinite(+(v as any))) ? d : +(v as any);
+export const clone = <T,>(o: T): T => JSON.parse(JSON.stringify(o));
