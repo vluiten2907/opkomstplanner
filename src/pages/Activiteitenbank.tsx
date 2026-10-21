@@ -21,7 +21,7 @@ export default function Activiteitenbank() {
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title={plural(lib.length, 'activiteit', 'activiteiten')}>{edit && <button className="btn primary" onClick={create}><Plus size={16} />Nieuwe activiteit</button>}</PageTitle>
     <div className="toolbar">
-      <input className="inp" type="search" placeholder="Zoek op naam, beschrijving of locatie" value={q} onChange={e => setQ(e.target.value)} />
+      <input className="inp" type="search" placeholder="Zoek op titel, beschrijving of locatie" value={q} onChange={e => setQ(e.target.value)} />
       <div className="catfilter"><Chip on={!cat} onClick={() => setCat('')}>Alle</Chip>{settings.categories.map(c => <Chip key={c.id} on={cat === c.id} onClick={() => setCat(c.id)}><Dot color={c.color} />{c.label}</Chip>)}</div>
     </div>
     <div className="bank">
@@ -46,7 +46,7 @@ function LibEditor({ l, readOnly, onClose, onSave, onDelete }: { l: Lib; readOnl
   if (!durs.includes(l.dur)) durs.push(l.dur);
   return <div className="pad stack">
     <div className="row between" style={{ alignItems: 'flex-start' }}><span className="eyebrow">Activiteit</span><button className="closex" onClick={onClose} aria-label="Sluiten"><X size={18} /></button></div>
-    <Field label="Naam" htmlFor="lf-title"><input id="lf-title" value={l.title} readOnly={readOnly} onChange={e => upd(() => { l.title = e.target.value; })} placeholder="bijv. Levend Stratego" /></Field>
+    <Field label="Titel van de activiteit" htmlFor="lf-title"><input id="lf-title" value={l.title} readOnly={readOnly} onChange={e => upd(() => { l.title = e.target.value; })} placeholder="bijv. Levend Stratego" /></Field>
     <div className="two"><Field label="Duur" htmlFor="lf-dur"><select id="lf-dur" value={l.dur} disabled={readOnly} onChange={e => upd(() => { l.dur = +e.target.value; })}>{durs.sort((a, b) => a - b).map(d => <option key={d} value={d}>{fmtDur(d)}</option>)}</select></Field>
       <Field label="Minimaal aantal leiding" htmlFor="lf-min"><input id="lf-min" type="number" min={1} max={30} readOnly={readOnly} value={l.minLeaders} onChange={e => upd(() => { l.minLeaders = Math.max(1, Math.min(30, parseInt(e.target.value, 10) || 1)); })} /></Field></div>
     <CatSelect prefix="lf" value={l.cat} onChange={id => upd(() => { l.cat = id; })} />

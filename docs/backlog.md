@@ -18,7 +18,7 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 
 - 2026-10-21 — Menubalk op telefoons (o.a. Samsung, 344–412 px): alle zes menu-items in beeld in twee rijen met korte namen, accountknop naast het logo, balk lager en over de volle breedte. Desktop ongewijzigd.
 - 2026-10-21 — Leiding die je met de hand bij een onderdeel invult, telt nu mee als aanwezige leiding (bouwer, leiding indelen, dashboard, pdf) en is te kiezen als eindverantwoordelijke.
-- 2026-10-21 — "Naam" heet nu "Opkomst titel" bij Leiding indelen, in de opkomstbouwer en in de opkomstenbank.
+- 2026-10-21 — "Naam" heet nu "Opkomst titel" bij Leiding indelen, in de opkomstbouwer en in de opkomstenbank; in de activiteitenbank "Titel van de activiteit".
 - 2026-10-21 — Kleinere bundel: jsPDF pas bij "PDF maken", pagina's los geladen, Firebase/React in eigen (cachebare) bestanden. Startbundel 1083 kB → ~630 kB (339 → ~200 kB gzip).
 - 2026-10-21 — React + Firebase-versie met speltakken, teamleider/leiding-rechten en uitnodigingslinks.
 - 2026-10-21 — Inplannen vanuit de bouwer houdt leiding; naar de opkomstenbank zonder namen.
