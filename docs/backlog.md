@@ -6,7 +6,7 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 
 _(niets)_
 
-- **Uitnodiging per e-mail laten versturen** — gekozen (2026-10-21): PHP-script op Strato (`public/api/uitnodiging-mail.php`) verstuurt via een Strato-mailbox. Script en deploy staan klaar; koppelen aan de knop in de app na *Rollenstructuur*. Vincent: PHP in Strato-pakket controleren, mailbox aanmaken, secrets `MAIL_USER` en `MAIL_PASSWORD` zetten.
+- **Uitnodiging per e-mail laten versturen** — gekozen (2026-10-21): PHP-script op Strato (`public/api/uitnodiging-mail.php`) verstuurt via een Strato-mailbox. Script, deploy-stap en knop "Mail versturen" (valt terug op eigen mail zolang er geen mailserver is) staan klaar. Vincent: PHP in Strato-pakket controleren, mailbox aanmaken, secrets `MAIL_USER` en `MAIL_PASSWORD` zetten.
 
 ## Open
 

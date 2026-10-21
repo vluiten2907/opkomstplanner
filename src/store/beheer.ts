@@ -3,7 +3,7 @@
  * firestore.rules dwingt dezelfde regels af; de UI verbergt wat je niet mag.
  */
 import { arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
 import { defaultSettings } from '../lib/model';
 import { ALL_PERMS, INVITE_DAYS, NO_PERMS, normInvite, normPerms, type Admin, type Groep, type Invite, type InviteKind, type Member, type Perms, type Speltak } from '../lib/types';
 import { uid as mkId } from '../lib/time';
@@ -16,6 +16,21 @@ export function newToken() {
   return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
 }
 export const inviteUrl = (id: string) => `${location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/uitnodiging/${id}`;
+/** Laat de server (public/api/uitnodiging-mail.php op Strato) de uitnodiging mailen.
+ *  'niet-ingesteld' als er (nog) geen mailserver is; dan valt de app terug op de eigen mail. */
+export async function sendInviteMail(id: string): Promise<'ok' | 'niet-ingesteld' | string> {
+  const u = auth.currentUser;
+  if (!u) return 'Je bent niet ingelogd.';
+  let r: Response;
+  try {
+    r = await fetch(`${import.meta.env.BASE_URL}api/uitnodiging-mail.php`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await u.getIdToken()}` }, body: JSON.stringify({ token: id }),
+    });
+  } catch { return 'niet-ingesteld'; }
+  const data = await r.json().catch(() => null);
+  if (!data || r.status === 503 || r.status === 404 && !data.fout) return 'niet-ingesteld';
+  return r.ok && data.ok ? 'ok' : (data.fout || 'Versturen mislukt.');
+}
 export const isEmail = (s: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s.trim());
 
 /* ---------- uitnodigingen ---------- */

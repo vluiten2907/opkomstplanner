@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { Check, Copy, Mail, X } from 'lucide-react';
+import { Check, Copy, Mail, Send, X } from 'lucide-react';
 import { db } from '../lib/firebase';
-import { inviteUrl, revokeInvite } from '../store/beheer';
+import { inviteUrl, revokeInvite, sendInviteMail } from '../store/beheer';
 import { toast } from '../store/toast';
 import { ConfirmBtn } from './ui';
 import { inviteExpired, KIND_LABELS, normInvite, type Invite } from '../lib/types';
@@ -59,10 +59,17 @@ export function InviteList({ invites, showWhere = true }: { invites: Invite[]; s
 /** Net gemaakte uitnodiging: link tonen met kopiëren en mailen. */
 export function InviteLink({ inv, fromName, onClose }: { inv: Invite; fromName: string; onClose?: () => void }) {
   const [copied, setCopied] = useState(false);
+  const [mail, setMail] = useState<'' | 'bezig' | 'verstuurd' | 'uit'>('');
   const url = inviteUrl(inv.id);
   const what = `${KIND_LABELS[inv.kind]} voor ${where_(inv)}`;
   const mailto = `mailto:${inv.email}?subject=${encodeURIComponent('Uitnodiging Opkomstplanner: ' + what)}&body=${encodeURIComponent(`Hoi,\n\n${fromName || 'Ik'} nodigt je uit voor de Opkomstplanner als ${what}.\n\nOpen deze link en maak een account aan met dit e-mailadres (${inv.email}):\n${url}\n\nDe link is ${30} dagen geldig.\n\nGroet,\n${fromName}`)}`;
-  return <div className="banknote"><span>Uitnodiging als <b>{KIND_LABELS[inv.kind]}</b> voor <b>{inv.email}</b>. Stuur deze link door; hij werkt alleen voor dat e-mailadres en is 30 dagen geldig.</span>
+  return <div className="banknote"><span>Uitnodiging als <b>{KIND_LABELS[inv.kind]}</b> voor <b>{inv.email}</b>. Verstuur de mail of stuur de link zelf door; hij werkt alleen voor dat e-mailadres en is 30 dagen geldig.</span>
     <code className="mono-code">{url}</code>
-    <div className="row"><button className="btn sm" onClick={async () => setCopied(await copyText(url))}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? 'Gekopieerd' : 'Kopiëren'}</button><a className="btn sm" href={mailto}><Mail size={14} />Mailen</a>{onClose && <button className="btn sm ghost" onClick={onClose}>Sluiten</button>}</div></div>;
+    <div className="row"><button className="btn sm" onClick={async () => setCopied(await copyText(url))}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? 'Gekopieerd' : 'Kopiëren'}</button>{mail !== 'uit' && <button className="btn sm primary" disabled={mail === 'bezig' || mail === 'verstuurd'} onClick={async () => {
+      setMail('bezig');
+      const r = await sendInviteMail(inv.id);
+      if (r === 'ok') { setMail('verstuurd'); toast(`Uitnodiging gemaild naar ${inv.email}`); }
+      else if (r === 'niet-ingesteld') { setMail('uit'); toast('Automatisch mailen staat nog uit; gebruik je eigen mail.'); }
+      else { setMail(''); toast(r); }
+    }}>{mail === 'verstuurd' ? <Check size={14} /> : <Send size={14} />}{mail === 'verstuurd' ? 'Gemaild' : mail === 'bezig' ? 'Versturen…' : 'Mail versturen'}</button>}<a className="btn sm" href={mailto}><Mail size={14} />Eigen mail</a>{onClose && <button className="btn sm ghost" onClick={onClose}>Sluiten</button>}</div></div>;
 }

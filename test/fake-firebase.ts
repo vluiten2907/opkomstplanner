@@ -21,7 +21,7 @@ const users: Record<string, U> = load(LS_AUTH + '.users', {});
 if (!Object.values(users).some(u => u.email === 'vluiten2907@gmail.com')) users.uroot = { uid: 'uroot', email: 'vluiten2907@gmail.com', displayName: 'Beheer (demo)', pw: 'demo123' };
 let current: U | null = load(LS_AUTH + '.current', null);
 const authListeners = new Set<(u: any) => void>();
-const pub = (u: U | null) => u ? { uid: u.uid, email: u.email, displayName: u.displayName } : null;
+const pub = (u: U | null) => u ? { uid: u.uid, email: u.email, displayName: u.displayName, getIdToken: async () => 'demo-token' } : null;
 const saveAuth = () => { localStorage.setItem(LS_AUTH + '.users', JSON.stringify(users)); localStorage.setItem(LS_AUTH + '.current', JSON.stringify(current)); authListeners.forEach(l => l(pub(current))); };
 const err = (code: string) => Object.assign(new Error(code), { code });
 export function getAuth() { return { get currentUser() { return pub(current); } }; }

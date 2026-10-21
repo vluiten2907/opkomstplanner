@@ -47,6 +47,8 @@ $f = $doc['fields'];
 $veld = fn(string $k) => $f[$k]['stringValue'] ?? null;
 if ($veld('invitedBy') !== $uid) antwoord(403, ['fout' => 'Alleen wie uitnodigt kan de mail versturen']);
 if (isset($f['usedBy']['stringValue'])) antwoord(409, ['fout' => 'Uitnodiging is al gebruikt']);
+$verloopt = (float)($f['expiresAt']['integerValue'] ?? $f['expiresAt']['doubleValue'] ?? 0);
+if ($verloopt <= microtime(true) * 1000) antwoord(410, ['fout' => 'Uitnodiging is verlopen']);
 $aan = (string)$veld('email');
 if (!filter_var($aan, FILTER_VALIDATE_EMAIL)) antwoord(400, ['fout' => 'Geen geldig e-mailadres']);
 
@@ -59,11 +61,17 @@ if (($teller[$token] ?? 0) >= 3) { flock($fh, LOCK_UN); antwoord(429, ['fout' =>
 
 // 4. Mail opbouwen
 $wie = trim((string)$veld('invitedByName')) ?: 'Een teamleider';
-$waar = implode(' · ', array_filter([(string)$veld('groupName'), (string)$veld('speltakName')]));
+$soort = (string)$veld('kind');
+$rol = ['totaal' => 'Beheer (totaal)', 'groep' => 'Beheer (groep)', 'teamleider' => 'Teamleider', 'leiding' => 'Leiding'][$soort] ?? 'Leiding';
+$waar = $soort === 'totaal' ? 'de hele planner' : ($soort === 'groep' ? (string)$veld('groupName')
+  : implode(' · ', array_filter([(string)$veld('groupName'), (string)$veld('speltakName')])));
+$dagen = max(1, (int)ceil(($verloopt / 1000 - time()) / 86400));
 $link = rtrim($cfg['app_url'], '/') . '/uitnodiging/' . $token;
-$onderwerp = 'Uitnodiging Opkomstplanner' . ($waar ? ' ' . $waar : '');
-$tekst = "Hoi,\r\n\r\n$wie nodigt je uit voor de Opkomstplanner" . ($waar ? " van $waar" : '') . ".\r\n\r\n"
+$wat = $rol . ($waar ? " voor $waar" : '');
+$onderwerp = 'Uitnodiging Opkomstplanner: ' . $wat;
+$tekst = "Hoi,\r\n\r\n$wie nodigt je uit voor de Opkomstplanner als $wat.\r\n\r\n"
   . "Open deze link en maak een account aan met dit e-mailadres ($aan):\r\n$link\r\n\r\n"
+  . "De link is nog $dagen " . ($dagen === 1 ? 'dag' : 'dagen') . " geldig.\r\n\r\n"
   . "Groet,\r\n$wie\r\n\r\n--\r\nDeze mail is verstuurd vanuit de Opkomstplanner. Niet verwacht? Dan kun je hem negeren.\r\n";
 
 try { smtp_stuur($cfg, $aan, $onderwerp, $tekst, $wie); }

@@ -103,6 +103,15 @@ with sync_playwright() as p:
     link = pg.locator('.mono-code').inner_text()
     check('/uitnodiging/' in link, 'uitnodigingslink gemaakt')
     check(pg.locator('.invrow:has-text("anna@test.nl")').count() == 1, 'teamleider ziet openstaande uitnodiging')
+    # uitnodiging mailen: zonder mailserver valt de knop terug op de eigen mail; met server meldt hij "Gemaild"
+    seen = {}
+    def mail_ok(route):
+        seen['auth'] = route.request.headers.get('authorization', ''); seen['body'] = route.request.post_data or ''
+        route.fulfill(status=200, content_type='application/json', body='{"ok":true,"aan":"anna@test.nl"}')
+    pg.route('**/api/uitnodiging-mail.php', mail_ok)
+    pg.click('button:has-text("Mail versturen")'); w(500)
+    check(pg.locator('button:has-text("Gemaild")').count() == 1 and seen.get('auth', '').startswith('Bearer ') and link.rsplit('/', 1)[-1] in seen.get('body', ''), 'uitnodiging mailen via de server')
+    pg.unroute('**/api/uitnodiging-mail.php')
     for n in ['Bram', 'Carla']:
         pg.fill('input[placeholder="Naam"]', n); pg.locator('input[placeholder="Naam"]').press('Enter'); w(300)
     shot('02-instellingen')
