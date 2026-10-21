@@ -865,13 +865,21 @@ body { padding-top: env(safe-area-inset-top, 0px); }
 }
 
 /* ---- beheer en uitnodigingen ---- */
-.invlist { display: grid; gap: 8px; }
+.invlist { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); min-width: 0; }
 .invrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--sunk); border-radius: 12px; padding: 10px 12px; flex-wrap: wrap; }
 .invrow > div:first-child { flex: 1 1 200px; }
 .ell { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toggle-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
 .groupcard h3 { margin: 6px 0 0; }
 .groupcard .grow { flex: 1 1 240px; }
+.gc-head { all: unset; box-sizing: border-box; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; width: 100%; cursor: pointer; min-width: 0; }
+.gc-head b { font-size: 1.15rem; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.gc-head .hint { margin-left: auto; }
+.groupcard select { min-width: 0; max-width: 100%; }
+.groupcard > * { min-width: 0; }
+.gc-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.gc-chev { flex: 0 0 auto; transition: transform .15s; }
+.groupcard.open .gc-chev { transform: rotate(90deg); }
 .subrow { padding: 8px 0; border-top: 1px dashed var(--line); }
 .adminnote { margin-top: 12px; }
 .page-head > * { flex: 0 0 auto; }

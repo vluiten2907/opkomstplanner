@@ -10,7 +10,8 @@ import { download, slugify } from '../lib/export';
 import { fmtNL, fmtT, plural, todayISO, uid, DAYS, MONTHS } from '../lib/time';
 import { ACCENTS, normLib, normOpk, normPlan, normSettings, prepLabel, PREP_OPTS, SPELTAKKEN, SWATCHES, type Settings } from '../lib/model';
 import { ALL_PERMS, DEFAULT_LEIDING_PERMS, PERM_HELP, PERM_LABELS, isTeamleider, type Invite, type Member, type PermKey, type Perms } from '../lib/types';
-import { ensureTlIds, isEmail, setTeamleider, stepDownTeamleider, transferTeamleider } from '../store/beheer';
+import { ensureTlIds, isEmail, removeGroupAdmin, setGroupAdmin, setTeamleider, stepDownTeamleider, transferTeamleider } from '../store/beheer';
+import { useRoles } from '../store/roles';
 import { InviteLink, InviteList, useOpenInvites } from '../components/Invites';
 
 /** Tekstveld dat pas na een korte pauze opslaat (voorkomt een schrijfactie per toetsaanslag). */
@@ -173,7 +174,16 @@ function Team() {
   const [email, setEmail] = useState(''); const [kind, setKind] = useState<'leiding' | 'teamleider' | 'transfer'>('leiding'); const [perms, setPerms] = useState<Perms>(DEFAULT_LEIDING_PERMS);
   const [inv, setInv] = useState<Invite | null>(null); const [busy, setBusy] = useState(false);
   const open = useOpenInvites(manage && sp ? [{ sid: sp.id }] : []);
+  const roles = useRoles();
   if (!sp) return null;
+  // Beheerder van de groep aanzetten bij een bestaand lid (alleen voor beheerders, en alleen als de speltak in een groep zit)
+  const grp = isAdmin && sp.gid ? roles.groups.find(x => x.id === sp.gid) || null : null;
+  const toggleAdmin = (u: string, m: Member, on: boolean) => {
+    if (!grp) return;
+    (on ? setGroupAdmin(grp.id, u, { name: m.name, email: m.email, since: Date.now() }) : removeGroupAdmin(grp, u))
+      .then(() => toast(on ? `${m.name} is nu beheerder van ${grp.name}` : `${m.name} is geen beheerder meer`))
+      .catch(e => toast(e?.message === 'last' ? 'Er moet minstens één beheerder overblijven.' : 'Aanpassen mislukt.'));
+  };
   const tl = (u: string) => isTeamleider(sp, u);
   const members = Object.entries(sp.members).sort((a, b) => Number(tl(b[0])) - Number(tl(a[0])) || a[1].name.localeCompare(b[1].name, 'nl'));
   const tlCount = members.filter(([u]) => tl(u)).length;
@@ -197,6 +207,8 @@ function Team() {
         onTransfer={() => transferTeamleider(sp, user!.uid, uidX).then(() => toast(`${m.name} is nu teamleider`)).catch(fail)}
         onStepDown={() => stepDownTeamleider(sp, uidX).then(() => toast('Je bent nu leiding')).catch(fail)}
         onPerm={(k, v) => setMember(uidX, { perms: { ...m.perms, [k]: v } }).catch(fail)}
+        groupAdmin={grp ? grp.adminIds.includes(uidX) : null} groupName={grp?.name || ''} noGroup={isAdmin && !sp.gid}
+        onGroupAdmin={on => toggleAdmin(uidX, m, on)}
         onRemove={() => removeMember(uidX).then(() => toast(`${m.name} uit het team gehaald`)).catch(fail)} />)}
       {!members.length && <p className="hint">Nog niemand in het team. Nodig hieronder de teamleider uit.</p>}
     </div>
@@ -216,8 +228,9 @@ function Team() {
   </section>;
 }
 
-function MemberRow({ m, isTl, me, iAmTL, isAdmin, lastTL, onTeamleider, onTransfer, onStepDown, onPerm, onRemove }: {
+function MemberRow({ m, isTl, me, iAmTL, isAdmin, lastTL, groupAdmin, groupName, noGroup, onGroupAdmin, onTeamleider, onTransfer, onStepDown, onPerm, onRemove }: {
   m: Member; isTl: boolean; me: boolean; iAmTL: boolean; isAdmin: boolean; lastTL: boolean;
+  groupAdmin: boolean | null; groupName: string; noGroup: boolean; onGroupAdmin: (on: boolean) => void;
   onTeamleider: (on: boolean) => void; onTransfer: () => void; onStepDown: () => void; onPerm: (k: PermKey, v: boolean) => void; onRemove: () => void }) {
   const [open, setOpen] = useState(false);
   const manage = iAmTL || isAdmin;
@@ -227,13 +240,15 @@ function MemberRow({ m, isTl, me, iAmTL, isAdmin, lastTL, onTeamleider, onTransf
   const canRemove = !me && !lastTL && (isAdmin || (iAmTL && !isTl));
   return <div className="member">
     <div className="row between" style={{ flexWrap: 'nowrap' }}>
-      <div className="row" style={{ flexWrap: 'nowrap', minWidth: 0 }}><span className="avatar">{initials}</span><div style={{ minWidth: 0 }}><b>{m.name}{me ? ' (jij)' : ''}</b><div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}{m.email ? ' · ' : ''}{isTl ? 'Teamleider' : 'Leiding'} · {summary}</div></div></div>
+      <div className="row" style={{ flexWrap: 'nowrap', minWidth: 0 }}><span className="avatar">{initials}</span><div style={{ minWidth: 0 }}><b>{m.name}{me ? ' (jij)' : ''}</b><div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}{m.email ? ' · ' : ''}{isTl ? 'Teamleider' : 'Leiding'}{groupAdmin ? ' · beheerder' : ''} · {summary}</div></div></div>
       {manage && <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
         <button className="btn sm ghost" onClick={() => setOpen(o => !o)}>{open ? 'Sluiten' : 'Rechten'}</button>
         {canRemove && <ConfirmBtn className="iconbtn danger" label={<Trash2 size={15} />} confirm="Zeker?" title="Uit het team halen" onConfirm={onRemove} />}
       </div>}
     </div>
     {open && manage && <div className="stack" style={{ gap: 10, paddingTop: 10 }}>
+      {groupAdmin !== null && <label className="toggle"><input type="checkbox" checked={groupAdmin} onChange={e => onGroupAdmin(e.target.checked)} /><span><b>Beheerder van {groupName}</b><br /><span className="hint">Ziet alle speltakken van de groep, stelt teamleiders aan en nodigt ze uit.</span></span></label>}
+      {noGroup && <p className="hint">Deze speltak hangt nog niet onder een groep. Koppel hem eerst op de Beheer-pagina; daarna kun je hier beheerders aanzetten.</p>}
       {isAdmin && <div className="seg"><Chip on={!isTl} disabled={lastTL} title={lastTL ? 'Er moet minstens één teamleider blijven' : undefined} onClick={() => onTeamleider(false)}>Leiding</Chip><Chip on={isTl} onClick={() => onTeamleider(true)}>Teamleider</Chip></div>}
       {!isAdmin && iAmTL && !isTl && <div className="row"><ConfirmBtn className="btn sm" label="Teamleiderschap aan deze persoon overdragen" confirm="Klik nogmaals: overdragen (jij wordt leiding)" onConfirm={onTransfer} /></div>}
       {iAmTL && me && isTl && <div className="row">{lastTL ? <span className="hint">Je bent de enige teamleider. Draag je rol eerst over aan iemand anders.</span> : <ConfirmBtn className="btn sm" label="Aftreden als teamleider" confirm="Klik nogmaals: aftreden (je blijft leiding)" onConfirm={onStepDown} />}</div>}

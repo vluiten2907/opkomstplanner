@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { TentTree, LogOut, Plus, ShieldCheck, Users, UserPlus, ExternalLink, Link2 } from 'lucide-react';
+import { TentTree, LogOut, Plus, ShieldCheck, Users, UserPlus, ExternalLink, Link2, ChevronRight } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../store/auth';
 import { useRoles } from '../store/roles';
@@ -10,7 +10,7 @@ import { applyAccent } from '../components/Layout';
 import { ConfirmBtn, Field } from '../components/ui';
 import { InviteLink, InviteList, useOpenInvites, type InviteScope } from '../components/Invites';
 import { createGroep, createInvite, createSpeltakInGroep, ensureTlIds, isEmail, linkSpeltak, removeGroupAdmin, removeRootPerson, renameGroep, setGroupAdmin, setTeamleider } from '../store/beheer';
-import { isTeamleider, type Admin, type Groep, type Invite, type Speltak } from '../lib/types';
+import { DEFAULT_LEIDING_PERMS, isTeamleider, type Admin, type Groep, type Invite, type Speltak } from '../lib/types';
 import { normSettings } from '../lib/model';
 import { plural } from '../lib/time';
 
@@ -174,8 +174,23 @@ const teamleiders = (sp: Speltak) => Object.entries(sp.members).filter(([u]) => 
 function GroupCard({ g, sps, me, canAll }: { g: Groep; sps: Speltak[]; me: Me; canAll: boolean }) {
   const [name, setName] = useState(g.name); useEffect(() => setName(g.name), [g.name]);
   const [email, setEmail] = useState(''); const [transfer, setTransfer] = useState(false); const [inv, setInv] = useState<Invite | null>(null); const [busy, setBusy] = useState(false);
-  const [newSp, setNewSp] = useState('');
+  const [newSp, setNewSp] = useState(''); const [pick, setPick] = useState('');
+  // Standaard ingeklapt; per groep onthouden in deze browser.
+  const openKey = 'opk.groep.open.' + g.id;
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(openKey) === '1'; } catch { return false; } });
+  const toggle = () => setOpen(o => { try { localStorage.setItem(openKey, o ? '0' : '1'); } catch { /* geen opslag */ } return !o; });
   const mine = g.adminIds.includes(me.uid);
+  // Bestaande mensen die beheerder kunnen worden: teamleiders en leiding van de speltakken in deze groep, en (Beheer totaal) jijzelf.
+  const cands = new Map<string, Admin & { tl: boolean }>();
+  if (canAll && !mine) cands.set(me.uid, { name: me.name, email: me.email, since: 0, tl: false });
+  sps.forEach(sp => Object.entries(sp.members).forEach(([u, m]) => {
+    if (g.adminIds.includes(u)) return;
+    const tl = isTeamleider(sp, u) || !!cands.get(u)?.tl;
+    cands.set(u, { name: m.name, email: m.email, since: 0, tl });
+  }));
+  const candList = [...cands.entries()].sort((a, b) => Number(b[0] === me.uid) - Number(a[0] === me.uid) || Number(b[1].tl) - Number(a[1].tl) || a[1].name.localeCompare(b[1].name, 'nl'));
+  const appoint = () => { const c = cands.get(pick); if (!c) return;
+    setGroupAdmin(g.id, pick, { name: c.name, email: c.email, since: Date.now() }).then(() => { toast(`${pick === me.uid ? 'Je bent' : c.name + ' is'} nu beheerder van ${g.name}`); setPick(''); }).catch(e => err(e, 'Aanstellen mislukt.')); };
   const admins = Object.entries(g.admins).filter(([u]) => g.adminIds.includes(u));
   const saveName = () => { if (name.trim() && name.trim() !== g.name) renameGroep(g, name, sps.map(s => s.id)).then(() => toast('Naam opgeslagen')).catch(e => err(e, 'Opslaan mislukt.')); };
   const send = async () => {
@@ -189,11 +204,14 @@ function GroupCard({ g, sps, me, canAll }: { g: Groep; sps: Speltak[]; me: Me; c
     if (!newSp.trim()) { toast('Vul de naam van de speltak in.'); return; }
     try { await createSpeltakInGroep(g, newSp, me); setNewSp(''); toast('Speltak aangemaakt; nodig nu de teamleider uit.'); } catch (e) { err(e, 'Aanmaken mislukt.'); }
   };
-  return <section className="card pad stack groupcard">
-    <div className="row between" style={{ alignItems: 'end' }}>
-      <Field label="Groep" htmlFor={'g-' + g.id} className="grow"><input id={'g-' + g.id} value={name} onChange={e => setName(e.target.value)} onBlur={saveName} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} /></Field>
-      <span className="hint">{plural(sps.length, 'speltak', 'speltakken')}</span>
-    </div>
+  return <section className={'card pad stack groupcard' + (open ? ' open' : '')}>
+    <button type="button" className="gc-head" aria-expanded={open} onClick={toggle}>
+      <ChevronRight size={18} className="gc-chev" />
+      <b className="ell">{g.name || 'Groep zonder naam'}</b>
+      <span className="hint">{plural(sps.length, 'speltak', 'speltakken')}{mine ? ' · jij bent beheerder' : ''}</span>
+    </button>
+    {open && <>
+    <Field label="Naam van de groep" htmlFor={'g-' + g.id}><input id={'g-' + g.id} value={name} onChange={e => setName(e.target.value)} onBlur={saveName} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} /></Field>
 
     <h3>Beheerders</h3>
     <PeopleList people={admins} me={me.uid} canRemove={uid => canAll || mine || uid === me.uid}
@@ -203,25 +221,32 @@ function GroupCard({ g, sps, me, canAll }: { g: Groep; sps: Speltak[]; me: Me; c
       <button className="btn" disabled={busy} onClick={send}><UserPlus size={16} />{admins.length ? 'Mede-beheerder uitnodigen' : 'Beheerder uitnodigen'}</button></div>
     {transfer && mine && <p className="hint">Je blijft beheerder tot de ander de uitnodiging accepteert. Daarna tik je bij jezelf op Aftreden.</p>}
     {inv && <InviteLink inv={inv} fromName={me.name} onClose={() => setInv(null)} />}
+    {candList.length > 0 && <div className="row"><select value={pick} onChange={e => setPick(e.target.value)} aria-label="Bestaande persoon kiezen" style={{ flex: '1 1 220px' }}>
+        <option value="">Of kies iemand die al een account heeft…</option>
+        {candList.map(([u, c]) => <option key={u} value={u}>{u === me.uid ? `Mijzelf (${c.name})` : `${c.name}${c.tl ? ' · teamleider' : ''}`}</option>)}
+      </select><button className="btn" disabled={!pick} onClick={appoint}><ShieldCheck size={16} />Beheerder maken</button></div>}
 
     <h3>Speltakken</h3>
     <div className="team">{sps.map(sp => <SpeltakRow key={sp.id} sp={sp} g={g} me={me} />)}{!sps.length && <p className="hint">Nog geen speltakken.</p>}</div>
     <div className="row"><input className="inp" value={newSp} onChange={e => setNewSp(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addSp(); }} placeholder="Naam nieuwe speltak, bijv. Welpen" list="speltaklist-b" style={{ flex: '1 1 220px' }} />
       <datalist id="speltaklist-b">{['Bevers', 'Welpen', 'Scouts', 'Explorers', 'Roverscouts', 'Stam'].map(x => <option key={x} value={x} />)}</datalist>
       <button className="btn" onClick={addSp}><Plus size={16} />Speltak aanmaken</button></div>
+    </>}
   </section>;
 }
 
 function SpeltakRow({ sp, g, me }: { sp: Speltak; g: Groep; me: Me }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState(''); const [inv, setInv] = useState<Invite | null>(null); const [busy, setBusy] = useState(false);
+  const [kind, setKind] = useState<'leiding' | 'teamleider'>('leiding');
   const members = Object.entries(sp.members).sort((a, b) => Number(isTeamleider(sp, b[0])) - Number(isTeamleider(sp, a[0])) || a[1].name.localeCompare(b[1].name, 'nl'));
   const tl = teamleiders(sp);
   const send = async () => {
     if (!isEmail(email)) { toast('Vul een geldig e-mailadres in.'); return; }
     if (members.some(([, m]) => m.email === email.trim().toLowerCase())) { toast('Deze persoon zit al in het team; maak hem hieronder teamleider.'); return; }
     setBusy(true);
-    try { await ensureTlIds(sp); setInv(await createInvite({ kind: 'teamleider', email, gid: g.id, groupName: g.name, sid: sp.id, speltakName: sp.name }, me)); setEmail(''); } catch (e) { err(e, 'Uitnodiging maken mislukt.'); }
+    const k = tl ? kind : 'teamleider';
+    try { if (k === 'teamleider') await ensureTlIds(sp); setInv(await createInvite({ kind: k, email, gid: g.id, groupName: g.name, sid: sp.id, speltakName: sp.name, perms: DEFAULT_LEIDING_PERMS }, me)); setEmail(''); } catch (e) { err(e, 'Uitnodiging maken mislukt.'); }
     setBusy(false);
   };
   return <div className="member">
@@ -238,12 +263,19 @@ function SpeltakRow({ sp, g, me }: { sp: Speltak; g: Groep; me: Me }) {
         <div className="row" style={{ gap: 4 }}>
           {isTl ? !lastTl && <button className="btn sm ghost" onClick={() => setTeamleider(sp, uid, false).catch(e => err(e, 'Aanpassen mislukt.'))}>Maak leiding</button>
             : <button className="btn sm ghost" onClick={() => setTeamleider(sp, uid, true).then(() => toast(`${m.name} is teamleider`)).catch(e => err(e, 'Aanpassen mislukt.'))}>Maak teamleider</button>}
-          {!g.adminIds.includes(uid) && <ConfirmBtn className="btn sm ghost" label="Maak beheerder" confirm="Zeker?" onConfirm={() => setGroupAdmin(g.id, uid, { name: m.name, email: m.email, since: Date.now() }).then(() => toast(`${m.name} is nu beheerder van ${g.name}`)).catch(e => err(e, 'Aanpassen mislukt.'))} />}
+          <label className="toggle-inline"><input type="checkbox" checked={g.adminIds.includes(uid)} onChange={e => (e.target.checked
+            ? setGroupAdmin(g.id, uid, { name: m.name, email: m.email, since: Date.now() }).then(() => toast(`${m.name} is nu beheerder van ${g.name}`))
+            : removeGroupAdmin(g, uid).then(() => toast(`${m.name} is geen beheerder meer`))).catch(er => err(er, 'Aanpassen mislukt.'))} />Beheerder</label>
         </div>
       </div>; })}
       {!members.length && <p className="hint">Nog niemand in het team.</p>}
-      <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="e-mailadres teamleider" style={{ flex: '1 1 220px' }} />
-        <button className="btn" disabled={busy} onClick={send}><UserPlus size={16} />Teamleider uitnodigen</button></div>
+      {tl ? <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="e-mailadres nieuw lid" style={{ flex: '1 1 220px' }} />
+        <select value={kind} onChange={e => setKind(e.target.value as 'leiding' | 'teamleider')} aria-label="Uitnodigen als"><option value="leiding">Leiding</option><option value="teamleider">Teamleider</option></select>
+        <button className="btn" disabled={busy} onClick={send}><UserPlus size={16} />Uitnodigen</button></div>
+      : <><p className="hint">Nodig eerst de teamleider uit. Daarna kunnen jij en de teamleider leiding uitnodigen.</p>
+        <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="e-mailadres teamleider" style={{ flex: '1 1 220px' }} />
+        <button className="btn" disabled={busy} onClick={send}><UserPlus size={16} />Teamleider uitnodigen</button></div></>}
+      {kind === 'leiding' && tl && <p className="hint">Leiding krijgt standaard de rechten jaarplanning, opkomsten en banken. Aanpassen kan in de speltak bij Instellingen → Team.</p>}
       {inv && <InviteLink inv={inv} fromName={me.name} onClose={() => setInv(null)} />}
     </div>}
   </div>;

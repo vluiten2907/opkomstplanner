@@ -42,6 +42,9 @@ with sync_playwright() as p:
     def logout_to(url):
         pg.evaluate("localStorage.setItem('fake.auth.current','null'); localStorage.removeItem('opk.sid')"); pg.goto(url); w(600)
 
+    def open_group():
+        if pg.locator('.groupcard.open').count() == 0: pg.click('.groupcard .gc-head'); w(300)
+
     def invite_link():
         return pg.locator('.banknote .mono-code').last.inner_text()
 
@@ -55,8 +58,12 @@ with sync_playwright() as p:
     check('/beheer' in pg.url and pg.locator('h2:has-text("Beheer (totaal)")').count() == 1, 'hoofdaccount → Beheer (totaal)')
     pg.click('text=Nieuwe Scouting-groep'); w(); pg.fill('#ng-name', 'Testgroep'); pg.fill('#ng-email', 'ga@test.nl'); pg.click('text=Groep aanmaken'); w(800)
     ga_link = invite_link(); check('/uitnodiging/' in ga_link, 'groep aangemaakt + uitnodiging Beheer (groep)')
+    check(pg.locator('.groupcard input[placeholder^="Naam nieuwe speltak"]').count() == 0, 'groep staat standaard ingeklapt')
+    open_group()
     pg.fill('input[placeholder^="Naam nieuwe speltak"]', 'Scouts'); pg.click('text=Speltak aanmaken'); w(800)
     check(pg.locator('.groupcard .member:has-text("Scouts")').count() == 1, 'speltak aangemaakt in groep')
+    pg.select_option('.groupcard select[aria-label="Bestaande persoon kiezen"]', label='Mijzelf (Beheer (demo))'); pg.click('.groupcard >> text=Beheerder maken'); w(800)
+    check(pg.locator('.groupcard .member:has-text("Beheer (demo) (jij)")').count() == 1, 'beheer totaal maakt zichzelf beheerder van een groep')
     pg.locator('.groupcard .member:has-text("Scouts") button', has_text=re.compile('^Team$')).click(); w(300)
     pg.fill('input[placeholder="e-mailadres teamleider"]', 'vincent@test.nl'); pg.click('text=Teamleider uitnodigen'); w(800)
     tl_link = invite_link(); check('/uitnodiging/' in tl_link and tl_link != ga_link, 'teamleider uitgenodigd')
@@ -169,8 +176,14 @@ with sync_playwright() as p:
     # --- Beheer (groep) accepteert en ziet speltak met teamleider
     logout_to(ga_link); register('Greet Beheer', 'ga@test.nl')
     check('/beheer' in pg.url, 'beheerder groep → beheerpagina')
+    open_group()
     check(pg.locator('.groupcard .member:has-text("Scouts") >> text=Teamleider: Vincent Test').count() == 1, 'beheerder ziet speltak en teamleider')
     check(pg.locator('h2:has-text("Beheer (totaal)")').count() == 0, 'beheerder groep ziet geen Beheer (totaal)')
+    pg.locator('.groupcard .member:has-text("Scouts") button', has_text=re.compile('^Team$')).click(); w(300)
+    pg.fill('input[placeholder="e-mailadres nieuw lid"]', 'lid@test.nl'); pg.click('.groupcard .member >> button:text-is("Uitnodigen")'); w(800)
+    check('/uitnodiging/' in invite_link() and pg.locator('.banknote:has-text("Leiding")').count() >= 1, 'beheerder groep nodigt leiding uit voor speltak')
+    pg.click('.groupcard .gc-head'); w(200); check(pg.locator('.groupcard .member').count() == 0, 'groep klapt dicht')
+    pg.click('.groupcard .gc-head'); w(200)
     shot('08-beheer-groep')
     pg.set_viewport_size({'width': 390, 'height': 800}); w(300)
     check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'beheer mobiel: geen horizontale scroll'); shot('09-beheer-mobiel')

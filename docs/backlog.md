@@ -17,6 +17,7 @@ _(niets)_
 - **Wachtwoord vergeten-mail** — controleren of de Firebase-mail aankomt en eventueel de afzender/tekst in het Nederlands zetten (Authentication → Templates).
 
 ## Klaar
+- Beheer: groepen standaard ingeklapt (klik op de naam), beheerder groep maakt bij bestaande leden/teamleiders aan (vinkje), leiding uitnodigen per speltak vanaf Beheer.
 
 - 2026-10-21 — Rollen en beheerders: Beheer (totaal) → Beheer (groep) → Teamleider → Leiding. Beheer-pagina met groepen, speltakken en teamleiders; oude speltakken koppelen aan een groep. Account aanmaken alleen via uitnodiging (30 dagen geldig). Openstaande uitnodigingen zien, link kopiëren en intrekken op elk niveau. Overdragen, mede-beheerders en aftreden. Nieuwe `firestore.rules` (73 emulatortests).
 - 2026-10-21 — Menubalk op telefoons (o.a. Samsung, 344–412 px): alle zes menu-items in beeld in twee rijen met korte namen, accountknop naast het logo, balk lager en over de volle breedte. Desktop ongewijzigd.
