@@ -16,6 +16,7 @@ _(niets)_
 - **Wachtwoord vergeten-mail** — controleren of de Firebase-mail aankomt en eventueel de afzender/tekst in het Nederlands zetten (Authentication → Templates).
 
 ## Klaar
+- Beheer: speltakken uitklapbaar met leiding, rechten per leiding aanpassen (bekijken mag altijd).
 - Mijn account (voor- en achternaam, ook bij registreren), e-mail en volledige naam in het leidingoverzicht.
 - Namen (zoals Akela) uniek binnen een groep: groepen/{gid}/namen, gecontroleerd bij account aanmaken en toevoegen.
 - Beheer: bestaand account direct toevoegen (teamleider/leiding), leidingoverzicht per groep met verwijderen en teamleider wisselen (opvolger kiezen), speltak volledig verwijderen, beheerder groep alleen uit de leiding. Nieuwe regels: accounts + verwijderen.

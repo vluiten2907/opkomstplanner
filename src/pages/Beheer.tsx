@@ -9,8 +9,8 @@ import { toast } from '../store/toast';
 import { applyAccent } from '../components/Layout';
 import { ConfirmBtn, Field } from '../components/ui';
 import { InviteLink, InviteList, useOpenInvites, type InviteScope } from '../components/Invites';
-import { addMember, claimName, releaseName, syncNames, createGroep, newGroepId, createInvite, createSpeltakInGroep, deleteSpeltak, ensureTlIds, findAccount, readAccounts, removeFromTeam, type AccountInfo, transferTeamleider, type Person, isEmail, linkSpeltak, removeGroupAdmin, removeRootPerson, renameGroep, setGroupAdmin, setTeamleider } from '../store/beheer';
-import { DEFAULT_LEIDING_PERMS, isTeamleider, type Admin, type Member, type Groep, type Invite, type Speltak } from '../lib/types';
+import { addMember, setPerms, claimName, releaseName, syncNames, createGroep, newGroepId, createInvite, createSpeltakInGroep, deleteSpeltak, ensureTlIds, findAccount, readAccounts, removeFromTeam, type AccountInfo, transferTeamleider, type Person, isEmail, linkSpeltak, removeGroupAdmin, removeRootPerson, renameGroep, setGroupAdmin, setTeamleider } from '../store/beheer';
+import { DEFAULT_LEIDING_PERMS, PERM_LABELS, normPerms, isTeamleider, type Admin, type Member, type PermKey, type Groep, type Invite, type Speltak } from '../lib/types';
 import { normSettings } from '../lib/model';
 import { plural } from '../lib/time';
 
@@ -193,6 +193,7 @@ function GroupCard({ g, sps, me, canAll }: { g: Groep; sps: Speltak[]; me: Me; c
     sps.forEach(sp => Object.entries(sp.members).forEach(([u, x]) => m.set(u, { uid: u, name: x.name, email: x.email })));
     return [...m.values()].sort((a, b) => a.name.localeCompare(b.name, 'nl'));
   }, [g, sps, me.uid, me.name, me.email]);
+  const names = useFullNames(sps);
   // Namen zijn uniek binnen de groep: wie al in een speltak zit, krijgt zijn naam vastgelegd.
   const namesKey = sps.map(sp => Object.entries(sp.members).map(([u, x]) => u + ':' + x.name).sort().join(',')).join('|');
   useEffect(() => {
@@ -225,13 +226,10 @@ function GroupCard({ g, sps, me, canAll }: { g: Groep; sps: Speltak[]; me: Me; c
       : <p className="hint">{sps.length ? 'Een beheerder kies je uit de leiding van deze groep. Er is nog niemand anders om te kiezen.' : 'Een beheerder kies je uit de leiding van deze groep. Maak eerst een speltak en zet er leiding in.'}</p>}
 
     <h3>Speltakken</h3>
-    <div className="team">{sps.map(sp => <SpeltakRow key={sp.id} sp={sp} g={g} me={me} pool={pool} all={sps} />)}{!sps.length && <p className="hint">Nog geen speltakken.</p>}</div>
+    <div className="team">{sps.map(sp => <SpeltakRow key={sp.id} sp={sp} g={g} me={me} pool={pool} all={sps} names={names} />)}{!sps.length && <p className="hint">Nog geen speltakken.</p>}</div>
     <div className="row"><input className="inp" value={newSp} onChange={e => setNewSp(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addSp(); }} placeholder="Naam nieuwe speltak, bijv. Welpen" list="speltaklist-b" style={{ flex: '1 1 220px' }} />
       <datalist id="speltaklist-b">{['Bevers', 'Welpen', 'Scouts', 'Explorers', 'Roverscouts', 'Stam'].map(x => <option key={x} value={x} />)}</datalist>
       <button className="btn" onClick={addSp}><Plus size={16} />Speltak aanmaken</button></div>
-
-    <h3>Leiding</h3>
-    <LeidingOverzicht sps={sps} g={g} me={me} />
     </>}
   </section>;
 }
@@ -270,8 +268,12 @@ function PersonPicker({ pool, exclude, label, button, onPick, children }: { pool
   </div>;
 }
 
-function SpeltakRow({ sp, g, me, pool, all }: { sp: Speltak; g: Groep; me: Me; pool: Person[]; all: Speltak[] }) {
-  const [open, setOpen] = useState(false);
+function SpeltakRow({ sp, g, me, pool, all, names }: { sp: Speltak; g: Groep; me: Me; pool: Person[]; all: Speltak[]; names: Record<string, AccountInfo> }) {
+  // Standaard ingeklapt; per speltak onthouden in deze browser.
+  const openKey = 'opk.speltak.open.' + sp.id;
+  const [open, setOpenRaw] = useState(() => { try { return localStorage.getItem(openKey) === '1'; } catch { return false; } });
+  const setOpen = (fn: (o: boolean) => boolean) => setOpenRaw(o => { const n = fn(o); try { localStorage.setItem(openKey, n ? '1' : '0'); } catch { /* geen opslag */ } return n; });
+  const members = Object.entries(sp.members).sort((a, b) => Number(isTeamleider(sp, b[0])) - Number(isTeamleider(sp, a[0])) || a[1].name.localeCompare(b[1].name, 'nl'));
   const [email, setEmail] = useState(''); const [inv, setInv] = useState<Invite | null>(null); const [busy, setBusy] = useState(false);
   const [kind, setKind] = useState<'leiding' | 'teamleider'>('leiding');
   const [addRole, setAddRole] = useState<'leiding' | 'teamleider'>('leiding');
@@ -293,15 +295,20 @@ function SpeltakRow({ sp, g, me, pool, all }: { sp: Speltak; g: Groep; me: Me; p
     try { await deleteSpeltak(sp); Object.entries(sp.members).forEach(([u, m]) => releaseIfGone(g, all, sp.id, u, m.name)); if (localStorage.getItem('opk.sid') === sp.id) localStorage.removeItem('opk.sid'); toast(`${word} is verwijderd`); }
     catch (e) { err(e, 'Verwijderen mislukt.'); setDeleting(false); }
   };
-  return <div className="member">
+  return <div className={'member spcard' + (open ? ' open' : '')}>
     <div className="row between" style={{ flexWrap: 'wrap', gap: 8 }}>
-      <div style={{ minWidth: 0, flex: '1 1 200px' }}><b>{sp.name || 'Speltak'}</b><div className="hint">{tl ? `Teamleider: ${tl}` : <span style={{ color: 'var(--danger)', fontWeight: 700 }}>Nog geen teamleider</span>} · {plural(sp.memberIds.length, 'lid', 'leden')}</div></div>
-      <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
-        <button className="btn sm ghost" onClick={() => setOpen(o => !o)}>{open ? 'Sluiten' : 'Team'}</button>
-        <Link className="btn sm" to={`/s/${sp.id}`} onClick={() => localStorage.setItem('opk.sid', sp.id)}><ExternalLink size={14} />Openen</Link>
-      </div>
+      <button type="button" className="sp-head" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+        <ChevronRight size={16} className="gc-chev" />
+        <span style={{ minWidth: 0 }}><b>{sp.name || 'Speltak'}</b><span className="hint" style={{ display: 'block' }}>{tl ? `Teamleider: ${tl}` : <span style={{ color: 'var(--danger)', fontWeight: 700 }}>Nog geen teamleider</span>} · {plural(sp.memberIds.length, 'lid', 'leden')}</span></span>
+      </button>
+      <Link className="btn sm" to={`/s/${sp.id}`} onClick={() => localStorage.setItem('opk.sid', sp.id)}><ExternalLink size={14} />Openen</Link>
     </div>
     {open && <div className="stack" style={{ gap: 8, paddingTop: 10 }}>
+      <b>Leiding</b>
+      <div className="stack leiding" style={{ gap: 6 }}>
+        {members.map(([uid, m]) => <LeidingRow key={uid} sp={sp} g={g} me={me} uid={uid} m={m} all={all} full={fullName(names[(m.email || '').toLowerCase()])} />)}
+        {!members.length && <p className="hint">Nog niemand in deze speltak.</p>}
+      </div>
       <b>Iemand met een account toevoegen</b>
       <PersonPicker pool={pool} exclude={sp.memberIds} label="Persoon kiezen voor de speltak" button="Toevoegen" onPick={add}>
         {tl ? <select value={addRole} onChange={e => setAddRole(e.target.value as 'leiding' | 'teamleider')} aria-label="Toevoegen als"><option value="leiding">als leiding</option><option value="teamleider">als teamleider</option></select> : null}
@@ -311,7 +318,7 @@ function SpeltakRow({ sp, g, me, pool, all }: { sp: Speltak; g: Groep; me: Me; p
       <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={tl ? 'e-mailadres nieuw lid' : 'e-mailadres teamleider'} style={{ flex: '1 1 220px' }} />
         {tl && <select value={kind} onChange={e => setKind(e.target.value as 'leiding' | 'teamleider')} aria-label="Uitnodigen als"><option value="leiding">Leiding</option><option value="teamleider">Teamleider</option></select>}
         <button className="btn" disabled={busy} onClick={send}><Link2 size={16} />{tl ? 'Uitnodigen' : 'Teamleider uitnodigen'}</button></div>
-      {tl && <p className="hint">Nieuwe leiding krijgt de rechten jaarplanning, opkomsten en banken. Aanpassen kan in de speltak bij Instellingen → Team.</p>}
+      {tl && <p className="hint">Nieuwe leiding krijgt de rechten jaarplanning, opkomsten en banken; aanpassen kan hierboven bij de leiding. Bekijken mag iedereen in de speltak altijd.</p>}
       {inv && <InviteLink inv={inv} fromName={me.name} onClose={() => setInv(null)} />}
       <div className="dangerzone"><b>Speltak verwijderen</b>
         <span className="hint">Alle opkomsten, activiteiten en de jaarplanning van {sp.name || 'deze speltak'} worden gewist en het team verliest de toegang. Dit kan niet ongedaan worden.</span>
@@ -323,21 +330,13 @@ function SpeltakRow({ sp, g, me, pool, all }: { sp: Speltak; g: Groep; me: Me; p
 }
 
 /** Leidingoverzicht van de groep: iedereen per speltak, met teamleider, beheerder en verwijderen. */
-function LeidingOverzicht({ sps, g, me }: { sps: Speltak[]; g: Groep; me: Me }) {
-  // Voor- en achternaam uit de accounts (op e-mailadres)
+/** Voor- en achternaam uit de accounts (op e-mailadres) van iedereen in deze speltakken. */
+function useFullNames(sps: Speltak[]) {
   const emails = [...new Set(sps.flatMap(sp => Object.values(sp.members).map(m => (m.email || '').toLowerCase())).filter(Boolean))].sort();
   const [names, setNames] = useState<Record<string, AccountInfo>>({});
   useEffect(() => { readAccounts(emails).then(setNames).catch(() => {}); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emails.join(',')]);
-  const withPeople = sps.filter(sp => Object.keys(sp.members).length);
-  if (!withPeople.length) return <p className="hint">Nog geen leiding in deze groep.</p>;
-  return <div className="stack leiding" style={{ gap: 12 }}>{withPeople.map(sp => {
-    const members = Object.entries(sp.members).sort((a, b) => Number(isTeamleider(sp, b[0])) - Number(isTeamleider(sp, a[0])) || a[1].name.localeCompare(b[1].name, 'nl'));
-    return <div key={sp.id} className="stack" style={{ gap: 6 }}>
-      <div className="hint" style={{ fontWeight: 700 }}>{sp.name || 'Speltak'} · {plural(members.length, 'lid', 'leden')}</div>
-      {members.map(([uid, m]) => <LeidingRow key={uid} sp={sp} g={g} me={me} uid={uid} m={m} all={sps} full={fullName(names[(m.email || '').toLowerCase()])} />)}
-    </div>;
-  })}</div>;
+  return names;
 }
 
 const fullName = (a?: AccountInfo) => a ? [a.firstName, a.lastName].filter(Boolean).join(' ') : '';
@@ -374,6 +373,9 @@ function LeidingRow({ sp, g, me, uid, m, all, full }: { sp: Speltak; g: Groep; m
           : <ConfirmBtn className="btn sm ghost danger" label="Verwijderen" confirm="Zeker?" onConfirm={() => removeFromTeam(sp, uid).then(() => releaseIfGone(g, all, sp.id, uid, m.name)).then(() => toast(`${m.name} is uit ${where} gehaald`)).catch(e => err(e, 'Verwijderen mislukt.'))} />}
       </div>
     </div>
+    {!isTl && <div className="row perms-inline" style={{ gap: '4px 10px' }}><span className="hint">Mag aanpassen:</span>
+      {(Object.keys(PERM_LABELS) as PermKey[]).map(k => <label key={k} className="toggle-inline"><input type="checkbox" checked={!!m.perms?.[k]} onChange={e => setPerms(sp, uid, { ...normPerms(m.perms), [k]: e.target.checked }).catch(er => err(er, 'Aanpassen mislukt.'))} />{PERM_LABELS[k]}</label>)}
+    </div>}
     {mode && <div className="banknote stack" style={{ gap: 8 }}>
       <span>{m.name} is de enige teamleider van {where}. {mode === 'off' ? `Kies wie het overneemt; ${m.name} blijft leiding.` : `Kies eerst wie het overneemt; daarna wordt ${m.name} uit het team gehaald.`}</span>
       {others.length ? <div className="row">

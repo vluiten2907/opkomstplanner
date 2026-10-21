@@ -247,3 +247,6 @@ export async function syncNames(gid: string, people: Map<string, string>) {
   people.forEach((name, uid) => { const k = nameKey(name); if (k && !have.has(k)) { have.add(k); ops.push(setDoc(doc(db, 'groepen', gid, 'namen', k), { uid, name: name.trim() })); } });
   await Promise.all(ops.map(p => p.catch(() => {})));
 }
+
+/** Rechten van een leiding aanpassen (teamleider of beheerder van de groep). Bekijken mag altijd. */
+export const setPerms = (sp: Speltak, uid: string, perms: Perms) => updateDoc(doc(db, 'speltakken', sp.id), { ['members.' + uid + '.perms']: normPerms(perms) });

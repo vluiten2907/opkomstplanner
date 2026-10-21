@@ -46,6 +46,10 @@ with sync_playwright() as p:
     def open_group():
         if pg.locator('.groupcard.open').count() == 0: pg.click('.groupcard .gc-head'); w(300)
 
+    def open_sp(name):
+        c = pg.locator(f'.groupcard .spcard:has-text("{name}")').first
+        if 'open' not in (c.get_attribute('class') or ''): c.locator('.sp-head').click(); w(300)
+
     def invite_link():
         return pg.locator('.banknote .mono-code').last.inner_text()
 
@@ -62,11 +66,11 @@ with sync_playwright() as p:
     check(pg.locator('.groupcard select[aria-label="Bestaande persoon kiezen"]').count() == 0, 'beheerder kiezen kan pas als er leiding is')
     pg.fill('input[placeholder^="Naam nieuwe speltak"]', 'Scouts'); pg.click('text=Speltak aanmaken'); w(800)
     check(pg.locator('.groupcard .member:has-text("Scouts")').count() == 1, 'speltak aangemaakt in groep')
-    pg.locator('.groupcard .member:has-text("Scouts") button', has_text=re.compile('^Team$')).click(); w(300)
+    open_sp('Scouts')
     pg.select_option('.groupcard select[aria-label="Persoon kiezen voor de speltak"]', label='Beheer (demo) · vluiten2907@gmail.com'); pg.click('.groupcard .member >> button:text-is("Toevoegen")'); w(800)
     check(pg.locator('.groupcard .member:has-text("Scouts") >> text=Teamleider: Beheer (demo)').count() == 1, 'bestaand account direct toegevoegd als teamleider')
     pg.select_option('.groupcard select[aria-label="Bestaande persoon kiezen"]', label='Mijzelf (Beheer (demo))'); pg.click('.groupcard >> text=Beheerder maken'); w(800)
-    check(pg.locator('.groupcard .member:has-text("Beheer (demo) (jij)")').count() == 1, 'beheer totaal (als leiding) maakt zichzelf beheerder van de groep')
+    check(pg.locator('.groupcard .member:not(.spcard):has-text("Beheer (demo) (jij)")').count() == 1, 'beheer totaal (als leiding) maakt zichzelf beheerder van de groep')
     def invite_as(email, kind):
         pg.fill('input[placeholder="e-mailadres nieuw lid"]', email); pg.select_option('.groupcard select[aria-label="Uitnodigen als"]', kind)
         pg.click('.groupcard .member >> button:text-is("Uitnodigen")'); w(800); return invite_link()
@@ -78,7 +82,7 @@ with sync_playwright() as p:
     check(pg.locator('.invrow').count() == 2, 'uitnodiging intrekken')
     # speltak verwijderen
     pg.fill('input[placeholder^="Naam nieuwe speltak"]', 'Opruimen'); pg.click('text=Speltak aanmaken'); w(800)
-    pg.locator('.groupcard .member:has-text("Opruimen") button', has_text=re.compile('^Team$')).click(); w(300)
+    open_sp('Opruimen')
     btn = pg.locator('.groupcard .member:has-text("Opruimen") >> text=Definitief verwijderen')
     check(btn.is_disabled(), 'speltak verwijderen vraagt eerst de naam')
     pg.fill('.groupcard .member:has-text("Opruimen") input[aria-label="Naam ter bevestiging"]', 'Opruimen'); btn.click(); w(900)
@@ -205,13 +209,15 @@ with sync_playwright() as p:
     check(lrow('Anna de Vries').count() == 1 and lrow('Vincent Test').count() == 1, 'leidingoverzicht toont alle leiding')
     check(lrow('Anna de Vries').locator('text=anna@test.nl').count() == 1 and lrow('Anna de Vries').locator('text=Anna de Vries · ').count() + lrow('Anna de Vries').locator('text=· Anna de Vries').count() >= 1, 'leidingoverzicht toont e-mailadres en voor- en achternaam')
     lrow('Greet Beheer').locator('label:has-text("Beheerder") input').check(); w(800)
-    check(pg.locator('.groupcard .member:has-text("ga@test.nl")').count() == 1, 'beheerder gekozen uit de leiding')
+    check(pg.locator('.groupcard .member:not(.spcard):has-text("ga@test.nl")').count() == 1, 'beheerder gekozen uit de leiding')
     lrow('Beheer (demo)').locator('text=Verwijderen').click(); w(150); lrow('Beheer (demo)').locator('text=Zeker?').click(); w(800)
     check(lrow('Beheer (demo)').count() == 0, 'leiding verwijderd uit speltak')
     lrow('Vincent Test').locator('label:has-text("Teamleider") input').click(); w(300)
     check(lrow('Vincent Test').locator('select[aria-label="Nieuwe teamleider"]').count() == 1, 'laatste teamleider uitzetten vraagt een opvolger')
     lrow('Vincent Test').locator('select[aria-label="Nieuwe teamleider"]').select_option(label='Anna de Vries'); lrow('Vincent Test').locator('text=Overdragen').click(); w(800)
     check(pg.locator('.groupcard .member:has-text("Scouts") >> text=Teamleider: Anna de Vries').count() == 1 and lrow('Vincent Test').count() == 1, 'opvolger is teamleider, oude teamleider blijft leiding')
+    lrow('Greet Beheer').locator('label:has-text("Instellingen") input').check(); w(600)
+    check(lrow('Greet Beheer').locator('label:has-text("Instellingen") input').is_checked(), 'beheerder past rechten van leiding aan')
     shot('07-leidingoverzicht')
 
     # --- Beheer (groep)
@@ -220,7 +226,7 @@ with sync_playwright() as p:
     open_group()
     check(pg.locator('.groupcard .member:has-text("Scouts") >> text=Teamleider: Anna de Vries').count() == 1, 'beheerder ziet speltak en teamleider')
     check(pg.locator('h2:has-text("Beheer (totaal)")').count() == 0, 'beheerder groep ziet geen Beheer (totaal)')
-    pg.locator('.groupcard .member:has-text("Scouts") button', has_text=re.compile('^Team$')).click(); w(300)
+    open_sp('Scouts')
     pg.fill('input[placeholder="e-mailadres nieuw lid"]', 'lid@test.nl'); pg.click('.groupcard .member >> button:text-is("Uitnodigen")'); w(800)
     check('/uitnodiging/' in invite_link() and pg.locator('.banknote:has-text("Leiding")').count() >= 1, 'beheerder groep nodigt leiding uit voor speltak')
     pg.click('.groupcard .gc-head'); w(200); check(pg.locator('.groupcard .member').count() == 0, 'groep klapt dicht')
@@ -236,7 +242,7 @@ with sync_playwright() as p:
 
     # --- groepsbank: tweede speltak in dezelfde groep kopieert een gedeelde opkomst
     pg.goto(BASE + '/beheer'); w(900); open_group()
-    pg.locator('.groupcard .member:has-text("Welpen") button', has_text=re.compile('^Team$')).click(); w(300)
+    open_sp('Welpen')
     pg.fill('input[placeholder="e-mailadres teamleider"]', 'wim@test.nl'); pg.click('text=Teamleider uitnodigen'); w(800)
     wim_link = invite_link()
     logout_to(wim_link); register('Wim Welp', 'wim@test.nl')
