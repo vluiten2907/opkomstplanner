@@ -95,7 +95,7 @@ function Builder({ o }: { o: Opk }) {
   });
   const pill = o.state === 'bank' ? <span className="pill good">In opkomstenbank</span> : o.state === 'planned' ? <span className="pill acc">Ingepland</span> : <span className="pill neutral">Concept</span>;
   const toBank = () => {
-    if (!allBlocks(o).length && !o.title) { toast('Geef de opkomst eerst een naam of een onderdeel.'); return; }
+    if (!allBlocks(o).length && !o.title) { toast('Geef de opkomst eerst een titel of een onderdeel.'); return; }
     if (o.state === 'draft') { upd(() => { o.state = 'bank'; o.lead = ''; allBlocks(o).forEach(b => b.names = []); }); toast('Opgeslagen in de opkomstenbank, zonder namen van leiding'); return; }
     const b = copyOpk(o); b.state = 'bank'; b.srcId = null; b.lead = ''; allBlocks(b).forEach(x => x.names = []);
     saveOpk(b); upd(() => { o.srcId = b.id; }); toast('Kopie opgeslagen in de opkomstenbank, zonder leiding');
@@ -116,7 +116,7 @@ function Builder({ o }: { o: Opk }) {
       <div className="row between" style={{ alignItems: 'flex-end' }}>
         <div style={{ flex: '1 1 340px', minWidth: 0, display: 'grid', gap: 2 }}>
           <div className="row"><span className="eyebrow">{kamp ? 'Weekendkampplanner' : 'Opkomstbouwer'}</span>{kamp && <span className="pill kamp">Kamp</span>}{pill}{readOnly && <span className="pill neutral">Alleen lezen</span>}</div>
-          <input id="om-title" value={o.title} readOnly={readOnly} onChange={ev => upd(() => { o.title = ev.target.value; if (e) savePlan({ ...e, topic: ev.target.value }); })} aria-label="Naam" placeholder={kamp ? 'Naam van het kamp' : 'Naam van de opkomst'} />
+          <input id="om-title" value={o.title} readOnly={readOnly} onChange={ev => upd(() => { o.title = ev.target.value; if (e) savePlan({ ...e, topic: ev.target.value }); })} aria-label="Opkomst titel" placeholder={kamp ? 'Titel van het kamp' : 'Opkomst titel'} />
         </div>
         <div className="row">{actions}<button className="btn ghost" onClick={() => nav(`/s/${sid}/bouwer`)} title="Nieuwe opkomst of weekendkamp"><Plus size={16} />Nieuw</button></div>
       </div>

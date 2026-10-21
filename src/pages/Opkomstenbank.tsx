@@ -57,7 +57,7 @@ function TplEditor({ t, onClose, onDelete }: { t: Opk; onClose: () => void; onDe
   const bl = isKamp(t) ? t.days.flatMap(d => [...d.blocks].sort((a, b) => a.start - b.start).map(b => ({ ...b, _dl: d.label }))) : [...t.blocks].sort((a, b) => a.start - b.start).map(b => ({ ...b, _dl: '' }));
   return <div className="pad stack">
     <div className="row between" style={{ alignItems: 'flex-start' }}><span className="eyebrow">Opkomst uit de bank</span><button className="closex" onClick={onClose} aria-label="Sluiten"><X size={18} /></button></div>
-    <Field label="Naam" htmlFor="tf-title"><input id="tf-title" value={t.title} readOnly={ro} onChange={e => upd(() => { t.title = e.target.value; })} /></Field>
+    <Field label="Opkomst titel" htmlFor="tf-title"><input id="tf-title" value={t.title} readOnly={ro} onChange={e => upd(() => { t.title = e.target.value; })} /></Field>
     <Field label="Korte beschrijving" htmlFor="tf-short"><textarea id="tf-short" rows={2} readOnly={ro} value={t.short} onChange={e => upd(() => { t.short = e.target.value; })} placeholder="Waar gaat deze opkomst over?" /></Field>
     <div className="row">{can('plan') && <button className="btn primary" onClick={() => openModal({ kind: 'toplan', oid: t.id })}><CalendarDays size={16} />Inplannen</button>}<button className="btn" onClick={() => nav(`/s/${sid}/bouwer/${t.id}`)}><ExternalLink size={16} />{ro ? 'Bekijken' : 'Bewerken'}</button></div>
     <h3 className="gap-lg">{isKamp(t) ? 'Weekendkamp, ' + plural(t.days.length, 'dag', 'dagen') : fmtT(t.start) + '–' + fmtT(t.end)} · {plural(bl.length, 'onderdeel', 'onderdelen')}</h3>
