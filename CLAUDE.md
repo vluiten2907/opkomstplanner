@@ -40,8 +40,9 @@ test/fake-firebase.ts nep-Firebase (localStorage) voor `npm run demo` en de rook
 ```
 
 Regels die de code bewaakt (niet breken):
-- Opkomstenbank bevat **geen namen** en geen eindverantwoordelijke. Inplannen vanuit de bouwer houdt leiding en eindverantwoordelijke; een kopie uit de bank wordt zonder namen ingepland en opent "Opkomst overnemen".
+- Er is geen aparte eindverantwoordelijke meer: dat is *Planning door* (`plannersOf`: planners uit de jaarplanning + een oude `o.lead`). Opkomstenbank bevat **geen namen**. Inplannen vanuit de bouwer houdt leiding; een kopie uit de bank wordt zonder namen ingepland en opent "Opkomst overnemen".
 - Afwezige leiding (jaarplanning) kan niet worden ingedeeld en wordt automatisch uit de indeling gehaald (`dropAbsent`).
+- Dashboard-kaart: dubbelklik (of dubbel tikken) op titel, omschrijving, tijden, locatie of een vak met namen om het daar aan te passen; volgt dezelfde rechten.
 - Minimaal leiding van een opkomst = hoogste `minLeaders` van de niet-vaste onderdelen.
 - Vaste blokken (`__open`, `__ranja`, `__close`) alleen bij gewone opkomsten, schuiven mee met begin/eind.
 - Tijden in minuten; kampdagen mogen tot 26:00 (na middernacht).

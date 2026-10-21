@@ -7,7 +7,7 @@ import { openModal } from '../store/modal';
 import { StatusPill, PeopleChips, PageTitle } from '../components/shared';
 import { Chip, Dot } from '../components/ui';
 import { addDays, dayDiff, fmtLong, fmtNL, fmtRange, fmtShort, fmtT, isoWeek, parseNL, plural, todayISO, DAYS, MONTHS } from '../lib/time';
-import { allBlocks, entryStatus, entryTimes, isKamp, letterDue, minNeed, opkCatOf, opkDaysIn, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Row, type Settings } from '../lib/model';
+import { allBlocks, plannersOf, entryStatus, entryTimes, isKamp, letterDue, minNeed, opkCatOf, opkDaysIn, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Row, type Settings } from '../lib/model';
 
 type Range = { from: string; to: string };
 function presetRange(s: Settings, p: string): Range {
@@ -110,7 +110,7 @@ function PlanRow({ r, today }: { r: Row; today: string }) {
       {can('build') && <button className="iconbtn" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })} title="Leiding indelen" aria-label="Leiding indelen"><SquarePen size={15} /></button>}
       {plan && <button className="iconbtn" onClick={() => { unlinkEntry(e!); toast('Ontkoppeld. De opkomst staat nu bij de concepten in de opkomstenbank.'); }} title="Ontkoppelen" aria-label="Opkomst ontkoppelen"><X size={15} /></button>}
     </div> : <div className="pcell">{plan ? <button className="btn sm" onClick={() => openModal({ kind: 'link', keyId: r.key })}><Plus size={14} />Koppelen</button> : <span className="hint">Nog geen programma</span>}</div>}</div>
-    <div className="pf"><span className="plabel">Planning door</span>{people('planners', e ? e.planners : [])}</div>
+    <div className="pf"><span className="plabel">Planning door</span>{people('planners', plannersOf(e, o))}</div>
     <div className="pf"><span className="plabel">Afwezig</span>{people('absent', e ? e.absent : [])}</div>
     <div className="pf"><span className="plabel">Brief</span><div className="pcell"><button className={lcls} disabled={!plan} onClick={() => openModal({ kind: 'letter', keyId: r.key })}><Mail size={14} />{ltxt}</button></div></div>
   </div>;

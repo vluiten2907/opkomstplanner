@@ -46,7 +46,8 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
   const sub = wrap([(O.dateLabel || fmtDate(O.date)), timeTxt, O.group, O.location].filter(Boolean).map(clean).join('  ·  '), CW - LOGO);
   doc.text(sub, M, y + 3); y += 3 + sub.length * lh(10);
   if (O.catsLabel) { font('normal', 9.5, MUTED); const cl = wrap('Categorieën: ' + O.catsLabel, CW - LOGO); doc.text(cl, M, y + 2.5); y += cl.length * lh(9.5) + 0.5; }
-  if (O.lead) { font('bold', 9.5, INK); doc.text(clean('Eindverantwoordelijke: ' + O.lead), M, y + 2.5); y += lh(9.5) + 0.5; }
+  const plan = splitNames(O.planners);
+  if (plan.length) { font('bold', 9.5, INK); const pl = wrap('Planning door: ' + plan.join(', '), CW - LOGO); doc.text(pl, M, y + 2.5); y += pl.length * lh(9.5) + 0.5; }
   if (O.minNeed) { font('normal', 9.5, MUTED); doc.text(clean('Minimaal ' + O.minNeed + ' leiding nodig'), M, y + 2.5); y += lh(9.5) + 0.5; }
   const pres = splitNames(O.present);
   if (pres.length) { font('normal', 9.5, MUTED); const pl = wrap('Leiding aanwezig: ' + pres.join(', '), CW); doc.text(pl, M, y + 2.5); y += pl.length * lh(9.5) + 0.5; }

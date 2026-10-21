@@ -1,4 +1,4 @@
-import { ACCENTS, FIXED_CATS, allBlocks, dayTitle, isKamp, minNeed, opkCatOf, type Opk, type Plan, type Settings } from './model';
+import { ACCENTS, FIXED_CATS, allBlocks, dayTitle, isKamp, minNeed, opkCatOf, plannersOf, type Opk, type Plan, type Settings } from './model';
 import { fmtNL, fmtRange, addDays } from './time';
 import { toast } from '../store/toast';
 
@@ -20,7 +20,7 @@ export async function makePdf(o: Opk | undefined | null, settings: Settings, e: 
   const A = ACCENTS[settings.accent] || ACCENTS.marine;
   const input = {
     ...o, date: e ? e.date : '', dateLabel: e ? fmtRange(e.date, e.endDate, true) : '', present: e ? present : [],
-    noNames: o.state === 'bank', minNeed: minNeed(o), lead: o.state === 'bank' ? '' : o.lead,
+    noNames: o.state === 'bank', minNeed: minNeed(o), planners: o.state === 'bank' ? [] : plannersOf(e, o),
     catsLabel: (o.cats || []).map(c => opkCatOf(settings, c)).filter(Boolean).map(c => c!.label).join(', '),
     groupName: settings.groupName, headLabel: groupLine(settings) ? groupLine(settings).toUpperCase() : 'PROGRAMMA OPKOMST',
     logo: settings.logo, logoW: settings.logoW, logoH: settings.logoH, accentRgb: A.rgb,

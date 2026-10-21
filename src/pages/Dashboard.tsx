@@ -1,13 +1,13 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Download, ExternalLink, Mail, Plus, Tent, Users } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal } from '../store/modal';
 import { Strip, StatusPill, CatTags, PeopleChips, usePdf, PageTitle } from '../components/shared';
-import { Dot } from '../components/ui';
-import { addDays, cap, dayDiff, fmtLong, fmtRange, fmtShort, fmtT, fromISO, isoWeek, mon3, plural, todayISO, toISO, DAYS, MONTHS } from '../lib/time';
-import { analyze, catOf, dayTitle, entryStatus, entryTimes, isKamp, letterDue, minNeed, newKamp, newOpk, opkCatList, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Opk, type Plan, type Row } from '../lib/model';
+import { Dot, TimePicker } from '../components/ui';
+import { addDays, cap, clone, dayDiff, fmtLong, fmtRange, fmtShort, fmtT, fromISO, isoWeek, mon3, plural, todayISO, toISO, DAYS, MONTHS } from '../lib/time';
+import { analyze, catOf, dayTitle, entryStatus, entryTimes, isKamp, letterDue, minNeed, newKamp, newOpk, opkCatList, plannersOf, setOpkTime, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Opk, type Plan, type Row } from '../lib/model';
 
 export default function Dashboard() {
   const S = useSpeltak();
@@ -58,39 +58,108 @@ function Notice({ e, due, today }: { e: Plan; due: string; today: string }) {
     <div className="row"><button className="btn sm ghost" onClick={() => nav(`/s/${sid}/jaarplanning?focus=${e.id}`)}>Bekijken</button><button className="btn sm primary" onClick={sent}>Verstuurd</button></div></div>;
 }
 
+/** Dubbelklik (of dubbel tikken op de telefoon) om iets op de kaart aan te passen. */
+function useDoubleTap(on: (() => void) | null) {
+  const last = useRef(0);
+  if (!on) return {};
+  return {
+    onClick: () => { const t = Date.now(); if (t - last.current < 450) { last.current = 0; on(); } else last.current = t; },
+    'data-editable': '', title: 'Dubbelklik om aan te passen',
+  };
+}
+
+/** Tekst die na een dubbelklik een invoerveld wordt. Enter of wegklikken slaat op, Esc annuleert. */
+function InlineText({ value, onSave, enabled, label, multiline, render, className }: {
+  value: string; onSave: ((v: string) => void) | null; enabled: boolean; label: string; multiline?: boolean; className?: string;
+  render: (tap: Record<string, unknown>) => ReactNode;
+}) {
+  const [edit, setEdit] = useState<string | null>(null);
+  const closed = useRef(false);
+  const tap = useDoubleTap(enabled && onSave ? () => { closed.current = false; setEdit(value); } : null);
+  if (edit === null) return <>{render(tap)}</>;
+  const done = (save: boolean) => {
+    if (closed.current) return; closed.current = true;
+    const v = edit.trim(); if (save && v !== value.trim() && onSave) onSave(v); setEdit(null);
+  };
+  const p = {
+    className: 'inline-edit ' + (className || ''), value: edit, autoFocus: true, 'aria-label': label,
+    onChange: (ev: { target: { value: string } }) => setEdit(ev.target.value), onBlur: () => done(true),
+    onKeyDown: (ev: React.KeyboardEvent) => { if (ev.key === 'Escape') { ev.preventDefault(); done(false); } else if (ev.key === 'Enter' && !(multiline && ev.shiftKey)) { ev.preventDefault(); done(true); } },
+  };
+  return multiline ? <textarea rows={2} {...p} /> : <input {...p} />;
+}
+
+/** Begin- en eindtijd aanpassen op de kaart; slaat direct op, sluit bij wegklikken, Enter of Esc. */
+function TimeEdit({ st, en, onSet, onClose }: { st: number; en: number; onSet: (which: 'start' | 'end', v: number) => void; onClose: () => void }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const down = (ev: PointerEvent) => { if (ref.current && !ref.current.contains(ev.target as Node)) onClose(); };
+    const key = (ev: KeyboardEvent) => { if (ev.key === 'Escape' || ev.key === 'Enter') onClose(); };
+    document.addEventListener('pointerdown', down); document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('pointerdown', down); document.removeEventListener('keydown', key); };
+  }, [onClose]);
+  return <span ref={ref} className="time-edit"><TimePicker value={st} from={360} to={1430} onChange={v => onSet('start', v)} /><span>–</span>
+    <TimePicker value={en} from={365} to={1435} onChange={v => onSet('end', v)} /><button className="btn sm" onClick={onClose}>Klaar</button></span>;
+}
+
 function Hero({ r, today }: { r: Row; today: string }) {
-  const { settings, getO, presentForEntry, sid, can } = useSpeltak();
+  const { settings, getO, presentForEntry, sid, can, saveOpk, savePlan, entryFor } = useSpeltak();
   const nav = useNavigate(); const pdf = usePdf();
+  const [timeEdit, setTimeEdit] = useState(false);
   const e = r.e, d = rowDate(r), o = e && e.opkId ? getO(e.opkId) : null;
   const [st, en] = entryTimes(settings, e, o || null), days = dayDiff(today, d);
   const when = d < today ? 'Bezig' : days === 0 ? 'Vandaag' : days === 1 ? 'Morgen' : `Over ${days} dagen`;
   const kamp = !!e && e.type === 'kamp';
   const title = (o && o.title) || (e && e.topic) || 'Nog geen onderwerp';
   const short = (o && o.short) || (e && e.note) || '';
-  const planners = e ? e.planners : [], absent = e ? e.absent : [], present = presentForEntry(e, o);
+  const planners = plannersOf(e, o), absent = e ? e.absent : [], present = presentForEntry(e, o);
   const dt = fromISO(d), need = o ? minNeed(o) : 0;
-  const facts = [fmtRange(d, e && e.endDate, true), 'week ' + isoWeek(d), kamp ? `vertrek ${fmtT(st)} · terug ${fmtT(en)}` : `${fmtT(st)}–${fmtT(en)}`];
-  if (o && !isKamp(o) && (o.prep || o.post)) facts.push(`leiding ${fmtT(o.start - (o.prep || 0))}–${fmtT(o.end + (o.post || 0))}`);
-  if (o && need) facts.push(`minimaal ${need} leiding` + (present.length < need ? ` (${present.length} aanwezig)` : ''));
-  if (o && o.location) facts.push(o.location);
+  // wie wat mag aanpassen: de opkomst zelf = opkomsten bouwen, de regel in de jaarplanning = jaarplanning
+  const canO = !!o && can('build'), canE = !o && can('plan'), canEdit = canO || canE;
+  const entry = () => entryFor(r.key);
+  const saveTitle = (v: string) => {
+    if (o) { saveOpk({ ...o, title: v }); if (e && can('plan')) savePlan({ ...e, topic: v }); }
+    else savePlan({ ...entry(), topic: v });
+  };
+  const saveShort = (v: string) => { if (o) saveOpk({ ...o, short: v }); else savePlan({ ...entry(), note: v }); };
+  const setTime = (which: 'start' | 'end', v: number) => {
+    if (o) { const c = clone(o), m = setOpkTime(c, which, v); if (m) toast(m); if (m && m.startsWith('De eindtijd')) return; saveOpk(c); return; }
+    const x = entry(), s0 = x.start ?? settings.defStart, e0 = x.end ?? settings.defEnd;
+    if (which === 'end' && v <= s0) { toast('De eindtijd moet na de begintijd liggen.'); return; }
+    if (which === 'start') savePlan({ ...x, start: v, end: e0 <= v ? v + 60 : e0 }); else savePlan({ ...x, start: s0, end: v });
+  };
+  const timesEditable = !kamp && !isKamp(o) && canEdit;
+  const timeTap = useDoubleTap(timesEditable ? () => setTimeEdit(true) : null);
+  const facts: ReactNode[] = [<span key="d">{fmtRange(d, e && e.endDate, true)}</span>, <span key="w">week {isoWeek(d)}</span>,
+    kamp ? <span key="t">vertrek {fmtT(st)} · terug {fmtT(en)}</span>
+      : timeEdit ? <TimeEdit key="t" st={st} en={en} onSet={setTime} onClose={() => setTimeEdit(false)} />
+      : <span key="t" {...timeTap}>{fmtT(st)}–{fmtT(en)}</span>];
+  if (o && !isKamp(o) && (o.prep || o.post)) facts.push(<span key="l">leiding {fmtT(o.start - (o.prep || 0))}–{fmtT(o.end + (o.post || 0))}</span>);
+  if (o && need) facts.push(<span key="n">minimaal {need} leiding{present.length < need ? ` (${present.length} aanwezig)` : ''}</span>);
+  if (o && (o.location || canO)) facts.push(<InlineText key="loc" value={o.location} enabled={canO} label="Locatie" className="fact-edit" onSave={v => saveOpk({ ...o, location: v })}
+    render={tap => <span {...tap} className={o.location ? '' : 'muted'}>{o.location || 'Locatie toevoegen'}</span>} />);
   const gotoRow = () => nav(`/s/${sid}/jaarplanning?focus=${encodeURIComponent(r.key)}`);
+  const plannersTap = useDoubleTap(can('plan') ? () => openModal({ kind: 'people', keyId: r.key, field: 'planners' }) : null);
+  const absentTap = useDoubleTap(can('plan') ? () => openModal({ kind: 'people', keyId: r.key, field: 'absent' }) : null);
+  const presentTap = useDoubleTap(o && can('build') ? () => openModal({ kind: 'takeover', oid: o.id, fresh: false }) : null);
   return <section className="card hero relative mt-10 md:ml-6">
     <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-[18px]" aria-hidden="true"><span className="glow absolute -right-24 -top-24 h-72 w-72 rounded-full blur-3xl opacity-40"></span></span>
     <div className="hero-top">
       <div className={'hero-date patch -mt-14 -rotate-6 md:-ml-10' + (kamp ? ' kamp' : '')}><span>{DAYS[dt.getDay()].slice(0, 2)}</span><b>{dt.getDate()}</b><span>{mon3(d)}</span></div>
       <div className="hero-main">
         <div className="row"><span className="eyebrow">{kamp ? 'Komend kamp' : 'Komende opkomst'}</span><span className="pill acc">{when}</span>{o && <StatusPill o={o} />}</div>
-        <h2 className="hero-title">{title}</h2>
+        <InlineText value={(o && o.title) || (e && e.topic) || ''} enabled={canEdit} label="Opkomst titel" className="hero-title" onSave={saveTitle}
+          render={tap => <h2 className="hero-title" {...tap}>{title}</h2>} />
         {o && <CatTags o={o} />}
-        <div className="facts">{facts.map(f => <span key={f}>{f}</span>)}</div>
-        {short && <p className="hero-short">{short}</p>}
+        <div className="facts">{facts}</div>
+        <InlineText value={short} enabled={canEdit} label="Korte omschrijving" className="hero-short" multiline onSave={saveShort}
+          render={tap => short ? <p className="hero-short" {...tap}>{short}</p> : canEdit ? <p className="hero-short muted" {...tap}>Korte omschrijving toevoegen</p> : null} />
       </div>
     </div>
     <div className="people">
-      <div><span className="lbl">Eindverantwoordelijke</span>{o && o.lead ? <div className="row" style={{ gap: 4 }}><PeopleChips list={[o.lead]} /></div> : o ? (can('build') ? <button className="linkbtn" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })}>Kiezen</button> : <span className="muted">Nog niet gekozen</span>) : <span className="muted">Nog geen opkomst</span>}</div>
-      <div><span className="lbl">Planning door</span>{planners.length ? <div className="row" style={{ gap: 4 }}><PeopleChips list={planners} /></div> : can('plan') ? <button className="linkbtn" onClick={() => openModal({ kind: 'people', keyId: r.key, field: 'planners' })}>Leiding toewijzen</button> : <span className="muted">Nog niemand</span>}</div>
-      <div><span className="lbl">Leiding aanwezig</span><span>{present.length ? present.join(', ') : <span className="muted">Nog geen leidingteam</span>}</span></div>
-      <div><span className="lbl">Afwezig</span>{absent.length ? <div className="row" style={{ gap: 4 }}><PeopleChips list={absent} abs /></div> : <span className="muted">Niemand</span>}</div>
+      <div {...plannersTap}><span className="lbl">Planning door</span>{planners.length ? <div className="row" style={{ gap: 4 }}><PeopleChips list={planners} /></div> : can('plan') ? <button className="linkbtn" onClick={() => openModal({ kind: 'people', keyId: r.key, field: 'planners' })}>Leiding toewijzen</button> : <span className="muted">Nog niemand</span>}</div>
+      <div {...presentTap}><span className="lbl">Leiding aanwezig</span><span>{present.length ? present.join(', ') : <span className="muted">Nog geen leidingteam</span>}</span></div>
+      <div {...absentTap}><span className="lbl">Afwezig</span>{absent.length ? <div className="row" style={{ gap: 4 }}><PeopleChips list={absent} abs /></div> : <span className="muted">Niemand</span>}</div>
     </div>
     {o ? <>
       <Strip o={o} />

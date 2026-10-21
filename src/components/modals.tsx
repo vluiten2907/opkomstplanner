@@ -6,7 +6,7 @@ import { toast } from '../store/toast';
 import { Modal, TimePicker, Field, Chip, ConfirmBtn } from './ui';
 import { PickOpk } from './shared';
 import { addDays, fmtLong, fmtNL, fmtRange, parseNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, todayISO } from '../lib/time';
-import { analyze, blockFromLib, byTitle, catOf, dayTitle, entryTimes, isKamp, lanesLayout, minNeed, newKamp, newOpk, PREP_OPTS, prepLabel, rowsIn, setOpkTime, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
+import { analyze, blockFromLib, byTitle, catOf, dayTitle, entryTimes, isKamp, lanesLayout, minNeed, newKamp, newOpk, plannersOf, PREP_OPTS, prepLabel, rowsIn, setOpkTime, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
 import { uid } from '../lib/time';
 import type { NameSpec } from '../store/modal';
 
@@ -68,12 +68,18 @@ export function ExtraModal({ onClose, onCreated }: { onClose: () => void; onCrea
 
 /* ---------- Planning door / afwezig ---------- */
 export function PeopleModal({ keyId, field, onClose }: { keyId: string; field: 'planners' | 'absent'; onClose: () => void }) {
-  const { leaders, peekEntry, entryFor, savePlan, dropAbsent } = useSpeltak();
+  const { leaders, peekEntry, entryFor, savePlan, dropAbsent, getO, saveOpk } = useSpeltak();
   const [, bump] = useState(0);
   const [extra, setExtra] = useState('');
   const e = peekEntry(keyId); const d = e ? e.date : keyId.slice(2);
-  const list = e ? e[field] : []; const names = [...new Set([...leaders, ...list])];
-  const toggle = (n: string) => { const en = { ...entryFor(keyId) }; en[field] = en[field].includes(n) ? en[field].filter(x => x !== n) : [...en[field], n]; if (field === 'absent') dropAbsent(en); savePlan(en); bump(x => x + 1); };
+  const o = e && e.opkId ? getO(e.opkId) : null;
+  const list = e ? (field === 'planners' ? plannersOf(e, o) : e[field]) : []; const names = [...new Set([...leaders, ...list])];
+  const toggle = (n: string) => {
+    const en = { ...entryFor(keyId) }, off = list.includes(n);
+    en[field] = off ? en[field].filter(x => x !== n) : [...en[field], n];
+    if (field === 'planners' && off && o && o.lead === n) saveOpk({ ...o, lead: '' }); // oude eindverantwoordelijke telt als planner
+    if (field === 'absent') dropAbsent(en); savePlan(en); bump(x => x + 1);
+  };
   const add = () => { const v = extra.trim(); if (!v) return; const en = { ...entryFor(keyId) }; if (!en[field].includes(v)) en[field] = [...en[field], v]; if (field === 'absent') dropAbsent(en); savePlan(en); setExtra(''); bump(x => x + 1); };
   return <Modal title={field === 'planners' ? 'Wie plant deze opkomst?' : 'Wie is er afwezig?'} sub={fmtRange(d, e && e.endDate, true)} onClose={onClose}>
     {names.length ? <div className="row" style={{ gap: 6 }}>{names.map(n => <Chip key={n} on={list.includes(n)} onClick={() => toggle(n)}>{n}</Chip>)}</div> : <p className="hint">Nog geen leidingteam.</p>}
@@ -150,7 +156,7 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
   </Modal>;
 }
 
-/* ---------- Opkomst overnemen: eindverantwoordelijke, leiding per activiteit, programma ---------- */
+/* ---------- Opkomst overnemen: planning door, leiding per activiteit, programma ---------- */
 export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean; onClose: () => void }) {
   const { settings, leaders, lib, getO, saveOpk, entryOfOpk, presentForEntry, sid, savePlan } = useSpeltak();
   const nav = useNavigate();
@@ -221,11 +227,15 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
     if (at == null) at = C.d.end - t >= dur ? t : C.d.start;
     const nb = blockFromLib(l, at); nb.dur = dur; upd(() => { C.d.blocks.push(nb); }); toast(`${l.title || 'Activiteit'} toegevoegd om ${fmtT(at!)}`);
   };
-  const sub = e ? `${fmtRange(e.date, e.endDate, true)} · week ${isoWeek(e.date)}${e.planners.length ? ' · planning: ' + e.planners.join(', ') : ''}${e.absent.length ? ' · afwezig: ' + e.absent.join(', ') : ''}` : '';
+  const togglePlanner = (n: string) => {
+    if (!e) return; const on = plannersOf(e, o).includes(n);
+    if (on && o.lead === n) upd(() => { o.lead = ''; });
+    savePlan({ ...e, planners: on ? e.planners.filter(x => x !== n) : [...e.planners, n] });
+  };
+  const sub = e ? `${fmtRange(e.date, e.endDate, true)} · week ${isoWeek(e.date)}${e.absent.length ? ' · afwezig: ' + e.absent.join(', ') : ''}` : '';
   return <Modal title={fresh ? 'Opkomst overnemen' : 'Leiding indelen'} sub={sub} onClose={onClose} wide>
     <div className="tk-head">
       <Field label="Opkomst titel"><input value={o.title} onChange={ev => upd(() => { o.title = ev.target.value; if (e) savePlan({ ...e, topic: ev.target.value }); })} /></Field>
-      <Field label="Eindverantwoordelijke"><select value={o.lead} onChange={ev => upd(() => { o.lead = ev.target.value; })}><option value="">Kies leiding</option>{present.map(n => <option key={n}>{n}</option>)}</select></Field>
       {!isKamp(o) && <>
         <Field label="Begintijd"><TimePicker value={o.start} onChange={v => upd(() => { const m = setOpkTime(o, 'start', v); if (m) toast(m); })} from={360} to={1430} /></Field>
         <Field label="Eindtijd"><TimePicker value={o.end} onChange={v => { const m = setOpkTime(o, 'end', v); if (m && m.startsWith('De eindtijd')) { toast(m); return; } upd(() => {}); }} from={365} to={1435} /></Field>
@@ -233,6 +243,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
         <Field label="Nabespreking"><select value={o.post} onChange={ev => upd(() => { o.post = +ev.target.value; })}>{PREP_OPTS.map(m => <option key={m} value={m}>{prepLabel(m)}</option>)}</select></Field>
       </>}
     </div>
+    {e && <div className="field"><span className="lbl">Planning door</span><div className="row" style={{ gap: 6 }}>{[...new Set([...present, ...plannersOf(e, o)])].map(n => <Chip key={n} on={plannersOf(e, o).includes(n)} onClick={() => togglePlanner(n)}>{n}</Chip>)}</div></div>}
     <div className="row" style={{ gap: 6 }}><span className="stat">Minimaal leiding<b>{need}</b></span><span className={'stat' + (need > present.length ? ' warnc' : '')}>Aanwezig<b>{present.length}</b></span><span className={'stat' + (A.warn ? ' warnc' : '')}>Aandachtspunten<b>{A.warn}</b></span></div>
     {A.warn > 0 && <ul className="issues">{A.issues.filter(i => i.lvl === 'warn').slice(0, 6).map((i, k) => <li key={k} className="warn"><i /><span>{i.text}</span></li>)}</ul>}
     <p className="hint">Klik op een naam om die in te delen. Klik op een onderdeel om de tijd aan te passen.</p>

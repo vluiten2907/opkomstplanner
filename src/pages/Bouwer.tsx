@@ -8,7 +8,7 @@ import { guardLeave, useDirty } from '../store/unsaved';
 import { Strip, PickOpk, usePdf, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, TimePicker } from '../components/ui';
 import { cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, uid, DAYS } from '../lib/time';
-import { addDaysSafe, allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, copyOpk, freeName, nameTaken, dayTitle, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, prepLabel, setOpkTime, syncKamp, LIB_FIELDS, PREP_OPTS, SWATCHES, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+import { addDaysSafe, allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, copyOpk, freeName, nameTaken, dayTitle, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, setOpkTime, syncKamp, LIB_FIELDS, PREP_OPTS, SWATCHES, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /* ============ Startscherm ============ */
 export default function Bouwer() {
@@ -149,7 +149,7 @@ function Builder({ o: stored }: { o: Opk }) {
         </div>
         <div className="row">{actions}<button className="btn ghost" onClick={() => go(`/s/${sid}/bouwer`)} title="Nieuwe opkomst of weekendkamp"><Plus size={16} />Nieuw</button></div>
       </div>
-      {o.state === 'planned' && e && <div className="ctx">{!readOnly && <button className="btn sm" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })}>Leiding indelen</button>}<span>eindverantwoordelijke: <b>{o.lead || 'nog niet gekozen'}</b></span>Ingepland op <b>{fmtRange(e.date, e.endDate, true)}</b><span>week {isoWeek(e.date)}</span><span>planning: {e.planners.length ? e.planners.join(', ') : 'nog niemand'}</span>
+      {o.state === 'planned' && e && <div className="ctx">{!readOnly && <button className="btn sm" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })}>Leiding indelen</button>}Ingepland op <b>{fmtRange(e.date, e.endDate, true)}</b><span>week {isoWeek(e.date)}</span><span>planning door: <b>{plannersOf(e, o).join(', ') || 'nog niemand'}</b></span>
         {src && can('bank') && <span>uit de opkomstenbank: {src.title || 'naamloos'} · <ConfirmBtn className="linkbtn" label="bank bijwerken met deze versie" confirm="Klik nogmaals: bank overschrijven" onConfirm={updBank} /></span>}</div>}
       <div className="card">
         <div className="meta">

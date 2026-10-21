@@ -93,6 +93,12 @@ export function normDay(d: any, i = 0): Day {
   return n;
 }
 export const isKamp = (o: Opk | null | undefined) => !!o && o.kind === 'kamp';
+/** Planning door: de planners uit de jaarplanning plus een eindverantwoordelijke uit oudere opkomsten (dat veld bestaat niet meer apart). */
+export function plannersOf(e: Plan | null | undefined, o?: Opk | null): string[] {
+  const out = e ? [...e.planners] : [];
+  if (o && o.state !== 'bank' && o.lead && !out.includes(o.lead)) out.push(o.lead);
+  return out;
+}
 export const allBlocks = (o: Opk) => isKamp(o) ? o.days.flatMap(d => d.blocks) : o.blocks;
 /** Aanwezige leiding: het team min afwezigen, plus namen die met de hand bij een onderdeel (of als eindverantwoordelijke) zijn gezet. */
 export function presentNames(leaders: string[], absent: string[], o?: Opk | null): string[] {
