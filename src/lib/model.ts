@@ -90,6 +90,12 @@ export function normDay(d: any, i = 0): Day {
 }
 export const isKamp = (o: Opk | null | undefined) => !!o && o.kind === 'kamp';
 export const allBlocks = (o: Opk) => isKamp(o) ? o.days.flatMap(d => d.blocks) : o.blocks;
+/** Aanwezige leiding: het team min afwezigen, plus namen die met de hand bij een onderdeel (of als eindverantwoordelijke) zijn gezet. */
+export function presentNames(leaders: string[], absent: string[], o?: Opk | null): string[] {
+  const out = leaders.filter(n => !absent.includes(n));
+  if (o && o.state !== 'bank') [...allBlocks(o).flatMap(b => b.names), o.lead].forEach(n => { if (n && !absent.includes(n) && !out.includes(n)) out.push(n); });
+  return out;
+}
 export function syncKamp(o: Opk) { if (!isKamp(o) || !o.days.length) return; o.start = o.days[0].start; o.end = o.days[o.days.length - 1].end; }
 export function normOpk(o: any, s?: Settings): Opk {
   const n: Opk = { id: o.id || uid(), state: ['draft', 'bank', 'planned'].includes(o.state) ? o.state : 'draft', srcId: o.srcId || null,

@@ -156,7 +156,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
   const [, bump] = useState(0);
   const [libId, setLibId] = useState(''); const [libDay, setLibDay] = useState(0);
   const o = getO(oid); if (!o) return null;
-  const e = entryOfOpk(o), present = e ? presentForEntry(e) : [...leaders];
+  const e = entryOfOpk(o), present = e ? presentForEntry(e, o) : [...leaders];
   const A = analyze(o, present, leaders), need = minNeed(o);
   const upd = (fn: (o: Opk) => void) => { fn(o); if (isKamp(o)) syncKamp(o); saveOpk({ ...o }); bump(x => x + 1); };
   const containers = isKamp(o) ? o.days.map((d, i) => ({ d, label: dayTitle(o, i, e ? addDays(e.date, i) : null), lo: d.start, hi: d.end })) : [{ d: o as unknown as Day, label: '', lo: o.start - (o.prep || 0), hi: o.end + (o.post || 0) }];

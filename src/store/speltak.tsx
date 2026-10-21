@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { collection, doc, onSnapshot, setDoc, deleteDoc, updateDoc, arrayUnion, arrayRemove, deleteField, getDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './auth';
-import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, isKamp, addDaysSafe } from '../lib/model';
+import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, isKamp, addDaysSafe, presentNames } from '../lib/model';
 import { normPerms, type Member, type PermKey, type Speltak, type Invite, type Perms, type Role } from '../lib/types';
 import { uid as mkId, clone } from '../lib/time';
 import { toast } from './toast';
@@ -21,7 +21,7 @@ type Ctx = {
   getO: (id: string | null | undefined) => Opk | undefined;
   getL: (id: string | null | undefined) => Lib | undefined;
   entryOfOpk: (o: Opk | null | undefined) => Plan | null;
-  presentForEntry: (e: Plan | null) => string[];
+  presentForEntry: (e: Plan | null, o?: Opk | null) => string[];
   presentFor: (o: Opk) => string[];
   linkOpk: (src: Opk, e: Plan, copy: boolean, keepNames: boolean) => Opk;
   unlinkEntry: (e: Plan) => void;
@@ -130,8 +130,8 @@ export function SpeltakProvider({ sid, children }: { sid: string; children: Reac
   const getO = (id: string | null | undefined) => opks.find(o => o.id === id);
   const getL = (id: string | null | undefined) => lib.find(l => l.id === id);
   const entryOfOpk = (o: Opk | null | undefined) => (o && plans.find(p => p.opkId === o.id)) || null;
-  const presentForEntry = (e: Plan | null) => leaders.filter(n => !(e && e.absent.includes(n)));
-  const presentFor = (o: Opk) => { const e = o.state === 'planned' ? entryOfOpk(o) : null; return e ? presentForEntry(e) : [...leaders]; };
+  const presentForEntry = (e: Plan | null, o?: Opk | null) => presentNames(leaders, e ? e.absent : [], o);
+  const presentFor = (o: Opk) => { const e = o.state === 'planned' ? entryOfOpk(o) : null; return e ? presentForEntry(e, o) : [...leaders]; };
   const peekEntry = (key: string) => {
     if (!key) return null;
     if (key.startsWith('s:')) return plans.find(p => p.slot === key.slice(2)) || null;

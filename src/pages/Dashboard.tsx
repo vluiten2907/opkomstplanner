@@ -67,7 +67,7 @@ function Hero({ r, today }: { r: Row; today: string }) {
   const kamp = !!e && e.type === 'kamp';
   const title = (o && o.title) || (e && e.topic) || 'Nog geen onderwerp';
   const short = (o && o.short) || (e && e.note) || '';
-  const planners = e ? e.planners : [], absent = e ? e.absent : [], present = presentForEntry(e);
+  const planners = e ? e.planners : [], absent = e ? e.absent : [], present = presentForEntry(e, o);
   const dt = fromISO(d), need = o ? minNeed(o) : 0;
   const facts = [fmtRange(d, e && e.endDate, true), 'week ' + isoWeek(d), kamp ? `vertrek ${fmtT(st)} · terug ${fmtT(en)}` : `${fmtT(st)}–${fmtT(en)}`];
   if (o && !isKamp(o) && (o.prep || o.post)) facts.push(`leiding ${fmtT(o.start - (o.prep || 0))}–${fmtT(o.end + (o.post || 0))}`);
@@ -125,7 +125,7 @@ function NextItem({ r }: { r: Row }) {
     if (st === 'kamp') tags.push(<span key="k" className="pill kamp">Kamp</span>);
     if (!e || !e.planners.length) tags.push(<span key="p" className="pill warn">Nog geen planner</span>);
     if (!o) tags.push(<span key="np" className="pill neutral">Geen programma</span>);
-    else tags.push(st === 'warn' || analyze(o, presentForEntry(e), leaders).warn ? <span key="w" className="pill warn">Aandachtspunten</span> : <span key="g" className="pill good">Programma klaar</span>);
+    else tags.push(st === 'warn' || analyze(o, presentForEntry(e, o), leaders).warn ? <span key="w" className="pill warn">Aandachtspunten</span> : <span key="g" className="pill good">Programma klaar</span>);
     if (e && e.letter.needed) tags.push(<span key="l" className={'pill ' + (e.letter.sent ? 'good' : 'warn')}>{e.letter.sent ? 'Brief verstuurd' : 'Brief'}</span>);
   }
   const sub = st === 'off' ? fmtRange(d, e && e.endDate) : `${fmtRange(d, e && e.endDate)} · ${e && e.planners.length ? 'planning: ' + e.planners.join(', ') : 'nog niemand toegewezen'}`;

@@ -77,6 +77,11 @@ with sync_playwright() as p:
     pg.click('.blk:has-text("Kompasposten")'); w(300); pg.click('.side >> text=Bewaren in activiteitenbank'); w(300); pg.click('.side .closex'); w(200)
     pg.click('.tabs >> text=Activiteitenbank'); w(300); pg.click('.libs >> text=Inplannen'); w(400)
     check(pg.locator('.blk:has-text("Kompasposten")').count() == 2, 'activiteit uit bank ingepland')
+    aanwezig = lambda: int(pg.locator('.summary .stat:has-text("Leiding aanwezig") b').inner_text())
+    voor = aanwezig()
+    pg.locator('.blk:has-text("Kompasposten")').first.click(); w(300)
+    pg.fill('.side input[placeholder^="Andere namen"]', 'Henk'); pg.locator('.side input[placeholder^="Andere namen"]').blur(); w(600); pg.click('.side .closex'); w(200)
+    check(aanwezig() == voor + 1 and pg.locator('.present .chip:has-text("Henk")').count() == 1, 'met de hand ingedeelde leiding telt mee als aanwezig')
     shot('03-bouwer')
 
     # --- leiding indelen (tijdlijn naast elkaar)

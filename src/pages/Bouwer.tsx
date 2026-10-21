@@ -138,7 +138,8 @@ function Builder({ o }: { o: Opk }) {
         </div>
         {kamp && <DaysBar o={o} di={di} setDayIdx={setDayIdx} upd={upd} date={e ? e.date : null} readOnly={readOnly} />}
         {e && <div className="present"><span className="lbl" style={{ marginRight: 6 }}>Aanwezige leiding</span>
-          {leaders.length ? leaders.map(n => <Chip key={n} on={!e.absent.includes(n)} disabled={!can('plan')} onClick={() => { const en = { ...e, absent: e.absent.includes(n) ? e.absent.filter(x => x !== n) : [...e.absent, n] }; dropAbsent(en); savePlan(en); }}>{n}</Chip>) : <span className="hint">Nog geen leidingteam.</span>}</div>}
+          {leaders.length ? leaders.map(n => <Chip key={n} on={!e.absent.includes(n)} disabled={!can('plan')} onClick={() => { const en = { ...e, absent: e.absent.includes(n) ? e.absent.filter(x => x !== n) : [...e.absent, n] }; dropAbsent(en); savePlan(en); }}>{n}</Chip>) : <span className="hint">Nog geen leidingteam.</span>}
+          {present.filter(n => !leaders.includes(n)).map(n => <Chip key={n} on disabled title="Met de hand ingedeeld">{n}</Chip>)}</div>}
       </div>
     </section>
     <div className="card"><div className="summary">
