@@ -26,7 +26,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   if (denied) return <div className="auth-wrap"><div className="card pad stack auth-card"><h2>Geen toegang</h2><p className="hint">Je bent geen lid van deze speltak, of hij bestaat niet meer.</p><button className="btn primary" onClick={() => { localStorage.removeItem('opk.sid'); nav('/speltakken'); }}>Mijn speltakken</button></div></div>;
   if (loading || !sp) return <div className="loading">Speltak laden…</div>;
   const initials = (myName || user?.email || '?').split(/\s+/).map(x => x[0]).join('').slice(0, 2).toUpperCase();
-  const links: [string, string][] = [['dashboard', 'Dashboard'], ['jaarplanning', 'Jaarplanning'], ['bouwer', 'Opkomstbouwer'], ['activiteiten', 'Activiteitenbank'], ['opkomsten', 'Opkomstenbank'], ['instellingen', isTL ? 'Team & instellingen' : 'Instellingen']];
+  // [pad, label, korte label voor smalle schermen]
+  const links: [string, string, string][] = [['dashboard', 'Dashboard', 'Dashboard'], ['jaarplanning', 'Jaarplanning', 'Jaarplanning'], ['bouwer', 'Opkomstbouwer', 'Bouwer'], ['activiteiten', 'Activiteitenbank', 'Activiteiten'], ['opkomsten', 'Opkomstenbank', 'Opkomsten'], ['instellingen', isTL ? 'Team & instellingen' : 'Instellingen', isTL ? 'Team' : 'Instellingen']];
   return <div className="app mx-auto">
     <header className="bar flex flex-wrap items-center gap-x-6 gap-y-2">
       <div className="brand flex items-center gap-2.5">
@@ -34,10 +35,10 @@ export default function Layout({ children }: { children: ReactNode }) {
         <span className="brand-txt"><span>Opkomstplanner</span><small>{[sp.groupName, sp.name].filter(Boolean).join(' · ')}</small></span>
       </div>
       <nav className="nav flex min-w-0 flex-1 overflow-x-auto" aria-label="Hoofdmenu">
-        {links.map(([p, l]) => <NavLink key={p} to={`/s/${sid}/${p}`}>{l}</NavLink>)}
+        {links.map(([p, l, k]) => <NavLink key={p} to={`/s/${sid}/${p}`}>{k === l ? l : <span className="nl" data-short={k}><span>{l}</span></span>}</NavLink>)}
       </nav>
-      <div style={{ position: 'relative', marginBottom: 12 }}>
-        <button className="btn sm" onClick={e => { e.stopPropagation(); setMenu(m => !m); }}><span className="avatar">{initials}</span>{myName || 'Account'}<ChevronDown size={14} /></button>
+      <div className="acct">
+        <button className="btn sm" aria-label="Account" onClick={e => { e.stopPropagation(); setMenu(m => !m); }}><span className="avatar">{initials}</span><span className="acct-name">{myName || 'Account'}</span><ChevronDown size={14} /></button>
         {menu && <div className="menu" onClick={e => e.stopPropagation()}>
           <button onClick={() => nav('/speltakken')}><Users size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Andere speltak</button>
           <button onClick={() => logout().then(() => nav('/inloggen'))}><LogOut size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Uitloggen</button>

@@ -844,3 +844,22 @@ fieldset:disabled .btn, fieldset:disabled .acc, fieldset:disabled .sw { opacity:
 .tk-tl .blk.tiny .names { display: none; }
 .tk-sel { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; padding: 12px 14px; border-radius: 12px; background: var(--sunk); }
 .tk-sel > b { flex: 1 1 100%; }
+/* Menubalk op telefoons: alles in beeld, geen horizontaal scrollen */
+body { padding-top: env(safe-area-inset-top, 0px); }
+.acct { position: relative; margin-bottom: 12px; }
+@media (max-width: 600px) {
+  .bar {
+    margin-inline: calc(-1 * max(16px, env(safe-area-inset-left, 0px))); padding-inline: max(16px, env(safe-area-inset-left, 0px));
+    padding-block: 8px 0; column-gap: 10px; row-gap: 4px; flex-wrap: wrap;
+  }
+  .brand { flex: 1 1 0; min-width: 0; padding-bottom: 0; font-size: 18px; }
+  .brand-txt { min-width: 0; }
+  .brand-txt small { max-width: 100%; }
+  .acct { order: 1; margin-bottom: 0; flex: none; }
+  .acct .btn { padding: 4px 6px 4px 4px; gap: 4px; }
+  .acct-name { display: none; }
+  .nav { order: 2; flex-basis: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; gap: 0; }
+  .nav a { text-align: center; padding: 8px 2px 10px; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; }
+  .nl > span { display: none; }
+  .nl::after { content: attr(data-short); }
+}

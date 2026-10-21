@@ -122,7 +122,14 @@ with sync_playwright() as p:
     # --- mobiel
     pg.set_viewport_size({'width': 390, 'height': 800}); pg.click('nav >> text=Jaarplanning'); w(500)
     check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'mobiel: geen horizontale scroll')
-    shot('07-mobiel', False); pg.set_viewport_size({'width': 1360, 'height': 900})
+    shot('07-mobiel', False)
+    for wd in (344, 360, 412):  # o.a. Samsung-toestellen: hele menubalk in beeld
+        pg.set_viewport_size({'width': wd, 'height': 780}); w(200)
+        inview = pg.evaluate("[...document.querySelectorAll('header.bar nav a, header.bar .acct .btn')].every(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.left >= -1 && r.right <= innerWidth + 1 && r.top >= -1; })")
+        check(inview, f'mobiel {wd}px: alle menu-items en account in beeld')
+    pg.click('header.bar .acct .btn'); w(200); check(pg.locator('.menu >> text=Uitloggen').is_visible(), 'mobiel: accountmenu opent')
+    pg.mouse.click(5, 600); w(200)
+    pg.set_viewport_size({'width': 1360, 'height': 900})
 
     # --- uitnodiging accepteren als tweede persoon
     pg.evaluate("localStorage.setItem('fake.auth.current','null')"); pg.goto(link); w(500)
