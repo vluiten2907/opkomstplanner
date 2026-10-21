@@ -94,6 +94,8 @@ with sync_playwright() as p:
     check(pg.locator('input[type=email]').input_value() == 'vincent@test.nl', 'uitnodiging: e-mailadres staat vast')
     register('Vincent Test', 'vincent@test.nl')
     check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'account via uitnodiging → dashboard speltak'); shot('01-dashboard')
+    check(pg.locator('h1').first.inner_text().strip() == 'Scouts', 'dashboard: speltaknaam is de titel')
+    check(pg.locator('.kicker-switch').count() == 1, 'dashboard: knop andere speltak')
     # --- team en instellingen
     pg.click('nav >> text=Team & instellingen'); w()
     check(pg.locator('.invite .chip:has-text("Teamleider")').count() == 0 and pg.locator('.invite .chip:has-text("Mijn rol overdragen")').count() == 1, 'teamleider kan geen extra teamleider uitnodigen, wel overdragen')
@@ -178,6 +180,8 @@ with sync_playwright() as p:
     pg.set_viewport_size({'width': 390, 'height': 800}); pg.click('nav >> text=Jaarplanning'); w(500)
     check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'mobiel: geen horizontale scroll')
     shot('07-mobiel', False)
+    pg.click('nav >> text=Dashboard'); w(500)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'mobiel dashboard: geen horizontale scroll'); shot('07-mobiel-dashboard', False)
     for wd in (344, 360, 412):  # o.a. Samsung-toestellen: hele menubalk in beeld
         pg.set_viewport_size({'width': wd, 'height': 780}); w(200)
         inview = pg.evaluate("[...document.querySelectorAll('header.bar nav a, header.bar .acct .btn')].every(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.left >= -1 && r.right <= innerWidth + 1 && r.top >= -1; })")

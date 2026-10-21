@@ -4,11 +4,10 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 
 ## Bezig
 
-_(niets)_
+- **Huidige speltak duidelijk tonen** — dashboard: speltaknaam als grote titel, groepsnaam klein erboven met knop *Andere speltak*; speltak vet in de menubalk. Klaar op branch, wacht op beurt voor `main`.
 
 ## Open
 
-- **Huidige speltak duidelijk tonen** — op het dashboard staat nu de groepsnaam groot; maak de speltak waar je in werkt de hoofdtitel (groepsnaam klein erboven) en zet de speltaknaam ook duidelijker in de menubalk, met snel wisselen als je in meer speltakken zit.
 - **Bewerken uit de bank bevestigen** — een opkomst of activiteit uit je eigen bank wordt na bewerken niet meer automatisch opgeslagen. Onderaan: *Annuleren*, *Opslaan* en *Opslaan als kopie* (met nieuwe naam). Bestaat de naam al in de bank, dan moet je een andere naam kiezen.
 - **Concepten kunnen verwijderen** — in de opkomstplanner een conceptopkomst kunnen verwijderen.
 - **Live controle met echt account** — registreren, speltak aanmaken en uitnodiging accepteren op conqueston.nl/opkomst door Vincent (bevestigt e-mail/wachtwoord-login en de gepubliceerde regels).

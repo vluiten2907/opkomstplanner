@@ -9,9 +9,9 @@ export function usePdf() {
   return (o: Opk | undefined | null) => { if (!o) return; makePdf(o, settings, o.state === 'planned' ? entryOfOpk(o) : null, presentFor(o)); };
 }
 
-export const PageTitle = ({ title, sub, children }: { title: React.ReactNode; sub?: React.ReactNode; children?: React.ReactNode }) =>
+export const PageTitle = ({ title, sub, kicker, children }: { title: React.ReactNode; sub?: React.ReactNode; kicker?: React.ReactNode; children?: React.ReactNode }) =>
   <div className="row between" style={{ alignItems: 'flex-end' }}>
-    <div><h1 className="display text-5xl md:text-7xl font-black tracking-tighter">{title}</h1>{sub && <p className="subline">{sub}</p>}</div>
+    <div>{kicker && <p className="kicker">{kicker}</p>}<h1 className="display text-5xl md:text-7xl font-black tracking-tighter">{title}</h1>{sub && <p className="subline">{sub}</p>}</div>
     {children && <div className="row">{children}</div>}
   </div>;
 

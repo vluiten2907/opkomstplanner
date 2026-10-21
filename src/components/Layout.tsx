@@ -35,7 +35,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     <header className="bar flex flex-wrap items-center gap-x-6 gap-y-2">
       <div className="brand flex items-center gap-2.5">
         {settings.logo ? <img id="brandLogo" src={settings.logo} alt="" /> : <TentTree size={26} strokeWidth={1.9} />}
-        <span className="brand-txt"><span>Opkomstplanner</span><small>{[sp.groupName, sp.name].filter(Boolean).join(' · ')}</small></span>
+        <span className="brand-txt"><span>Opkomstplanner</span><small>{sp.name && <b className="brand-sp">{sp.name}</b>}{sp.groupName && sp.name ? ' · ' : ''}{sp.groupName}</small></span>
       </div>
       <nav className="nav flex min-w-0 flex-1 overflow-x-auto" aria-label="Hoofdmenu">
         {links.map(([p, l, k]) => <NavLink key={p} to={`/s/${sid}/${p}`}>{k === l ? l : <span className="nl" data-short={k}><span>{l}</span></span>}</NavLink>)}
