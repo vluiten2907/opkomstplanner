@@ -14,7 +14,6 @@ _(niets)_
 - **Oefenomgeving** — bestond in de losse versie (voorbeelddata met watermerk); nog niet in de online versie.
 - **Uitnodigingen beheren** — openstaande uitnodigingen tonen en intrekken in Team & instellingen.
 - **Wachtwoord vergeten-mail** — controleren of de Firebase-mail aankomt en eventueel de afzender/tekst in het Nederlands zetten (Authentication → Templates).
-
 - **"Naam" wordt "Opkomst titel" bij Leiding indelen** — het veld heet nu "naam", maar bedoeld is de titel van de opkomst.
 - **Menubalk valt buiten beeld** — op sommige apparaten valt de menubalk bovenin buiten het scherm.
 - **Handmatig toegevoegde leiding telt niet mee** — leiding die je met de hand toevoegt, wordt later niet meegeteld als aanwezige leiding.
