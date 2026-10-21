@@ -4,11 +4,13 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 
 ## Bezig
 
-- **Rollenstructuur met beheerders** — vier niveaus: Beheer (totaal) → Beheer (groep, per Scouting-vereniging) → Teamleider → Leiding. vluiten2907@gmail.com wordt voorlopig het hoofdaccount (Beheer totaal). Beheer ziet alle teams en teamleiders, nodigt teamleiders uit en (totaal) nodigt andere Scouting-groepen uit. Een account aanmaken kan alleen nog via een uitnodiging; open registratie verdwijnt. Rechten per rol: Beheer (totaal) wijst toe/nodigt uit als Beheer (groep); Beheer (groep) als Teamleider; Teamleider als Leiding. Elke rol kan zijn eigen rol overdragen aan iemand anders. Beheer (totaal) en Beheer (groep) kunnen ook een mede-beheerder op hun eigen niveau aanstellen. Overlapt met *Uitnodigingen beheren*. Raakt datamodel en `firestore.rules`: eerst ontwerp en migratie voorleggen. Ontwerp en migratieplan liggen ter goedkeuring bij Vincent.
-- **Uitnodigingen beheren** — openstaande uitnodigingen tonen en intrekken in Team & instellingen. Wordt meegenomen in de rollenstructuur.
+_(niets)_
 
 ## Open
 
+- **Opkomsten delen binnen de groep** — gedeelde opkomstenbank per Scouting-groep (bouwt op de rollenstructuur, `groepen/{gid}`). Bij "in de bank zetten" staat delen binnen de groep standaard aan; anderen kopiëren een gedeelde opkomst naar hun eigen opkomstenbank. Overzichtelijk houden (filteren, herkomst tonen). Eerst ontwerp voorleggen.
+- **Bewerken uit de bank bevestigen** — een opkomst of activiteit uit je eigen bank wordt na bewerken niet meer automatisch opgeslagen. Onderaan: *Annuleren*, *Opslaan* en *Opslaan als kopie* (met nieuwe naam). Bestaat de naam al in de bank, dan moet je een andere naam kiezen.
+- **Concepten kunnen verwijderen** — in de opkomstplanner een conceptopkomst kunnen verwijderen.
 - **Live controle met echt account** — registreren, speltak aanmaken en uitnodiging accepteren op conqueston.nl/opkomst door Vincent (bevestigt e-mail/wachtwoord-login en de gepubliceerde regels).
 - **Uitnodiging per e-mail laten versturen** — nu kopieer/mail-knop; automatisch versturen vereist een mailserver of Cloud Function (Blaze-plan).
 - **Oefenomgeving** — bestond in de losse versie (voorbeelddata met watermerk); nog niet in de online versie.
@@ -16,6 +18,7 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 
 ## Klaar
 
+- 2026-10-21 — Rollen en beheerders: Beheer (totaal) → Beheer (groep) → Teamleider → Leiding. Beheer-pagina met groepen, speltakken en teamleiders; oude speltakken koppelen aan een groep. Account aanmaken alleen via uitnodiging (30 dagen geldig). Openstaande uitnodigingen zien, link kopiëren en intrekken op elk niveau. Overdragen, mede-beheerders en aftreden. Nieuwe `firestore.rules` (73 emulatortests).
 - 2026-10-21 — Menubalk op telefoons (o.a. Samsung, 344–412 px): alle zes menu-items in beeld in twee rijen met korte namen, accountknop naast het logo, balk lager en over de volle breedte. Desktop ongewijzigd.
 - 2026-10-21 — Leiding die je met de hand bij een onderdeel invult, telt nu mee als aanwezige leiding (bouwer, leiding indelen, dashboard, pdf) en is te kiezen als eindverantwoordelijke.
 - 2026-10-21 — "Naam" heet nu "Opkomst titel" bij Leiding indelen, in de opkomstbouwer en in de opkomstenbank; in de activiteitenbank "Titel van de activiteit".

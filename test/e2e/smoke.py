@@ -28,7 +28,8 @@ with sync_playwright() as p:
     shot = lambda n, full=True: pg.screenshot(path=f'{OUT}/{n}.png', full_page=full)
 
     def register(name, email):
-        pg.fill('input:not([type=email]):not([type=password])', name); pg.fill('input[type=email]', email); pg.fill('input[type=password]', 'geheim123')
+        pg.fill('input:not([type=email]):not([type=password])', name); pg.fill('input[type=password]', 'geheim123')
+        if pg.locator('input[type=email]').is_editable(): pg.fill('input[type=email]', email)
         pg.click('.btn.primary'); w(800)
 
     def add_block(y, title, dur='15', loc='', who=None):
@@ -38,18 +39,45 @@ with sync_playwright() as p:
         if who: pg.click(f'.side .chip:has-text("{who}")')
         w(600); pg.click('.side .closex'); w(200)
 
-    # --- account en speltak
-    pg.goto(BASE + '/registreren'); w(); register('Vincent Test', 'vincent@test.nl')
-    check('/speltakken' in pg.url, 'registreren → speltakken')
-    pg.click('text=Nieuwe speltak als teamleider'); w(); pg.fill('#n-group', 'Testgroep'); pg.fill('#n-name', 'Scouts')
-    pg.click('text=Speltak aanmaken'); w(1000)
-    check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'speltak aanmaken → dashboard'); shot('01-dashboard')
+    def logout_to(url):
+        pg.evaluate("localStorage.setItem('fake.auth.current','null'); localStorage.removeItem('opk.sid')"); pg.goto(url); w(600)
 
+    def invite_link():
+        return pg.locator('.banknote .mono-code').last.inner_text()
+
+    # --- geen open registratie meer
+    pg.goto(BASE + '/registreren'); w()
+    check('/inloggen' in pg.url, 'registreren zonder uitnodiging bestaat niet meer')
+    check(pg.locator('text=Nieuw account').count() == 0, 'inlogpagina heeft geen knop Nieuw account')
+
+    # --- Beheer (totaal): groep, speltak en uitnodigingen
+    pg.fill('input[type=email]', 'vluiten2907@gmail.com'); pg.fill('input[type=password]', 'demo123'); pg.click('.btn.primary'); w(1200)
+    check('/beheer' in pg.url and pg.locator('h2:has-text("Beheer (totaal)")').count() == 1, 'hoofdaccount → Beheer (totaal)')
+    pg.click('text=Nieuwe Scouting-groep'); w(); pg.fill('#ng-name', 'Testgroep'); pg.fill('#ng-email', 'ga@test.nl'); pg.click('text=Groep aanmaken'); w(800)
+    ga_link = invite_link(); check('/uitnodiging/' in ga_link, 'groep aangemaakt + uitnodiging Beheer (groep)')
+    pg.fill('input[placeholder^="Naam nieuwe speltak"]', 'Scouts'); pg.click('text=Speltak aanmaken'); w(800)
+    check(pg.locator('.groupcard .member:has-text("Scouts")').count() == 1, 'speltak aangemaakt in groep')
+    pg.locator('.groupcard .member:has-text("Scouts") button', has_text=re.compile('^Team$')).click(); w(300)
+    pg.fill('input[placeholder="e-mailadres teamleider"]', 'vincent@test.nl'); pg.click('text=Teamleider uitnodigen'); w(800)
+    tl_link = invite_link(); check('/uitnodiging/' in tl_link and tl_link != ga_link, 'teamleider uitgenodigd')
+    pg.fill('input[placeholder="e-mailadres beheerder"]', 'weg@test.nl'); pg.click('.groupcard >> text=Beheerder uitnodigen'); w(800)
+    n_inv = pg.locator('.invrow').count(); check(n_inv == 3, f'openstaande uitnodigingen zichtbaar ({n_inv})')
+    pg.locator('.invrow:has-text("weg@test.nl") >> text=Intrekken').click(); w(150); pg.locator('.invrow:has-text("weg@test.nl") >> text=Zeker?').click(); w(800)
+    check(pg.locator('.invrow').count() == 2, 'uitnodiging intrekken')
+    shot('00-beheer')
+
+    # --- teamleider maakt account via de uitnodiging
+    logout_to(tl_link)
+    check(pg.locator('input[type=email]').input_value() == 'vincent@test.nl', 'uitnodiging: e-mailadres staat vast')
+    register('Vincent Test', 'vincent@test.nl')
+    check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'account via uitnodiging → dashboard speltak'); shot('01-dashboard')
     # --- team en instellingen
     pg.click('nav >> text=Team & instellingen'); w()
-    pg.fill('input[type=email]', 'anna@test.nl'); pg.click('text=Uitnodigingslink maken'); w(600)
+    check(pg.locator('.invite .chip:has-text("Teamleider")').count() == 0 and pg.locator('.invite .chip:has-text("Mijn rol overdragen")').count() == 1, 'teamleider kan geen extra teamleider uitnodigen, wel overdragen')
+    pg.fill('.invite input[type=email]', 'anna@test.nl'); pg.click('text=Uitnodigingslink maken'); w(600)
     link = pg.locator('.mono-code').inner_text()
     check('/uitnodiging/' in link, 'uitnodigingslink gemaakt')
+    check(pg.locator('.invrow:has-text("anna@test.nl")').count() == 1, 'teamleider ziet openstaande uitnodiging')
     for n in ['Bram', 'Carla']:
         pg.fill('input[placeholder="Naam"]', n); pg.locator('input[placeholder="Naam"]').press('Enter'); w(300)
     shot('02-instellingen')
@@ -133,12 +161,23 @@ with sync_playwright() as p:
     pg.set_viewport_size({'width': 1360, 'height': 900})
 
     # --- uitnodiging accepteren als tweede persoon
-    pg.evaluate("localStorage.setItem('fake.auth.current','null')"); pg.goto(link); w(500)
-    pg.click('text=Account aanmaken'); w(400); register('Anna de Vries', 'anna@test.nl')
-    if pg.locator('text=Toetreden').count(): pg.click('text=Toetreden'); w(800)
+    logout_to(link); register('Anna de Vries', 'anna@test.nl')
     check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'uitnodiging geaccepteerd → dashboard speltak')
     pg.click('nav >> text=Instellingen'); w(400)
     check(pg.locator('text=Anna de Vries (jij)').count() == 1, 'nieuw lid staat in het team')
+
+    # --- Beheer (groep) accepteert en ziet speltak met teamleider
+    logout_to(ga_link); register('Greet Beheer', 'ga@test.nl')
+    check('/beheer' in pg.url, 'beheerder groep → beheerpagina')
+    check(pg.locator('.groupcard .member:has-text("Scouts") >> text=Teamleider: Vincent Test').count() == 1, 'beheerder ziet speltak en teamleider')
+    check(pg.locator('h2:has-text("Beheer (totaal)")').count() == 0, 'beheerder groep ziet geen Beheer (totaal)')
+    shot('08-beheer-groep')
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(300)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'beheer mobiel: geen horizontale scroll'); shot('09-beheer-mobiel')
+    pg.set_viewport_size({'width': 1360, 'height': 900})
+    pg.click('.groupcard .member:has-text("Scouts") >> text=Openen'); w(1000)
+    check(pg.locator('.adminnote').count() == 1, 'beheerder bekijkt speltak alleen-lezen')
+    check(pg.locator('text=Nieuwe opkomst').count() == 0, 'beheerder kan geen opkomst maken')
     b.close()
 
 check(not errors, 'geen fouten in de console' + ('' if not errors else ': ' + '; '.join(errors[:5])))

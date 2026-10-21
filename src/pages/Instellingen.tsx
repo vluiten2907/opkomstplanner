@@ -1,6 +1,6 @@
 import { useRef, useState, type InputHTMLAttributes } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Copy, Download, Link2, Mail, Trash2, UserPlus } from 'lucide-react';
+import { Download, Link2, Trash2, UserPlus } from 'lucide-react';
 import { useAuth } from '../store/auth';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
@@ -9,7 +9,9 @@ import { Chip, ConfirmBtn, Dot, Field, TimePicker, useDebouncedInput } from '../
 import { download, slugify } from '../lib/export';
 import { fmtNL, fmtT, plural, todayISO, uid, DAYS, MONTHS } from '../lib/time';
 import { ACCENTS, normLib, normOpk, normPlan, normSettings, prepLabel, PREP_OPTS, SPELTAKKEN, SWATCHES, type Settings } from '../lib/model';
-import { ALL_PERMS, DEFAULT_LEIDING_PERMS, PERM_HELP, PERM_LABELS, type Member, type PermKey, type Perms, type Role } from '../lib/types';
+import { ALL_PERMS, DEFAULT_LEIDING_PERMS, PERM_HELP, PERM_LABELS, isTeamleider, type Invite, type Member, type PermKey, type Perms } from '../lib/types';
+import { ensureTlIds, isEmail, setTeamleider, stepDownTeamleider, transferTeamleider } from '../store/beheer';
+import { InviteLink, InviteList, useOpenInvites } from '../components/Invites';
 
 /** Tekstveld dat pas na een korte pauze opslaat (voorkomt een schrijfactie per toetsaanslag). */
 function DebText({ value, onCommit, ...rest }: { value: string; onCommit: (v: string) => void } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
@@ -19,13 +21,14 @@ function DebText({ value, onCommit, ...rest }: { value: string; onCommit: (v: st
 
 export default function Instellingen() {
   const S = useSpeltak();
-  const { settings, isTL, can, saveSettings, opks, lib, plans, sp } = S;
+  const { settings, isTL, can, saveSettings, opks, lib, plans } = S;
+  const team = isTL || S.isAdmin;
   const edit = can('settings');
   const set = (patch: Partial<Settings>) => saveSettings(patch);
   const monthOpts = MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>);
   const dayOpts = (list: number[]) => list.map(n => <option key={n} value={n}>{n} dagen</option>);
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
-    <PageTitle title={isTL ? 'Team & instellingen' : 'Instellingen'} sub={edit ? undefined : 'Je kunt de instellingen bekijken; alleen de teamleider (of leiding met het recht Instellingen) kan ze aanpassen.'} />
+    <PageTitle title={team ? 'Team & instellingen' : 'Instellingen'} sub={edit ? undefined : 'Je kunt de instellingen bekijken; alleen de teamleider (of leiding met het recht Instellingen) kan ze aanpassen.'} />
     <div className="settings">
       <Team />
       <fieldset className="card pad stack" disabled={!edit} style={{ border: 0, margin: 0, minWidth: 0 }}>
@@ -87,7 +90,7 @@ export default function Instellingen() {
         }}><Download size={16} />Back-up maken</button>{edit && can('build') && <Restore />}</div>
         <p className="hint">{plural(opks.length, 'opkomst', 'opkomsten')} · {plural(lib.length, 'activiteit', 'activiteiten')} · {plural(plans.length, 'datum in de planning', 'data in de planning')}</p>
         {edit && <p className="hint">Een back-up uit de losse (offline) Opkomstplanner kun je hier ook terugzetten: alles wordt aan deze speltak toegevoegd.</p>}
-        {!isTL && sp && <Leave />}
+        {!isTL && S.isMember && <Leave />}
       </section>
     </div>
   </div>;
@@ -164,61 +167,77 @@ function Leave() {
 
 /* ---------- Team: leden, rechten en uitnodigingen ---------- */
 function Team() {
-  const { sp, isTL, setMember, removeMember, createInvite, myName } = useSpeltak();
+  const { sp, isTL, isAdmin, setMember, removeMember, createInvite, myName } = useSpeltak();
   const { user } = useAuth();
-  const [email, setEmail] = useState(''); const [role, setRole] = useState<Role>('leiding'); const [perms, setPerms] = useState<Perms>(DEFAULT_LEIDING_PERMS);
-  const [link, setLink] = useState<{ email: string; url: string } | null>(null); const [busy, setBusy] = useState(false); const [copied, setCopied] = useState(false);
+  const manage = isTL || isAdmin;
+  const [email, setEmail] = useState(''); const [kind, setKind] = useState<'leiding' | 'teamleider' | 'transfer'>('leiding'); const [perms, setPerms] = useState<Perms>(DEFAULT_LEIDING_PERMS);
+  const [inv, setInv] = useState<Invite | null>(null); const [busy, setBusy] = useState(false);
+  const open = useOpenInvites(manage && sp ? [{ sid: sp.id }] : []);
   if (!sp) return null;
-  const members = Object.entries(sp.members).sort((a, b) => (a[1].role === b[1].role ? 0 : a[1].role === 'teamleider' ? -1 : 1) || a[1].name.localeCompare(b[1].name, 'nl'));
-  const tlCount = members.filter(([, m]) => m.role === 'teamleider').length;
+  const tl = (u: string) => isTeamleider(sp, u);
+  const members = Object.entries(sp.members).sort((a, b) => Number(tl(b[0])) - Number(tl(a[0])) || a[1].name.localeCompare(b[1].name, 'nl'));
+  const tlCount = members.filter(([u]) => tl(u)).length;
+  const fail = (e: any) => toast(e?.message === 'last' ? 'Er moet minstens één teamleider blijven.' : 'Aanpassen mislukt.');
   const invite = async () => {
     const em = email.trim().toLowerCase();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { toast('Vul een geldig e-mailadres in.'); return; }
+    if (!isEmail(em)) { toast('Vul een geldig e-mailadres in.'); return; }
     if (members.some(([, m]) => m.email === em)) { toast('Dit e-mailadres zit al in het team.'); return; }
     setBusy(true);
-    try { const inv = await createInvite(em, role, role === 'teamleider' ? ALL_PERMS : perms); setLink({ email: em, url: `${location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/uitnodiging/${inv.id}` }); setEmail(''); setCopied(false); }
-    catch { toast('Uitnodiging maken mislukt.'); }
+    try {
+      if (kind !== 'leiding') await ensureTlIds(sp).catch(() => {});
+      setInv(await createInvite(em, kind === 'leiding' ? 'leiding' : 'teamleider', kind === 'leiding' ? perms : ALL_PERMS, kind === 'transfer')); setEmail('');
+    } catch { toast('Uitnodiging maken mislukt.'); }
     setBusy(false);
   };
-  const copy = async () => { if (!link) return; try { await navigator.clipboard.writeText(link.url); setCopied(true); toast('Link gekopieerd'); } catch { toast('Kopiëren lukt niet; selecteer de link en kopieer hem zelf.'); } };
-  const mailto = link ? `mailto:${link.email}?subject=${encodeURIComponent('Uitnodiging Opkomstplanner ' + [sp.groupName, sp.name].filter(Boolean).join(' · '))}&body=${encodeURIComponent(`Hoi,\n\n${myName || 'Ik'} nodigt je uit voor de Opkomstplanner van ${[sp.groupName, sp.name].filter(Boolean).join(' · ')}.\n\nOpen deze link en maak een account aan met dit e-mailadres (${link.email}):\n${link.url}\n\nGroet,\n${myName}`)}` : '';
   return <section className="card pad stack" style={{ gridColumn: '1 / -1' }}>
     <div className="row between"><h2>Team</h2><span className="hint">{plural(members.length, 'lid', 'leden')} · {sp.name}</span></div>
     <div className="team">
-      {members.map(([uidX, m]) => <MemberRow key={uidX} uidX={uidX} m={m} me={uidX === user?.uid} isTL={isTL} lastTL={m.role === 'teamleider' && tlCount < 2}
-        onRole={r => setMember(uidX, { role: r, perms: r === 'teamleider' ? ALL_PERMS : m.perms }).catch(() => toast('Aanpassen mislukt.'))}
-        onPerm={(k, v) => setMember(uidX, { perms: { ...m.perms, [k]: v } }).catch(() => toast('Aanpassen mislukt.'))}
-        onRemove={() => removeMember(uidX).then(() => toast(`${m.name} uit het team gehaald`)).catch(() => toast('Verwijderen mislukt.'))} />)}
+      {members.map(([uidX, m]) => <MemberRow key={uidX} m={m} isTl={tl(uidX)} me={uidX === user?.uid} iAmTL={isTL} isAdmin={isAdmin} lastTL={tl(uidX) && tlCount < 2}
+        onTeamleider={on => setTeamleider(sp, uidX, on).catch(fail)}
+        onTransfer={() => transferTeamleider(sp, user!.uid, uidX).then(() => toast(`${m.name} is nu teamleider`)).catch(fail)}
+        onStepDown={() => stepDownTeamleider(sp, uidX).then(() => toast('Je bent nu leiding')).catch(fail)}
+        onPerm={(k, v) => setMember(uidX, { perms: { ...m.perms, [k]: v } }).catch(fail)}
+        onRemove={() => removeMember(uidX).then(() => toast(`${m.name} uit het team gehaald`)).catch(fail)} />)}
+      {!members.length && <p className="hint">Nog niemand in het team. Nodig hieronder de teamleider uit.</p>}
     </div>
-    {isTL && <div className="invite stack">
-      <h3><UserPlus size={16} style={{ verticalAlign: -3, marginRight: 6 }} />Leiding uitnodigen</h3>
+    {manage && <div className="invite stack">
+      <h3><UserPlus size={16} style={{ verticalAlign: -3, marginRight: 6 }} />Uitnodigen</h3>
       <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); invite(); } }} placeholder="e-mailadres" style={{ flex: '1 1 220px' }} />
-        <div className="seg"><Chip on={role === 'leiding'} onClick={() => setRole('leiding')}>Leiding</Chip><Chip on={role === 'teamleider'} onClick={() => setRole('teamleider')}>Teamleider</Chip></div></div>
-      {role === 'leiding' && <PermGrid perms={perms} onChange={(k, v) => setPerms({ ...perms, [k]: v })} />}
+        <div className="seg"><Chip on={kind === 'leiding'} onClick={() => setKind('leiding')}>Leiding</Chip>
+          {isAdmin && <Chip on={kind === 'teamleider'} onClick={() => setKind('teamleider')}>Teamleider</Chip>}
+          {isTL && <Chip on={kind === 'transfer'} onClick={() => setKind('transfer')}>Mijn rol overdragen</Chip>}</div></div>
+      {kind === 'leiding' && <PermGrid perms={perms} onChange={(k, v) => setPerms({ ...perms, [k]: v })} />}
+      {kind === 'transfer' && <p className="hint">De ander wordt teamleider zodra hij de uitnodiging accepteert. Daarna tik je bij jezelf op Aftreden; je blijft dan leiding. Overdragen aan iemand die al in het team zit kan direct via Rechten bij die persoon.</p>}
       <div className="row"><button className="btn primary" disabled={busy} onClick={invite}><Link2 size={16} />Uitnodigingslink maken</button></div>
-      {link && <div className="banknote"><span>Uitnodiging voor <b>{link.email}</b>. Stuur deze link door; de link werkt alleen voor dat e-mailadres.</span>
-        <code className="mono-code">{link.url}</code>
-        <div className="row"><button className="btn sm" onClick={copy}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? 'Gekopieerd' : 'Kopiëren'}</button><a className="btn sm" href={mailto}><Mail size={14} />Mailen</a></div></div>}
+      {inv && <InviteLink inv={inv} fromName={myName} onClose={() => setInv(null)} />}
+      <h3>Openstaande uitnodigingen</h3>
+      <InviteList invites={open} showWhere={false} />
     </div>}
   </section>;
 }
 
-function MemberRow({ uidX, m, me, isTL, lastTL, onRole, onPerm, onRemove }: { uidX: string; m: Member; me: boolean; isTL: boolean; lastTL: boolean; onRole: (r: Role) => void; onPerm: (k: PermKey, v: boolean) => void; onRemove: () => void }) {
+function MemberRow({ m, isTl, me, iAmTL, isAdmin, lastTL, onTeamleider, onTransfer, onStepDown, onPerm, onRemove }: {
+  m: Member; isTl: boolean; me: boolean; iAmTL: boolean; isAdmin: boolean; lastTL: boolean;
+  onTeamleider: (on: boolean) => void; onTransfer: () => void; onStepDown: () => void; onPerm: (k: PermKey, v: boolean) => void; onRemove: () => void }) {
   const [open, setOpen] = useState(false);
+  const manage = iAmTL || isAdmin;
   const initials = (m.name || '?').split(/\s+/).map(x => x[0]).join('').slice(0, 2).toUpperCase();
-  const summary = m.role === 'teamleider' ? 'alle rechten' : (Object.keys(PERM_LABELS) as PermKey[]).filter(k => m.perms?.[k]).map(k => PERM_LABELS[k]).join(', ') || 'alleen bekijken';
-  void uidX;
+  const summary = isTl ? 'alle rechten' : (Object.keys(PERM_LABELS) as PermKey[]).filter(k => m.perms?.[k]).map(k => PERM_LABELS[k]).join(', ') || 'alleen bekijken';
+  // Teamleiders verwijderen mag alleen de beheerder; een teamleider haalt alleen leiding weg.
+  const canRemove = !me && !lastTL && (isAdmin || (iAmTL && !isTl));
   return <div className="member">
     <div className="row between" style={{ flexWrap: 'nowrap' }}>
-      <div className="row" style={{ flexWrap: 'nowrap', minWidth: 0 }}><span className="avatar">{initials}</span><div style={{ minWidth: 0 }}><b>{m.name}{me ? ' (jij)' : ''}</b><div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}{m.email ? ' · ' : ''}{m.role === 'teamleider' ? 'Teamleider' : 'Leiding'} · {summary}</div></div></div>
-      {isTL && <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
+      <div className="row" style={{ flexWrap: 'nowrap', minWidth: 0 }}><span className="avatar">{initials}</span><div style={{ minWidth: 0 }}><b>{m.name}{me ? ' (jij)' : ''}</b><div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}{m.email ? ' · ' : ''}{isTl ? 'Teamleider' : 'Leiding'} · {summary}</div></div></div>
+      {manage && <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
         <button className="btn sm ghost" onClick={() => setOpen(o => !o)}>{open ? 'Sluiten' : 'Rechten'}</button>
-        {!lastTL && !me && <ConfirmBtn className="iconbtn danger" label={<Trash2 size={15} />} confirm="Zeker?" title="Uit het team halen" onConfirm={onRemove} />}
+        {canRemove && <ConfirmBtn className="iconbtn danger" label={<Trash2 size={15} />} confirm="Zeker?" title="Uit het team halen" onConfirm={onRemove} />}
       </div>}
     </div>
-    {open && isTL && <div className="stack" style={{ gap: 10, paddingTop: 10 }}>
-      <div className="seg"><Chip on={m.role === 'leiding'} disabled={lastTL} title={lastTL ? 'Er moet minstens één teamleider blijven' : undefined} onClick={() => onRole('leiding')}>Leiding</Chip><Chip on={m.role === 'teamleider'} onClick={() => onRole('teamleider')}>Teamleider</Chip></div>
-      {m.role === 'leiding' ? <PermGrid perms={m.perms} onChange={onPerm} /> : <p className="hint">Een teamleider mag alles, ook het team beheren en leiding uitnodigen.</p>}
+    {open && manage && <div className="stack" style={{ gap: 10, paddingTop: 10 }}>
+      {isAdmin && <div className="seg"><Chip on={!isTl} disabled={lastTL} title={lastTL ? 'Er moet minstens één teamleider blijven' : undefined} onClick={() => onTeamleider(false)}>Leiding</Chip><Chip on={isTl} onClick={() => onTeamleider(true)}>Teamleider</Chip></div>}
+      {!isAdmin && iAmTL && !isTl && <div className="row"><ConfirmBtn className="btn sm" label="Teamleiderschap aan deze persoon overdragen" confirm="Klik nogmaals: overdragen (jij wordt leiding)" onConfirm={onTransfer} /></div>}
+      {iAmTL && me && isTl && <div className="row">{lastTL ? <span className="hint">Je bent de enige teamleider. Draag je rol eerst over aan iemand anders.</span> : <ConfirmBtn className="btn sm" label="Aftreden als teamleider" confirm="Klik nogmaals: aftreden (je blijft leiding)" onConfirm={onStepDown} />}</div>}
+      {!isTl ? <PermGrid perms={m.perms} onChange={onPerm} /> : <p className="hint">Een teamleider mag alles, ook het team beheren en leiding uitnodigen. Een extra teamleider aanstellen doet de beheerder van de groep.</p>}
     </div>}
   </div>;
 }

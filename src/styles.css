@@ -863,3 +863,15 @@ body { padding-top: env(safe-area-inset-top, 0px); }
   .nl > span { display: none; }
   .nl::after { content: attr(data-short); }
 }
+
+/* ---- beheer en uitnodigingen ---- */
+.invlist { display: grid; gap: 8px; }
+.invrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--sunk); border-radius: 12px; padding: 10px 12px; flex-wrap: wrap; }
+.invrow > div:first-child { flex: 1 1 200px; }
+.ell { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toggle-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.groupcard h3 { margin: 6px 0 0; }
+.groupcard .grow { flex: 1 1 240px; }
+.subrow { padding: 8px 0; border-top: 1px dashed var(--line); }
+.adminnote { margin-top: 12px; }
+.page-head > * { flex: 0 0 auto; }

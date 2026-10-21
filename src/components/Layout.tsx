@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { TentTree, ChevronDown, LogOut, Users } from 'lucide-react';
+import { TentTree, ChevronDown, LogOut, Users, ShieldCheck } from 'lucide-react';
+import { useRoles } from '../store/roles';
 import { useAuth } from '../store/auth';
 import { useSpeltak } from '../store/speltak';
 import { ACCENTS } from '../lib/model';
@@ -17,7 +18,9 @@ export function applyAccent(accent: string, logo: string) {
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
-  const { sp, sid, loading, denied, settings, isTL, myName } = useSpeltak();
+  const { sp, sid, loading, denied, settings, isTL, isAdmin, isMember, myName } = useSpeltak();
+  const roles = useRoles();
+  const team = isTL || isAdmin;
   const nav = useNavigate();
   const [menu, setMenu] = useState(false);
   useEffect(() => { applyAccent(settings.accent, settings.logo); document.title = sp ? `Opkomstplanner · ${sp.groupName || ''} ${sp.name || ''}`.trim() : 'Opkomstplanner'; }, [settings.accent, settings.logo, sp]);
@@ -27,7 +30,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   if (loading || !sp) return <div className="loading">Speltak laden…</div>;
   const initials = (myName || user?.email || '?').split(/\s+/).map(x => x[0]).join('').slice(0, 2).toUpperCase();
   // [pad, label, korte label voor smalle schermen]
-  const links: [string, string, string][] = [['dashboard', 'Dashboard', 'Dashboard'], ['jaarplanning', 'Jaarplanning', 'Jaarplanning'], ['bouwer', 'Opkomstbouwer', 'Bouwer'], ['activiteiten', 'Activiteitenbank', 'Activiteiten'], ['opkomsten', 'Opkomstenbank', 'Opkomsten'], ['instellingen', isTL ? 'Team & instellingen' : 'Instellingen', isTL ? 'Team' : 'Instellingen']];
+  const links: [string, string, string][] = [['dashboard', 'Dashboard', 'Dashboard'], ['jaarplanning', 'Jaarplanning', 'Jaarplanning'], ['bouwer', 'Opkomstbouwer', 'Bouwer'], ['activiteiten', 'Activiteitenbank', 'Activiteiten'], ['opkomsten', 'Opkomstenbank', 'Opkomsten'], ['instellingen', team ? 'Team & instellingen' : 'Instellingen', team ? 'Team' : 'Instellingen']];
   return <div className="app mx-auto">
     <header className="bar flex flex-wrap items-center gap-x-6 gap-y-2">
       <div className="brand flex items-center gap-2.5">
@@ -40,11 +43,13 @@ export default function Layout({ children }: { children: ReactNode }) {
       <div className="acct">
         <button className="btn sm" aria-label="Account" onClick={e => { e.stopPropagation(); setMenu(m => !m); }}><span className="avatar">{initials}</span><span className="acct-name">{myName || 'Account'}</span><ChevronDown size={14} /></button>
         {menu && <div className="menu" onClick={e => e.stopPropagation()}>
+          {roles.isAdmin && <button onClick={() => nav('/beheer')}><ShieldCheck size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Beheer</button>}
           <button onClick={() => nav('/speltakken')}><Users size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Andere speltak</button>
           <button onClick={() => logout().then(() => nav('/inloggen'))}><LogOut size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Uitloggen</button>
         </div>}
       </div>
     </header>
+    {!isMember && isAdmin && <div className="banknote adminnote"><span><ShieldCheck size={15} style={{ verticalAlign: -3, marginRight: 6 }} />Je bekijkt deze speltak als beheerder: alleen-lezen. Het team beheer je onder Team.</span></div>}
     <main className="pb-16">{children}</main>
     <ModalHost />
     <div className="aurora pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">

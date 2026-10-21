@@ -45,6 +45,8 @@ Regels die de code bewaakt (niet breken):
 - Vaste blokken (`__open`, `__ranja`, `__close`) alleen bij gewone opkomsten, schuiven mee met begin/eind.
 - Tijden in minuten; kampdagen mogen tot 26:00 (na middernacht).
 - Rechten: teamleider alles; leiding per recht `plan` (jaarplanning), `build` (opkomsten), `bank` (banken), `settings`. Lezen mag elk lid. UI verbergt/blokkeert, `firestore.rules` dwingt af — bij nieuwe schrijfacties beide bijwerken.
+- Rollen: Beheer (totaal) `beheer/totaal.ids` → Beheer (groep) `groepen/{gid}.adminIds` → Teamleider `speltakken/{sid}.tlIds` (oude speltakken zonder `tlIds`: `members[uid].role`) → Leiding. Hoofdaccount vluiten2907@gmail.com (`ROOT_EMAIL`, ook in de regels). Beheerders lezen speltakken van hun groep alleen-lezen; alleen de groepsbeheerder stelt een extra teamleider aan; een teamleider kan alleen overdragen/aftreden. Nooit de laatste op een niveau weghalen.
+- Account aanmaken kan alleen via een uitnodiging (`invites/{token}`, `kind` = rol, 30 dagen geldig, openbaar leesbaar: de link is het geheim). Code: `src/store/roles.tsx`, `src/store/beheer.ts`, `src/pages/Beheer.tsx`.
 
 Stijl: Nederlandse UI-teksten, kort en zonder jargon. Ontwerp "v3": Bricolage Grotesque + Hanken Grotesk, harde schaduwen, marine/koper (accent instelbaar). Geen `transition-all`. Moet werken op 390 px breed zonder horizontaal scrollen.
 
@@ -53,9 +55,10 @@ Stijl: Nederlandse UI-teksten, kort en zonder jargon. Ontwerp "v3": Bricolage Gr
 ```bash
 npm ci
 npm run dev       # echte Firebase (lokaal), http://localhost:5173
-npm run demo      # nep-Firebase, geen account nodig
+npm run demo      # nep-Firebase; inloggen als vluiten2907@gmail.com / demo123 (Beheer totaal)
 npm run check     # typecheck + build + rooktest (Playwright, test/e2e/) — moet groen zijn vóór elke push
 npm run build     # productie-build in dist/ voor /opkomst/
+bash test/rules/run.sh   # firestore.rules testen met de emulator (Java nodig), los van check
 ```
 
 In de Claude-omgeving: Playwright/Chromium staat klaar (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`); conqueston.nl is vanuit de shell niet bereikbaar, live controleren gaat via de ingebouwde browser op Vincents laptop. Commits met naam/e-mail van Vincent als auteur.

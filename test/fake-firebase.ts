@@ -17,6 +17,8 @@ export function initializeApp(_cfg: any) { return { name: 'fake' }; }
 /* ---- auth ---- */
 type U = { uid: string; email: string; displayName: string; pw: string };
 const users: Record<string, U> = load(LS_AUTH + '.users', {});
+// Demo-account voor Beheer (totaal): open registratie bestaat niet meer, dus de demo begint hiermee (wachtwoord demo123).
+if (!Object.values(users).some(u => u.email === 'vluiten2907@gmail.com')) users.uroot = { uid: 'uroot', email: 'vluiten2907@gmail.com', displayName: 'Beheer (demo)', pw: 'demo123' };
 let current: U | null = load(LS_AUTH + '.current', null);
 const authListeners = new Set<(u: any) => void>();
 const pub = (u: U | null) => u ? { uid: u.uid, email: u.email, displayName: u.displayName } : null;
@@ -68,6 +70,7 @@ const snap = (ref: Ref) => ref.kind === 'doc'
   : { docs: docsIn(ref) };
 export function onSnapshot(ref: Ref, cb: (s: any) => void, _err?: any) { const l = () => cb(snap(ref)); listeners.add(l); setTimeout(l, 0); return () => listeners.delete(l); }
 export async function getDoc(ref: Ref) { return snap(ref); }
+export async function getDocs(ref: Ref) { return snap(ref); }
 export async function setDoc(ref: Ref, data: any, opts?: { merge?: boolean }) {
   const cur = opts?.merge && store[ref.path] ? store[ref.path] : {};
   const next = clone(cur); Object.entries(data).forEach(([k, v]) => applyKey(next, k, v)); store[ref.path] = next; persist();

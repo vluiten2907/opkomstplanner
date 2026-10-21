@@ -1,95 +1,225 @@
 rules_version = '2';
+// Opkomstplanner — rollen: Beheer (totaal) → Beheer (groep) → Teamleider → Leiding.
+// Plak dit in de Firebase-console: Firestore Database → Rules → Publish.
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
     function me() { return request.auth.uid; }
     function myEmail() { return request.auth.token.email != null ? request.auth.token.email.lower() : ''; }
+    function nowMs() { return request.time.toMillis(); }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+
+    // ---- rollen ----
+    function rootPath() { return /databases/$(database)/documents/beheer/totaal; }
+    function isRoot() { return signedIn() && exists(rootPath()) && me() in get(rootPath()).data.ids; }
+    function groupPath(gid) { return /databases/$(database)/documents/groepen/$(gid); }
+    function isGA(gid) { return signedIn() && gid is string && exists(groupPath(gid)) && me() in get(groupPath(gid)).data.adminIds; }
+    // beheerder van een groep, of Beheer (totaal); een speltak zonder groep valt alleen onder Beheer (totaal)
+    function isAdminOf(gid) { return isRoot() || isGA(gid); }
+    function hasTl(d) { return d.keys().hasAny(['tlIds']); }
+    // teamleider van speltak-data d: nieuwe speltakken via tlIds, oude via de rol per lid
+    function tlOf(d) { return signedIn() && me() in d.memberIds && (hasTl(d) ? me() in d.tlIds : d.members[me()].role == 'teamleider'); }
+    function spPath(sid) { return /databases/$(database)/documents/speltakken/$(sid); }
+    function spGid(d) { return d.get('gid', null); }
+
+    // ---- uitnodiging geldig voor mij? ----
+    function invite(id) { return get(/databases/$(database)/documents/invites/$(id)).data; }
+    function inviteKind(i) { return i.get('kind', i.get('role', '')); }
+    function inviteOk(i, kind) {
+      return inviteKind(i) == kind && i.email == myEmail() && i.usedBy == null && i.get('expiresAt', 9999999999999) > nowMs();
+    }
 
     // ---- gebruikersprofiel: alleen van jezelf ----
     match /users/{uid} {
       allow read, write: if signedIn() && uid == me();
     }
 
+    // ---- Beheer (totaal) ----
+    match /beheer/{docId} {
+      allow get: if docId == 'totaal' && signedIn() && (resource == null || me() in resource.data.ids);
+      allow list: if false;
+      // eenmalig: het hoofdaccount maakt het aan, met alleen zichzelf
+      allow create: if docId == 'totaal' && signedIn()
+        && request.auth.token.email == 'vluiten2907@gmail.com'
+        && request.resource.data.ids == [me()]
+        && request.resource.data.people.keys().hasOnly([me()]);
+      allow update: if docId == 'totaal' && signedIn() && (
+        // beheer totaal past de lijst aan (aanstellen, aftreden); er blijft altijd iemand over
+        (me() in resource.data.ids
+          && changed().hasOnly(['ids', 'people'])
+          && request.resource.data.ids.size() > 0)
+        // jezelf toevoegen met een uitnodiging als Beheer (totaal)
+        || (!(me() in resource.data.ids)
+          && changed().hasOnly(['ids', 'people'])
+          && request.resource.data.people.diff(resource.data.people).affectedKeys().hasOnly([me()])
+          && request.resource.data.ids.hasAll(resource.data.ids)
+          && request.resource.data.ids.size() == resource.data.ids.size() + 1
+          && me() in request.resource.data.ids
+          && request.resource.data.people[me()].inviteId is string
+          && inviteOk(invite(request.resource.data.people[me()].inviteId), 'totaal'))
+      );
+      allow delete: if false;
+    }
+
+    // ---- groepen (Scouting-verenigingen) ----
+    match /groepen/{gid} {
+      allow get: if isRoot() || (signedIn() && me() in resource.data.adminIds);
+      allow list: if isRoot() || (signedIn() && me() in resource.data.adminIds);
+      allow create: if isRoot()
+        && request.resource.data.createdBy == me()
+        && request.resource.data.adminIds is list
+        && request.resource.data.admins is map;
+      allow update: if signedIn() && (
+        // Beheer (totaal): alles; beheerder van de groep: naam en beheerders, met minstens één beheerder
+        isRoot()
+        || (me() in resource.data.adminIds
+          && changed().hasOnly(['name', 'admins', 'adminIds'])
+          && request.resource.data.adminIds.size() > 0)
+        // jezelf toevoegen met een uitnodiging als Beheer (groep) voor deze groep
+        || (!(me() in resource.data.adminIds)
+          && changed().hasOnly(['admins', 'adminIds'])
+          && request.resource.data.admins.diff(resource.data.admins).affectedKeys().hasOnly([me()])
+          && request.resource.data.adminIds.hasAll(resource.data.adminIds)
+          && request.resource.data.adminIds.size() == resource.data.adminIds.size() + 1
+          && me() in request.resource.data.adminIds
+          && request.resource.data.admins[me()].inviteId is string
+          && inviteOk(invite(request.resource.data.admins[me()].inviteId), 'groep')
+          && invite(request.resource.data.admins[me()].inviteId).gid == gid)
+      );
+      allow delete: if isRoot();
+    }
+
     // ---- uitnodigingen ----
     match /invites/{token} {
-      // iedereen die ingelogd is kan een uitnodiging openen (de link is het geheim)
-      allow get: if signedIn();
-      allow list: if false;
-      // alleen een teamleider van die speltak maakt uitnodigingen aan
+      // de link is het geheim: openen mag zonder account (dan kun je er een aanmaken)
+      allow get: if true;
+      // overzicht van openstaande uitnodigingen: per niveau
+      allow list: if isRoot()
+        || (resource.data.get('gid', null) is string && isGA(resource.data.gid))
+        || (resource.data.get('sid', null) is string && tlOf(get(spPath(resource.data.sid)).data));
       allow create: if signedIn()
         && request.resource.data.invitedBy == me()
         && request.resource.data.usedBy == null
-        && request.resource.data.role in ['teamleider', 'leiding']
         && request.resource.data.email is string
-        && get(/databases/$(database)/documents/speltakken/$(request.resource.data.sid)).data.members[me()].role == 'teamleider';
-      // de genodigde markeert hem als gebruikt; de teamleider mag hem verwijderen
+        && request.resource.data.expiresAt is int
+        && request.resource.data.expiresAt <= nowMs() + 31 * 86400000
+        && (
+          // Beheer (totaal) nodigt mede-beheer (totaal) uit
+          (request.resource.data.kind == 'totaal' && isRoot())
+          // Beheer (groep) voor een bestaande groep: door Beheer (totaal) of een beheerder van die groep
+          || (request.resource.data.kind == 'groep' && request.resource.data.gid is string
+              && exists(groupPath(request.resource.data.gid)) && isAdminOf(request.resource.data.gid))
+          // teamleider: door de beheerder van de groep, of als overdracht door een teamleider van die speltak
+          || (request.resource.data.kind == 'teamleider' && request.resource.data.role == 'teamleider'
+              && request.resource.data.sid is string
+              && request.resource.data.gid == spGid(get(spPath(request.resource.data.sid)).data)
+              && (isAdminOf(spGid(get(spPath(request.resource.data.sid)).data))
+                  || (request.resource.data.transfer == true && tlOf(get(spPath(request.resource.data.sid)).data))))
+          // leiding: door een teamleider van die speltak of de beheerder van de groep
+          || (request.resource.data.kind == 'leiding' && request.resource.data.role == 'leiding'
+              && request.resource.data.sid is string
+              && request.resource.data.gid == spGid(get(spPath(request.resource.data.sid)).data)
+              && (tlOf(get(spPath(request.resource.data.sid)).data) || isAdminOf(spGid(get(spPath(request.resource.data.sid)).data))))
+        );
+      // de genodigde markeert hem als gebruikt
       allow update: if signedIn()
         && resource.data.usedBy == null
         && resource.data.email == myEmail()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedBy'])
+        && changed().hasOnly(['usedBy'])
         && request.resource.data.usedBy == me();
-      allow delete: if signedIn()
-        && get(/databases/$(database)/documents/speltakken/$(resource.data.sid)).data.members[me()].role == 'teamleider';
+      // intrekken: wie hem maakte, of wie erboven staat
+      allow delete: if signedIn() && (
+        resource.data.invitedBy == me()
+        || isRoot()
+        || (resource.data.get('gid', null) is string && isGA(resource.data.gid))
+        || (resource.data.get('sid', null) is string && tlOf(get(spPath(resource.data.sid)).data))
+      );
     }
 
     // ---- speltakken ----
     match /speltakken/{sid} {
       // Speltakdocument zoals het nu in de database staat
-      function sp() { return get(/databases/$(database)/documents/speltakken/$(sid)).data; }
-      function spExists() { return exists(/databases/$(database)/documents/speltakken/$(sid)); }
-      function isMember() { return spExists() && me() in sp().memberIds; }
+      function sp() { return get(spPath(sid)).data; }
+      function spExists() { return exists(spPath(sid)); }
+      function isMember() { return signedIn() && spExists() && me() in sp().memberIds; }
       function member() { return sp().members[me()]; }
-      function isTL() { return isMember() && member().role == 'teamleider'; }
-      function can(p) { return isMember() && (member().role == 'teamleider' || member().perms[p] == true); }
+      function isTL() { return isMember() && tlOf(sp()); }
+      function can(p) { return isMember() && (isTL() || member().perms[p] == true); }
+      function isAdmin() { return spExists() && isAdminOf(spGid(sp())); }
+      function tlSame() { return request.resource.data.get('tlIds', null) == resource.data.get('tlIds', null); }
 
-      allow get: if isMember();
-      // lijst van "mijn speltakken" (query op memberIds array-contains eigen uid)
-      allow list: if signedIn() && me() in resource.data.memberIds;
+      allow get: if isMember() || isAdminOf(spGid(resource.data));
+      // "mijn speltakken" (memberIds bevat mij), per groep (gid ==) of alles (Beheer totaal)
+      allow list: if signedIn() && (me() in resource.data.memberIds || isAdminOf(spGid(resource.data)));
 
-      // aanmaken: je bent zelf de enige teamleider
+      // aanmaken: alleen een beheerder, binnen zijn groep, met een leeg team
       allow create: if signedIn()
+        && request.resource.data.gid is string
+        && isAdminOf(request.resource.data.gid)
         && request.resource.data.createdBy == me()
-        && request.resource.data.memberIds == [me()]
-        && request.resource.data.members.keys().hasOnly([me()])
-        && request.resource.data.members[me()].role == 'teamleider';
+        && request.resource.data.memberIds == []
+        && request.resource.data.tlIds == [];
 
       allow update: if signedIn() && (
         // instellingen, groepsnaam en speltaknaam: teamleider of leiding met recht 'settings'
-        (can('settings') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['settings', 'groupName', 'name']))
-        // teambeheer: teamleider past leden en rechten aan
-        || (isTL() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberIds']))
-        // jezelf toevoegen met een geldige, ongebruikte uitnodiging voor jouw e-mailadres
-        || (signedIn() && !isMember()
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberIds'])
+        (can('settings') && changed().hasOnly(['settings', 'groupName', 'name']))
+        // beheerder van de groep: team, teamleiders, naam; alleen Beheer (totaal) verhuist een speltak naar een andere groep
+        || (isAdmin()
+            && changed().hasOnly(['members', 'memberIds', 'tlIds', 'name', 'groupName', 'gid'])
+            && (request.resource.data.get('gid', null) == resource.data.get('gid', null) || isRoot()))
+        // teamleider: team en rechten; teamleiders erbij aanstellen niet, wel overdragen of aftreden
+        || (isTL()
+            && changed().hasOnly(['members', 'memberIds', 'tlIds'])
+            && (!hasTl(resource.data)
+                || tlSame()
+                || (!(me() in request.resource.data.tlIds)
+                    && request.resource.data.tlIds.size() >= 1
+                    && request.resource.data.tlIds.size() <= resource.data.tlIds.size()
+                    && request.resource.data.tlIds.hasAll(resource.data.tlIds.removeAll([me()]))
+                    && request.resource.data.memberIds.hasAll(request.resource.data.tlIds))))
+        // jezelf toevoegen met een geldige uitnodiging voor jouw e-mailadres
+        || (!isMember()
+            && changed().hasOnly(['members', 'memberIds', 'tlIds'])
             && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([me()])
             && request.resource.data.memberIds.hasAll(resource.data.memberIds)
             && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
+            && me() in request.resource.data.memberIds
             && request.resource.data.members[me()].inviteId is string
-            && get(/databases/$(database)/documents/invites/$(request.resource.data.members[me()].inviteId)).data.sid == sid
-            && get(/databases/$(database)/documents/invites/$(request.resource.data.members[me()].inviteId)).data.email == myEmail()
-            && get(/databases/$(database)/documents/invites/$(request.resource.data.members[me()].inviteId)).data.usedBy == null
-            && request.resource.data.members[me()].role == get(/databases/$(database)/documents/invites/$(request.resource.data.members[me()].inviteId)).data.role
-            && request.resource.data.members[me()].perms == get(/databases/$(database)/documents/invites/$(request.resource.data.members[me()].inviteId)).data.perms)
-        // jezelf uit het team halen (niet als laatste teamleider)
-        || (isMember() && member().role != 'teamleider'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberIds'])
+            && joinOk(invite(request.resource.data.members[me()].inviteId)))
+        // jezelf uit het team halen (niet als teamleider)
+        || (isMember() && !isTL()
+            && changed().hasOnly(['members', 'memberIds'])
             && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([me()])
             && !(me() in request.resource.data.memberIds))
       );
       allow delete: if false;
 
-      // ---- gegevens van de speltak ----
+      function joinOk(i) {
+        return i.sid == sid
+          && (inviteOk(i, 'teamleider') || inviteOk(i, 'leiding'))
+          && request.resource.data.members[me()].role == inviteKind(i)
+          && request.resource.data.members[me()].perms == i.perms
+          && (inviteKind(i) == 'teamleider' && hasTl(resource.data)
+              // teamleider erbij in tlIds
+              ? (request.resource.data.tlIds.hasAll(resource.data.tlIds)
+                 && request.resource.data.tlIds.size() == resource.data.tlIds.size() + 1
+                 && me() in request.resource.data.tlIds)
+              // leiding, of een oude speltak zonder tlIds: tlIds blijft zoals hij is
+              : tlSame());
+      }
+
+      // ---- gegevens van de speltak: lezen mag elk lid en de beheerder ----
       match /opkomsten/{id} {
-        allow read: if isMember();
+        allow read: if isMember() || isAdmin();
         allow write: if can('build') || can('bank');
       }
       match /activiteiten/{id} {
-        allow read: if isMember();
+        allow read: if isMember() || isAdmin();
         allow write: if can('bank') || can('build');
       }
       match /planning/{id} {
-        allow read: if isMember();
+        allow read: if isMember() || isAdmin();
         allow write: if can('plan') || can('build');
       }
     }

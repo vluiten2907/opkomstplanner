@@ -1,9 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { collection, doc, onSnapshot, setDoc, deleteDoc, updateDoc, arrayUnion, arrayRemove, deleteField, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, deleteDoc, updateDoc, arrayRemove, deleteField } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './auth';
 import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, isKamp, addDaysSafe, presentNames } from '../lib/model';
-import { normPerms, type Member, type PermKey, type Speltak, type Invite, type Perms, type Role } from '../lib/types';
+import { isTeamleider, normPerms, type Member, type PermKey, type Speltak, type Invite, type Perms } from '../lib/types';
+import { useRoles } from './roles';
+import { createInvite as mkInvite } from './beheer';
 import { uid as mkId, clone } from '../lib/time';
 import { toast } from './toast';
 
@@ -11,13 +13,17 @@ type Ctx = {
   sid: string; sp: Speltak | null; loading: boolean; denied: boolean;
   settings: Settings; opks: Opk[]; lib: Lib[]; plans: Plan[];
   leaders: string[]; myName: string; isTL: boolean; can: (p: PermKey) => boolean;
+  /** Beheerder van de groep (of Beheer totaal); mag het team beheren. */
+  isAdmin: boolean;
+  /** Lid van deze speltak (beheerders hoeven dat niet te zijn). */
+  isMember: boolean;
   saveOpk: (o: Opk) => void; deleteOpk: (id: string) => Promise<void>;
   saveLib: (l: Lib) => void; deleteLib: (id: string) => Promise<void>;
   savePlan: (p: Plan) => void; deletePlan: (id: string) => Promise<void>;
   saveSettings: (patch: Partial<Settings>) => Promise<void>;
   setMember: (uid: string, patch: Partial<Member>) => Promise<void>;
   removeMember: (uid: string) => Promise<void>;
-  createInvite: (email: string, role: Role, perms: Perms) => Promise<Invite>;
+  createInvite: (email: string, kind: 'teamleider' | 'leiding', perms: Perms, transfer?: boolean) => Promise<Invite>;
   getO: (id: string | null | undefined) => Opk | undefined;
   getL: (id: string | null | undefined) => Lib | undefined;
   entryOfOpk: (o: Opk | null | undefined) => Plan | null;
@@ -54,7 +60,8 @@ export function SpeltakProvider({ sid, children }: { sid: string; children: Reac
       if (!s.exists()) { setSp(null); setDenied(true); setLoading(false); return; }
       const d = s.data();
       setSp({ id: s.id, name: d.name || '', groupName: d.groupName || '', createdAt: d.createdAt || 0, createdBy: d.createdBy || '',
-        settings: normSettings({ ...d.settings, groupName: d.groupName, speltak: d.name }), members: d.members || {}, memberIds: d.memberIds || [] });
+        settings: normSettings({ ...d.settings, groupName: d.groupName, speltak: d.name }), members: d.members || {}, memberIds: d.memberIds || [],
+        gid: d.gid || null, tlIds: Array.isArray(d.tlIds) ? d.tlIds : null });
       setLoading(false);
     }, err);
     const sub = (name: string, norm: (x: any) => any, set: (v: any[]) => void) =>
@@ -71,7 +78,9 @@ export function SpeltakProvider({ sid, children }: { sid: string; children: Reac
   const settings = sp ? sp.settings : normSettings(null);
   const me = user && sp ? sp.members[user.uid] : null;
   const myName = me?.name || user?.displayName || '';
-  const isTL = me?.role === 'teamleider';
+  const roles = useRoles();
+  const isTL = isTeamleider(sp, user?.uid);
+  const isAdmin = !!sp && roles.isGroupAdmin(sp.gid);
   const can = (p: PermKey) => !!me && (isTL || !!me.perms?.[p]);
   const leaders = useMemo(() => {
     const names = sp ? Object.values(sp.members).map(m => m.name).filter(Boolean) : [];
@@ -116,15 +125,11 @@ export function SpeltakProvider({ sid, children }: { sid: string; children: Reac
     await updateDoc(doc(db, 'speltakken', sid), { ['members.' + uidX]: { ...cur, ...patch, perms: normPerms(patch.perms || cur.perms) } });
   };
   const removeMember = async (uidX: string) => {
-    await updateDoc(doc(db, 'speltakken', sid), { ['members.' + uidX]: deleteField(), memberIds: arrayRemove(uidX) });
+    await updateDoc(doc(db, 'speltakken', sid), { ['members.' + uidX]: deleteField(), memberIds: arrayRemove(uidX), ...(sp?.tlIds?.includes(uidX) ? { tlIds: arrayRemove(uidX) } : {}) });
   };
-  const createInvite = async (email: string, role: Role, perms: Perms) => {
-    const id = mkId() + mkId();
-    const inv: Invite = { id, sid, speltakName: sp?.name || '', groupName: sp?.groupName || '', email: email.trim().toLowerCase(), role, perms: normPerms(perms),
-      invitedBy: user!.uid, invitedByName: myName, createdAt: Date.now(), usedBy: null };
-    await setDoc(doc(db, 'invites', id), inv);
-    return inv;
-  };
+  const createInvite = (email: string, kind: 'teamleider' | 'leiding', perms: Perms, transfer = false) =>
+    mkInvite({ kind, email, gid: sp?.gid || null, groupName: sp?.groupName || '', sid, speltakName: sp?.name || '', perms, transfer },
+      { uid: user!.uid, name: myName || user?.email || '', email: user?.email || '' });
 
   /* ---- afgeleiden en koppelingen (zelfde logica als de losse versie) ---- */
   const getO = (id: string | null | undefined) => opks.find(o => o.id === id);
@@ -179,31 +184,9 @@ export function SpeltakProvider({ sid, children }: { sid: string; children: Reac
     savePlan({ ...e, opkId: null });
   };
 
-  const value: Ctx = { sid, sp, loading, denied, settings, opks, lib, plans, leaders, myName, isTL, can,
+  const value: Ctx = { sid, sp, loading, denied, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
     saveOpk, deleteOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
     getO, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent };
   return <C.Provider value={value}>{children}</C.Provider>;
 }
 export const useSpeltak = () => useContext(C);
-
-/* ---- speltak aanmaken / uitnodiging accepteren ---- */
-export async function createSpeltak(uidX: string, name: string, groupName: string, speltakName: string, settings: Settings) {
-  const id = mkId() + mkId();
-  const { groupName: _g, speltak: _s, ...rest } = settings;
-  const member: Member = { name, email: '', role: 'teamleider', perms: { plan: true, build: true, bank: true, settings: true }, since: Date.now() };
-  const batch = writeBatch(db);
-  batch.set(doc(db, 'speltakken', id), { name: speltakName, groupName, createdAt: Date.now(), createdBy: uidX, settings: rest, members: { [uidX]: member }, memberIds: [uidX] });
-  batch.set(doc(db, 'users', uidX), { speltakIds: arrayUnion(id) }, { merge: true });
-  await batch.commit();
-  return id;
-}
-export async function readInvite(token: string): Promise<Invite | null> {
-  const s = await getDoc(doc(db, 'invites', token));
-  return s.exists() ? ({ ...(s.data() as any), id: s.id } as Invite) : null;
-}
-export async function acceptInvite(inv: Invite, uidX: string, name: string, email: string) {
-  const member: Member = { name, email: email.toLowerCase(), role: inv.role, perms: normPerms(inv.perms), inviteId: inv.id, since: Date.now() };
-  await updateDoc(doc(db, 'speltakken', inv.sid), { ['members.' + uidX]: member, memberIds: arrayUnion(uidX) });
-  await updateDoc(doc(db, 'invites', inv.id), { usedBy: uidX });
-  await setDoc(doc(db, 'users', uidX), { speltakIds: arrayUnion(inv.sid) }, { merge: true });
-}
