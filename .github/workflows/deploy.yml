@@ -7,6 +7,10 @@
 #   STRATO_DIR            map die bij conqueston.nl/opkomst/ hoort, bijv. /opkomst of /conqueston/opkomst.
 #                         Mag de SFTP-gebruiker alleen in die map zelf (zo is het nu), vul dan `inlogmap` in.
 # Optioneel: STRATO_SFTP_PORT (standaard 22)
+# Uitnodigingen mailen (public/api/uitnodiging-mail.php), optioneel:
+#   MAIL_USER             Strato-mailbox die verstuurt, bijv. noreply@conqueston.nl
+#   MAIL_PASSWORD         wachtwoord van die mailbox
+#   APP_URL               adres van de app (standaard https://conqueston.nl/opkomst)
 name: Deploy naar Strato
 
 on:
@@ -30,6 +34,12 @@ jobs:
       - run: npm ci
       - name: Build
         run: npm run build
+      - name: Mailinstellingen voor uitnodigingen
+        env:
+          MAIL_USER: ${{ secrets.MAIL_USER }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: node scripts/mail-config.mjs
       - name: Controleer instellingen
         env:
           HOST: ${{ secrets.STRATO_SFTP_HOST }}

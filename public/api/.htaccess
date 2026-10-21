@@ -1,0 +1,4 @@
+# Alleen het verzendscript is van buitenaf bereikbaar; de config met het mailwachtwoord niet.
+<FilesMatch "^(mail-config\.php|verzonden\..*)$">
+  Require all denied
+</FilesMatch>

@@ -6,12 +6,13 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 
 _(niets)_
 
+- **Uitnodiging per e-mail laten versturen** — gekozen (2026-10-21): PHP-script op Strato (`public/api/uitnodiging-mail.php`) verstuurt via een Strato-mailbox. Script en deploy staan klaar; koppelen aan de knop in de app na *Rollenstructuur*. Vincent: PHP in Strato-pakket controleren, mailbox aanmaken, secrets `MAIL_USER` en `MAIL_PASSWORD` zetten.
+
 ## Open
 
 - **Bewerken uit de bank bevestigen** — een opkomst of activiteit uit je eigen bank wordt na bewerken niet meer automatisch opgeslagen. Onderaan: *Annuleren*, *Opslaan* en *Opslaan als kopie* (met nieuwe naam). Bestaat de naam al in de bank, dan moet je een andere naam kiezen.
 - **Concepten kunnen verwijderen** — in de opkomstplanner een conceptopkomst kunnen verwijderen.
 - **Live controle met echt account** — registreren, speltak aanmaken en uitnodiging accepteren op conqueston.nl/opkomst door Vincent (bevestigt e-mail/wachtwoord-login en de gepubliceerde regels).
-- **Uitnodiging per e-mail laten versturen** — nu kopieer/mail-knop; automatisch versturen vereist een mailserver of Cloud Function (Blaze-plan).
 - **Oefenomgeving** — bestond in de losse versie (voorbeelddata met watermerk); nog niet in de online versie.
 - **Wachtwoord vergeten-mail** — controleren of de Firebase-mail aankomt en eventueel de afzender/tekst in het Nederlands zetten (Authentication → Templates).
 
