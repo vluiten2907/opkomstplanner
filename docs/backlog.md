@@ -11,10 +11,10 @@ _(niets)_
 
 - **Bewerken uit de bank bevestigen** — een opkomst of activiteit uit je eigen bank wordt na bewerken niet meer automatisch opgeslagen. Onderaan: *Annuleren*, *Opslaan* en *Opslaan als kopie* (met nieuwe naam). Bestaat de naam al in de bank, dan moet je een andere naam kiezen.
 - **Live controle met echt account** — registreren, speltak aanmaken en uitnodiging accepteren op conqueston.nl/opkomst door Vincent (bevestigt e-mail/wachtwoord-login en de gepubliceerde regels).
-- **Oefenomgeving** — bestond in de losse versie (voorbeelddata met watermerk); nog niet in de online versie.
 - **Wachtwoord vergeten-mail** — controleren of de Firebase-mail aankomt en eventueel de afzender/tekst in het Nederlands zetten (Authentication → Templates).
 
 ## Klaar
+- 2026-10-21 — Oefenomgeving: knop op de inlogpagina en bij Mijn speltakken (ook zonder account, `/oefenen`). Voorbeeldspeltak Welpen met jaarplanning, uitgewerkte opkomsten, weekendkamp en gevulde banken; watermerk OEFENEN op elke pagina en in de pdf. Alles blijft in de browser (raakt Firestore niet, geen nieuwe regels nodig); *Opnieuw beginnen* zet de voorbeelddata terug.
 - 2026-10-21 — Concepten verwijderen: knop *Verwijderen* (twee keer klikken) bij elk concept op de startpagina van de Opkomstbouwer en in de bouwer zelf, naast de bestaande knop in de Opkomstenbank. Voor teamleider en leiding met bouwrecht.
 - Beheer: speltakken uitklapbaar met leiding, rechten per leiding aanpassen (bekijken mag altijd).
 - Mijn account (voor- en achternaam, ook bij registreren), e-mail en volledige naam in het leidingoverzicht.

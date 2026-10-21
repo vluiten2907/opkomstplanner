@@ -32,6 +32,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 export const useAuth = () => useContext(Ctx);
 
+/** Vaste, nep-ingelogde gebruiker (oefenomgeving): niets gaat naar Firebase. */
+export function FixedAuth({ user, children }: { user: User; children: ReactNode }) {
+  const no = async () => { throw new Error('oefenen'); };
+  return <Ctx.Provider value={{ user, ready: true, login: no, register: no, reset: no, logout: async () => {} }}>{children}</Ctx.Provider>;
+}
+
 export function authError(e: any): string {
   const c = e?.code || '';
   if (c.includes('invalid-credential') || c.includes('wrong-password') || c.includes('user-not-found')) return 'E-mailadres of wachtwoord klopt niet.';

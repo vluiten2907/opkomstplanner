@@ -540,8 +540,11 @@ body.demo .demo-btn { background: var(--danger); color: #fff; box-shadow: none; 
 body.demo .status { display: none; }
 .demobar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 12px 16px; border-radius: 14px; background: color-mix(in srgb, var(--danger) 12%, var(--surface)); font-size: 14px; }
 .demobar > span { flex: 1 1 280px; min-width: 0; }
+.oefenbar { margin-top: 12px; }
+.oefenlink { display: grid; gap: 8px; padding-top: 12px; border-top: 1.5px solid var(--sunk); }
+.oefenlink .btn { justify-self: start; text-decoration: none; }
 .watermark { display: none; }
-body.demo .watermark { display: grid; position: fixed; inset: 0; place-items: center; pointer-events: none; z-index: 35; overflow: hidden; }
+body.demo .watermark, .watermark.on { display: grid; position: fixed; inset: 0; place-items: center; pointer-events: none; z-index: 35; overflow: hidden; }
 .watermark > div { transform: rotate(-24deg); display: grid; justify-items: center; gap: 4px; color: color-mix(in srgb, var(--danger) 17%, transparent); text-align: center; }
 .watermark b { font-family: var(--f-display); font-size: clamp(64px, 15vw, 220px); line-height: .95; letter-spacing: .06em; }
 .watermark span { font-family: var(--f-body); font-weight: 700; font-size: clamp(16px, 2.6vw, 34px); letter-spacing: .04em; }

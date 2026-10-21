@@ -168,12 +168,12 @@ function Leave() {
 
 /* ---------- Team: leden, rechten en uitnodigingen ---------- */
 function Team() {
-  const { sp, isTL, isAdmin, setMember, removeMember, createInvite, myName } = useSpeltak();
+  const { sp, isTL, isAdmin, setMember, removeMember, createInvite, myName, practice } = useSpeltak();
   const { user } = useAuth();
   const manage = isTL || isAdmin;
   const [email, setEmail] = useState(''); const [kind, setKind] = useState<'leiding' | 'teamleider' | 'transfer'>('leiding'); const [perms, setPerms] = useState<Perms>(DEFAULT_LEIDING_PERMS);
   const [inv, setInv] = useState<Invite | null>(null); const [busy, setBusy] = useState(false);
-  const open = useOpenInvites(manage && sp ? [{ sid: sp.id }] : []);
+  const open = useOpenInvites(manage && sp && !practice ? [{ sid: sp.id }] : []);
   const roles = useRoles();
   if (!sp) return null;
   // Beheerder van de groep aanzetten bij een bestaand lid (alleen voor beheerders, en alleen als de speltak in een groep zit)
@@ -212,7 +212,8 @@ function Team() {
         onRemove={() => removeMember(uidX).then(() => toast(`${m.name} uit het team gehaald`)).catch(fail)} />)}
       {!members.length && <p className="hint">Nog niemand in het team. Nodig hieronder de teamleider uit.</p>}
     </div>
-    {manage && <div className="invite stack">
+    {manage && practice && <p className="hint">In de oefenomgeving kun je niemand uitnodigen. In je echte speltak maak je hier een uitnodigingslink voor nieuwe leiding.</p>}
+    {manage && !practice && <div className="invite stack">
       <h3><UserPlus size={16} style={{ verticalAlign: -3, marginRight: 6 }} />Uitnodigen</h3>
       <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); invite(); } }} placeholder="e-mailadres" style={{ flex: '1 1 220px' }} />
         <div className="seg"><Chip on={kind === 'leiding'} onClick={() => setKind('leiding')}>Leiding</Chip>

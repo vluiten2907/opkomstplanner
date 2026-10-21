@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import { TentTree } from 'lucide-react';
+import { GraduationCap, TentTree } from 'lucide-react';
 import { useAuth, authError } from '../store/auth';
 import { Field } from '../components/ui';
 
@@ -33,6 +33,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'reset' }) {
         {mode === 'login' ? <Link to="/wachtwoord">Wachtwoord vergeten</Link> : <Link to="/inloggen" state={{ next }}>Terug naar inloggen</Link>}
       </div>
       {mode === 'login' && <p className="hint">Nog geen account? Dat maak je aan via de uitnodigingslink die je van je teamleider of beheerder krijgt.</p>}
+      {mode === 'login' && <div className="oefenlink"><span className="hint">Eerst rondkijken? Probeer alles uit met voorbeelddata, zonder account.</span><Link className="btn" to="/s/oefen"><GraduationCap size={16} />Oefenomgeving</Link></div>}
     </form>
   </div>;
 }

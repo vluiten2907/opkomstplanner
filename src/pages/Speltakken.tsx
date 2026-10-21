@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { TentTree, LogOut, ShieldCheck, UserRound } from 'lucide-react';
+import { TentTree, LogOut, ShieldCheck, UserRound, GraduationCap } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../store/auth';
 import { useRoles } from '../store/roles';
@@ -30,6 +30,8 @@ export default function SpeltakkenPage() {
         <span className="hint">{isTeamleider({ tlIds: Array.isArray(s.tlIds) ? s.tlIds : null, members: s.members || {} }, user!.uid) ? 'Teamleider' : 'Leiding'} · {s.memberIds?.length || 1} in het team</span></div>
         <button className="btn sm primary" onClick={() => { localStorage.setItem('opk.sid', s.id); nav(`/s/${s.id}`); }}>Openen</button></div>)}</div>
         : <div className="empty"><span>{isAdmin ? 'Je bent zelf geen lid van een speltak. Via Beheer zie je de speltakken van je groep.' : 'Je bent nog geen lid van een speltak. Vraag je teamleider om een uitnodigingslink.'}</span></div>}
+      <div className="pick"><div className="info"><b>Oefenomgeving</b><span className="hint">Een voorbeeldspeltak om alles uit te proberen. Je echte speltakken veranderen niet.</span></div>
+        <Link className="btn sm" to="/s/oefen"><GraduationCap size={14} />Oefenen</Link></div>
     </div>
   </div>;
 }

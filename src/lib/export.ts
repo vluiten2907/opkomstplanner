@@ -14,7 +14,7 @@ export const slugify = (s: string) => s.toLowerCase().normalize('NFD').replace(/
 export const groupLine = (s: Settings) => [s.groupName, s.speltak].map(x => (x || '').trim()).filter(Boolean).join(' · ');
 
 /** Pdf maken; jsPDF en de pdf-opbouw worden pas hier geladen, zodat ze niet in de hoofdbundel zitten. */
-export async function makePdf(o: Opk | undefined | null, settings: Settings, e: Plan | null, present: string[]) {
+export async function makePdf(o: Opk | undefined | null, settings: Settings, e: Plan | null, present: string[], practice = false) {
   if (!o) return;
   if (!allBlocks(o).length) { toast('Voeg eerst een onderdeel toe.'); return; }
   const A = ACCENTS[settings.accent] || ACCENTS.marine;
@@ -29,7 +29,23 @@ export async function makePdf(o: Opk | undefined | null, settings: Settings, e: 
   try {
     const [{ jsPDF }, { buildPdf }] = await Promise.all([import('jspdf'), import('./pdf')]);
     const doc = buildPdf(jsPDF, input, [...settings.categories, ...FIXED_CATS]);
+    if (practice) watermark(doc);
     const name = (slugify((e ? fmtNL(e.date) + '-' : '') + (o.title || 'opkomst')).slice(0, 60) || 'opkomst') + '.pdf';
     download(name, doc.output('blob'), 'Pdf gedownload');
   } catch (err: any) { toast('Pdf maken mislukt: ' + err.message); }
+}
+
+/** Schuin watermerk op elke pagina (pdf uit de oefenomgeving). */
+function watermark(doc: any) {
+  const w = doc.internal.pageSize.getWidth(), h = doc.internal.pageSize.getHeight();
+  for (let i = 1; i <= doc.getNumberOfPages(); i++) {
+    doc.setPage(i);
+    doc.saveGraphicsState();
+    doc.setGState(new doc.GState({ opacity: 0.13 }));
+    doc.setTextColor(181, 70, 47); doc.setFont('helvetica', 'bold'); doc.setFontSize(84);
+    doc.text('OEFENEN', w / 2, h / 2, { align: 'center', angle: 35, baseline: 'middle' });
+    doc.setFontSize(20);
+    doc.text('voorbeelddata · niet echt', w / 2 + 18, h / 2 + 26, { align: 'center', angle: 35, baseline: 'middle' });
+    doc.restoreGraphicsState();
+  }
 }

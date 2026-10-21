@@ -85,3 +85,8 @@ export function RolesProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 export const useRoles = () => useContext(Ctx);
+
+/** Geen beheerrollen (oefenomgeving). */
+export function NoRoles({ children }: { children: ReactNode }) {
+  return <Ctx.Provider value={{ ready: true, root: null, isRoot: false, groups: [], ownGroups: [], isAdmin: false, isGroupAdmin: () => false, profile: null }}>{children}</Ctx.Provider>;
+}

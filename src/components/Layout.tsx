@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { TentTree, ChevronDown, LogOut, Users, ShieldCheck, UserRound } from 'lucide-react';
+import { TentTree, ChevronDown, LogOut, Users, ShieldCheck, UserRound, RotateCcw, GraduationCap } from 'lucide-react';
 import { useRoles } from '../store/roles';
 import { useAuth } from '../store/auth';
 import { useSpeltak } from '../store/speltak';
@@ -18,13 +18,13 @@ export function applyAccent(accent: string, logo: string) {
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
-  const { sp, sid, loading, denied, settings, isTL, isAdmin, isMember, myName } = useSpeltak();
+  const { sp, sid, loading, denied, settings, isTL, isAdmin, isMember, myName, practice, resetPractice } = useSpeltak();
   const roles = useRoles();
   const team = isTL || isAdmin;
   const nav = useNavigate();
   const [menu, setMenu] = useState(false);
   useEffect(() => { applyAccent(settings.accent, settings.logo); document.title = sp ? `Opkomstplanner · ${sp.groupName || ''} ${sp.name || ''}`.trim() : 'Opkomstplanner'; }, [settings.accent, settings.logo, sp]);
-  useEffect(() => { if (sp) localStorage.setItem('opk.sid', sid); }, [sp, sid]);
+  useEffect(() => { if (sp && !practice) localStorage.setItem('opk.sid', sid); }, [sp, sid, practice]);
   useEffect(() => { if (!menu) return; const h = () => setMenu(false); document.addEventListener('click', h); return () => document.removeEventListener('click', h); }, [menu]);
   if (denied) return <div className="auth-wrap"><div className="card pad stack auth-card"><h2>Geen toegang</h2><p className="hint">Je bent geen lid van deze speltak, of hij bestaat niet meer.</p><button className="btn primary" onClick={() => { localStorage.removeItem('opk.sid'); nav('/speltakken'); }}>Mijn speltakken</button></div></div>;
   if (loading || !sp) return <div className="loading">Speltak laden…</div>;
@@ -42,7 +42,11 @@ export default function Layout({ children }: { children: ReactNode }) {
       </nav>
       <div className="acct">
         <button className="btn sm" aria-label="Account" onClick={e => { e.stopPropagation(); setMenu(m => !m); }}><span className="avatar">{initials}</span><span className="acct-name">{myName || 'Account'}</span><ChevronDown size={14} /></button>
-        {menu && <div className="menu" onClick={e => e.stopPropagation()}>
+        {menu && practice && <div className="menu" onClick={e => e.stopPropagation()}>
+          <button onClick={() => { setMenu(false); resetPractice?.(); }}><RotateCcw size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Opnieuw beginnen</button>
+          <button onClick={() => nav('/')}><LogOut size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Oefenen stoppen</button>
+        </div>}
+        {menu && !practice && <div className="menu" onClick={e => e.stopPropagation()}>
           {roles.isAdmin && <button onClick={() => nav('/beheer')}><ShieldCheck size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Beheer</button>}
           <button onClick={() => nav('/account')}><UserRound size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Mijn account</button>
           <button onClick={() => nav('/speltakken')}><Users size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Andere speltak</button>
@@ -50,6 +54,9 @@ export default function Layout({ children }: { children: ReactNode }) {
         </div>}
       </div>
     </header>
+    {practice && <div className="demobar oefenbar"><span><GraduationCap size={16} style={{ verticalAlign: -3, marginRight: 6 }} /><b>Oefenomgeving.</b> Dit is voorbeelddata. Probeer gerust alles uit: wat je verandert, blijft alleen in deze browser.</span>
+      <div className="row"><button className="btn sm" onClick={() => resetPractice?.()}><RotateCcw size={14} />Opnieuw beginnen</button><button className="btn sm primary" onClick={() => nav('/')}>Stoppen</button></div></div>}
+    {practice && <div className="watermark on" aria-hidden="true"><div><b>OEFENEN</b><span>voorbeelddata · niet echt</span></div></div>}
     {roles.profile && !(roles.profile.firstName && roles.profile.lastName) && <div className="banknote namenote"><span>Vul je voor- en achternaam in, zodat de beheerder van je groep weet wie je bent.</span><div className="row"><button className="btn sm primary" onClick={() => nav('/account')}>Naar mijn account</button></div></div>}
     {!isMember && isAdmin && <div className="banknote adminnote"><span><ShieldCheck size={15} style={{ verticalAlign: -3, marginRight: 6 }} />Je bekijkt deze speltak als beheerder: alleen-lezen. Het team beheer je onder Team.</span></div>}
     <main className="pb-16">{children}</main>

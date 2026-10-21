@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { collection, doc, onSnapshot, setDoc, deleteDoc, updateDoc, arrayRemove, deleteField } from 'firebase/firestore';
+import * as F from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './auth';
 import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, isKamp, addDaysSafe, presentNames } from '../lib/model';
@@ -38,6 +38,10 @@ type Ctx = {
   dropAbsent: (e: Plan, quiet?: boolean) => number;
   /** Groepsbank: null = (nog) niet beschikbaar, bijv. speltak zonder groep. */
   shared: Gedeeld[] | null;
+  /** Oefenomgeving: voorbeelddata die alleen in deze browser staat. */
+  practice: boolean;
+  /** Oefenomgeving: voorbeelddata terugzetten. */
+  resetPractice: (() => void) | null;
   /** Gedeelde opkomst als kopie in de eigen opkomstenbank zetten. */
   importShared: (g: Gedeeld) => Opk;
 };
@@ -45,8 +49,14 @@ const C = createContext<Ctx>(null as any);
 
 const DEBOUNCE = 500;
 
-export function SpeltakProvider({ sid, children }: { sid: string; children: ReactNode }) {
+/** Waar de speltak opgeslagen wordt: Firestore, of (oefenomgeving) een lokale nabootsing met dezelfde functies. */
+export type Backend = { db: any; collection: typeof F.collection; doc: typeof F.doc; onSnapshot: typeof F.onSnapshot; setDoc: typeof F.setDoc;
+  deleteDoc: typeof F.deleteDoc; updateDoc: typeof F.updateDoc; arrayRemove: typeof F.arrayRemove; deleteField: typeof F.deleteField };
+const REMOTE: Backend = { db, collection: F.collection, doc: F.doc, onSnapshot: F.onSnapshot, setDoc: F.setDoc, deleteDoc: F.deleteDoc, updateDoc: F.updateDoc, arrayRemove: F.arrayRemove, deleteField: F.deleteField };
+
+export function SpeltakProvider({ sid, children, backend, practice = false, onReset }: { sid: string; children: ReactNode; backend?: Backend; practice?: boolean; onReset?: () => void }) {
   const { user } = useAuth();
+  const { collection, doc, onSnapshot, setDoc, deleteDoc, updateDoc, arrayRemove, deleteField, db } = backend || REMOTE;
   const [sp, setSp] = useState<Speltak | null>(null);
   const [opks, setOpks] = useState<Opk[]>([]);
   const [lib, setLib] = useState<Lib[]>([]);
@@ -86,7 +96,7 @@ export function SpeltakProvider({ sid, children }: { sid: string; children: Reac
   const myName = me?.name || user?.displayName || '';
   const roles = useRoles();
   const isTL = isTeamleider(sp, user?.uid);
-  const isAdmin = !!sp && roles.isGroupAdmin(sp.gid);
+  const isAdmin = !practice && !!sp && roles.isGroupAdmin(sp.gid);
   const can = (p: PermKey) => !!me && (isTL || !!me.perms?.[p]);
   const leaders = useMemo(() => {
     const names = sp ? Object.values(sp.members).map(m => m.name).filter(Boolean) : [];
@@ -133,7 +143,7 @@ export function SpeltakProvider({ sid, children }: { sid: string; children: Reac
   const removeMember = async (uidX: string) => {
     await updateDoc(doc(db, 'speltakken', sid), { ['members.' + uidX]: deleteField(), memberIds: arrayRemove(uidX), ...(sp?.tlIds?.includes(uidX) ? { tlIds: arrayRemove(uidX) } : {}) });
   };
-  const createInvite = (email: string, kind: 'teamleider' | 'leiding', perms: Perms, transfer = false) =>
+  const createInvite = (email: string, kind: 'teamleider' | 'leiding', perms: Perms, transfer = false) => practice ? Promise.reject(new Error('oefenen')) :
     mkInvite({ kind, email, gid: sp?.gid || null, groupName: sp?.groupName || '', sid, speltakName: sp?.name || '', perms, transfer },
       { uid: user!.uid, name: myName || user?.email || '', email: user?.email || '' });
 
@@ -191,7 +201,7 @@ export function SpeltakProvider({ sid, children }: { sid: string; children: Reac
   };
 
   /* ---- groepsbank ---- */
-  const gid = sp?.gid || null;
+  const gid = practice ? null : sp?.gid || null;
   const isMemberNow = !!me;
   const [shared, setShared] = useState<Gedeeld[] | null>(null);
   useEffect(() => {
@@ -239,7 +249,7 @@ export function SpeltakProvider({ sid, children }: { sid: string; children: Reac
 
   const value: Ctx = { sid, sp, loading, denied, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
     saveOpk, deleteOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
-    getO, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared };
+    getO, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null };
   return <C.Provider value={value}>{children}</C.Provider>;
 }
 export const useSpeltak = () => useContext(C);

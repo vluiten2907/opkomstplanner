@@ -22,7 +22,7 @@ export default function Dashboard() {
   const empty = !opks.length && !lib.length && !plans.length;
   const create = (kamp: boolean) => { const o = kamp ? newKamp(settings, 3) : newOpk(settings); saveOpk(o); nav(`/s/${sid}/bouwer/${o.id}`); };
   return <div className="stack pt-6 md:pt-8" style={{ gap: 20 }}>
-    <PageTitle kicker={<>{settings.groupName && <span>{settings.groupName}</span>}<Link className="kicker-switch" to="/speltakken"><Users size={13} />Andere speltak</Link></>} title={S.sp?.name || settings.speltak || 'Overzicht'} sub={`${cap(fmtLong(today))}, week ${isoWeek(today)}`}>
+    <PageTitle kicker={<>{settings.groupName && <span>{settings.groupName}</span>}{!S.practice && <Link className="kicker-switch" to="/speltakken"><Users size={13} />Andere speltak</Link>}</>} title={S.sp?.name || settings.speltak || 'Overzicht'} sub={`${cap(fmtLong(today))}, week ${isoWeek(today)}`}>
       {can('build') && <><button className="btn" onClick={() => create(true)}><Tent size={16} />Weekendkamp</button><button className="btn primary" onClick={() => create(false)}><Plus size={16} />Nieuwe opkomst</button></>}
     </PageTitle>
     {empty && <section className="card pad stack setup"><h2>Welkom bij {settings.speltak || 'je speltak'}</h2>

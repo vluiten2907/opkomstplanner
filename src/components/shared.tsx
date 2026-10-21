@@ -6,8 +6,8 @@ import { makePdf } from '../lib/export';
 
 /** Pdf maken van een opkomst met de huidige instellingen en aanwezige leiding. */
 export function usePdf() {
-  const { settings, entryOfOpk, presentFor } = useSpeltak();
-  return (o: Opk | undefined | null) => { if (!o) return; makePdf(o, settings, o.state === 'planned' ? entryOfOpk(o) : null, presentFor(o)); };
+  const { settings, entryOfOpk, presentFor, practice } = useSpeltak();
+  return (o: Opk | undefined | null) => { if (!o) return; makePdf(o, settings, o.state === 'planned' ? entryOfOpk(o) : null, presentFor(o), practice); };
 }
 
 export const PageTitle = ({ title, sub, kicker, children }: { title: React.ReactNode; sub?: React.ReactNode; kicker?: React.ReactNode; children?: React.ReactNode }) =>

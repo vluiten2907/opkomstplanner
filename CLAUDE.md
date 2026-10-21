@@ -35,6 +35,7 @@ src/store/speltak.tsx realtime data per speltak, optimistisch opslaan (debounce 
 src/store/auth.tsx    login/registratie
 src/components/       Layout, ui (Modal, TimePicker, Chip, ConfirmBtn), shared, modals (Datum, Koppelen, Inplannen, Overnemen/Leiding indelen)
 src/pages/            Auth, Invite, Speltakken, Dashboard, Jaarplanning, Bouwer, Activiteitenbank, Opkomstenbank, Instellingen
+src/lib/localfs.ts + oefendata.ts, pages/Oefenen.tsx  oefenomgeving op /s/oefen: voorbeelddata in localStorage, geen Firestore, watermerk
 test/fake-firebase.ts nep-Firebase (localStorage) voor `npm run demo` en de rooktest
 ```
 
