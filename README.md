@@ -45,6 +45,16 @@ Let op bij Strato: als de map `opkomst` al een eigen `.htaccess` heeft, vervang 
 
 Registreren staat open voor iedereen met het adres: zo kan een andere groep zelf een speltak beginnen zonder dat jij iets hoeft te doen. Ieder ziet alleen de speltakken waar hij lid van is.
 
+## Werken met Claude Code (coördinator + threads)
+
+Zelfde opzet als Conqueston. Details in `CLAUDE.md` en `docs/plan.md`.
+
+1. **Coördinator**: start een Claude Code-sessie op deze repo en typ `/coordinator`. Vertel je wens; de coördinator zet hem als stap in `docs/plan.md` en geeft je een startregel, bijv. `/stap 1.3`.
+2. **Thread**: start een *nieuwe* sessie op deze repo en typ die startregel. De thread bouwt op een eigen branch, draait de tests en opent een PR met "Wat te testen".
+3. **Controle**: zeg tegen de coördinator "check PR #…". Is het goed, zeg dan "merge" (of merge zelf op GitHub) → automatisch live, en de coördinator controleert de live site.
+
+Claude merget alleen als jij "merge" zegt en CI groen is. Rechtstreeks naar `main` pushen is geblokkeerd (`.claude/settings.json`).
+
 ## Lokaal ontwikkelen
 
 Node 20 of nieuwer.

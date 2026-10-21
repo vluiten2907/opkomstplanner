@@ -5,7 +5,7 @@ Faalt (exit 1) bij een mislukte controle of een fout in de console.
 Screenshots komen in test/e2e/out/ (niet in git).
 """
 import os, re, sys
-os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
+if os.path.isdir('/opt/pw-browsers'): os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get('E2E_BASE', 'http://localhost:4173')

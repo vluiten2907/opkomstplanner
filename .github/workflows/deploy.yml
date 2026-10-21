@@ -11,6 +11,8 @@ name: Deploy naar Strato
 on:
   push:
     branches: [main]
+    # Alleen bij wijzigingen aan de app zelf (niet bij documentatie)
+    paths: ['src/**', 'public/**', 'index.html', 'package.json', 'package-lock.json', 'vite.config.ts', 'tailwind.config.js', 'postcss.config.js', 'tsconfig*.json', '.env.production', '.github/workflows/deploy.yml']
   workflow_dispatch:
 
 concurrency:
@@ -27,8 +29,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Build
-        run: npm run build
+      - name: Typecheck en build
+        run: npx tsc -p tsconfig.app.json --noEmit && npm run build
       - name: Controleer instellingen
         env:
           HOST: ${{ secrets.STRATO_SFTP_HOST }}
