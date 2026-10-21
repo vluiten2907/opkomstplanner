@@ -184,6 +184,13 @@ export const minNeed = (o: Opk) => allBlocks(o).filter(b => !isFixed(b)).reduce(
 export const catOf = (s: Settings, id: string): Cat => s.categories.find(c => c.id === id) || (FIXED_CATS.find(c => c.id === id) as Cat) || { id: '', label: 'Zonder categorie', color: '#7E837A' };
 export const opkCatList = (s: Settings) => [...s.categories, ...OPK_EXTRA.filter(x => !s.categories.some(c => c.id === x.id))];
 export const opkCatOf = (s: Settings, id: string) => opkCatList(s).find(c => c.id === id);
+/** Namen in een bank zijn uniek: hoofdletters en spaties aan begin/eind tellen niet mee. */
+export const sameName = (a: string, b: string) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
+export const nameTaken = (list: { id: string; title: string }[], title: string, exceptId?: string | null) => !!(title || '').trim() && list.some(x => x.id !== exceptId && sameName(x.title, title));
+export function freeName(list: { id: string; title: string }[], base: string) {
+  const b = (base || '').trim().replace(/ \(kopie( \d+)?\)$/, '') || 'Naamloos';
+  let n = b + ' (kopie)', i = 2; while (nameTaken(list, n)) n = `${b} (kopie ${i++})`; return n;
+}
 export const byTitle = (a: { title: string }, b: { title: string }) => (a.title || '').localeCompare(b.title || '', 'nl');
 
 /* ---------- Analyse ---------- */

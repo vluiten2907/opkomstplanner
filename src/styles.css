@@ -903,3 +903,15 @@ body { padding-top: env(safe-area-inset-top, 0px); }
 .kicker-switch { display: inline-flex; align-items: center; gap: 4px; text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 13px; color: var(--accent); text-decoration: none; }
 .kicker-switch:hover { text-decoration: underline; }
 .brand-sp { font-weight: 800; color: var(--ink); }
+
+/* Onderbalk bij bewerken uit de bank */
+.savebar { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--band); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--edge) 40%, var(--line)); }
+.savebar.on { background: color-mix(in srgb, var(--pop) 22%, var(--surface)); box-shadow: 0 0 0 2px var(--edge), 4px 4px 0 2px var(--hard); }
+.savebar.sticky { position: sticky; bottom: 12px; z-index: 30; }
+.side .savebar { position: sticky; bottom: 0; z-index: 2; }
+.savebar .lbl { font-weight: 700; font-size: 14px; }
+.savebar .btn:disabled, .modal .btn:disabled { opacity: .5; cursor: not-allowed; }
+.sb-msg { font-size: 14px; font-weight: 700; }
+.sb-err { font-size: 14px; font-weight: 700; color: var(--danger); }
+body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px)); }
+@media (max-width: 600px) { body:has(.savebar) .toast { bottom: calc(170px + env(safe-area-inset-bottom, 0px)); } }

@@ -8,6 +8,7 @@ import { PickOpk } from './shared';
 import { addDays, fmtLong, fmtNL, fmtRange, parseNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, todayISO } from '../lib/time';
 import { analyze, blockFromLib, byTitle, catOf, dayTitle, entryTimes, isKamp, lanesLayout, minNeed, newKamp, newOpk, PREP_OPTS, prepLabel, rowsIn, setOpkTime, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
 import { uid } from '../lib/time';
+import type { NameSpec } from '../store/modal';
 
 /* ---------- Datum en soort ---------- */
 export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose: () => void; onSaved?: (e: Plan) => void }) {
@@ -244,5 +245,17 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
       {isKamp(o) && <select className="inp" value={libDay} onChange={e => setLibDay(+e.target.value)} style={{ flex: '0 1 160px' }}>{o.days.map((d, i) => <option key={d.id} value={i}>{d.label}</option>)}</select>}
       <button className="btn" onClick={addLib}><Plus size={16} />Activiteit toevoegen</button></div>}
     <div className="row between"><button className="btn ghost" onClick={() => { onClose(); nav(`/s/${sid}/bouwer/${o.id}`); }}><SquarePen size={16} />Volledige bouwer</button><button className="btn primary" onClick={onClose}>Klaar</button></div>
+  </Modal>;
+}
+
+/* ---------- Naam kiezen (uniek in de bank) ---------- */
+export function NameModal({ spec, onClose }: { spec: NameSpec; onClose: () => void }) {
+  const [name, setName] = useState(spec.initial);
+  const err = !name.trim() ? 'Geef een titel op.' : spec.taken(name) ? 'Deze naam bestaat al in de bank. Kies een andere naam.' : '';
+  const ok = () => { if (err) return; onClose(); spec.ok(name.trim()); };
+  return <Modal title={spec.title} sub={spec.sub} onClose={onClose}>
+    <Field label={spec.label} htmlFor="nm-name"><input id="nm-name" value={name} autoFocus onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') ok(); }} /></Field>
+    {err && <span className="sb-err">{err}</span>}
+    <div className="row"><button className="btn primary" disabled={!!err} onClick={ok}>{spec.okLabel}</button><button className="btn ghost" onClick={onClose}>Annuleren</button></div>
   </Modal>;
 }

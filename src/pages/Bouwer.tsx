@@ -3,11 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Bookmark, CalendarDays, Copy, Download, Plus, Tent, Trash2, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
-import { openModal } from '../store/modal';
-import { Strip, PickOpk, usePdf, PageTitle } from '../components/shared';
+import { openModal, withFreeName } from '../store/modal';
+import { guardLeave, useDirty } from '../store/unsaved';
+import { Strip, PickOpk, usePdf, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, TimePicker } from '../components/ui';
 import { cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, uid, DAYS } from '../lib/time';
-import { addDaysSafe, allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, copyOpk, dayTitle, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, prepLabel, setOpkTime, syncKamp, LIB_FIELDS, PREP_OPTS, SWATCHES, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+import { addDaysSafe, allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, copyOpk, freeName, nameTaken, dayTitle, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, prepLabel, setOpkTime, syncKamp, LIB_FIELDS, PREP_OPTS, SWATCHES, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /* ============ Startscherm ============ */
 export default function Bouwer() {
@@ -47,11 +48,20 @@ function useRowHeight(kamp: boolean) {
 
 type Ctx = { o: Opk; D: { start: number; end: number; blocks: Block[]; label?: string }; T0: number; T1: number; row: number; nn: boolean; present: string[]; readOnly: boolean };
 
-function Builder({ o }: { o: Opk }) {
+function Builder({ o: stored }: { o: Opk }) {
   const S = useSpeltak();
-  const { settings, leaders, lib, saveOpk, savePlan, saveLib, entryOfOpk, presentFor, getO, sid, can, dropAbsent } = S;
+  const { settings, leaders, lib, opks, saveOpk, savePlan, saveLib, entryOfOpk, presentFor, getO, sid, can, dropAbsent } = S;
   const nav = useNavigate(); const pdf = usePdf(); const delDraft = useDeleteDraft();
   const [, bump] = useState(0);
+  // Een opkomst uit de bank bewerk je als kladversie: pas bij Opslaan (of Opslaan als kopie) gaat hij naar de bank.
+  const bankEdit = stored.state === 'bank';
+  const [draft, setDraft] = useState<Opk | null>(() => bankEdit ? normOpk(clone(stored)) : null);
+  const [dirty, setDirty] = useState(false);
+  useDirty(dirty);
+  useEffect(() => { if (bankEdit && !draft) setDraft(normOpk(clone(stored))); if (!bankEdit && draft) { setDraft(null); setDirty(false); } }, [bankEdit]);
+  const o = (bankEdit && draft) || stored;
+  const bankOpks = opks.filter(x => x.state === 'bank');
+  const go = (to: string) => guardLeave(() => nav(to));
   const [dayIdx, setDayIdx] = useState(0);
   const [selId, setSelId] = useState<string | null>(null);
   const [sideTab, setSideTab] = useState<'bank' | 'check'>('bank');
@@ -65,7 +75,13 @@ function Builder({ o }: { o: Opk }) {
   const e = o.state === 'planned' ? entryOfOpk(o) : null, src = o.srcId ? getO(o.srcId) : undefined;
   const nn = o.state === 'bank', present = presentFor(o);
   const ctx: Ctx = { o, D, T0, T1, row, nn, present, readOnly };
-  const upd = (fn: () => void) => { if (readOnly) return; fn(); if (kamp) syncKamp(o); saveOpk({ ...o }); bump(x => x + 1); };
+  const upd = (fn: () => void) => { if (readOnly) return; fn(); if (kamp) syncKamp(o); if (o === draft) setDirty(true); else saveOpk({ ...o }); bump(x => x + 1); };
+  const saveBank = () => { const x = normOpk(clone(o)); x.title = x.title.trim(); saveOpk(x); setDraft(normOpk(clone(x))); setDirty(false); toast('Opkomst opgeslagen in de bank'); };
+  const cancelBank = () => { setDraft(normOpk(clone(stored))); setDirty(false); setSelId(null); };
+  const copyBank = (name: string) => {
+    const c = copyOpk(o); c.title = name; c.srcId = null; c.fromShared = null; c.state = 'bank';
+    saveOpk(c); setDirty(false); nav(`/s/${sid}/bouwer/${c.id}`); toast(`Kopie "${name}" opgeslagen in de bank`);
+  };
   const A = kamp ? analyzeOne(D as Day, present, leaders, nn) : analyze(o, present, leaders);
   const whole = kamp ? analyze(o, present, leaders) : A;
   const sel = selId ? allBlocks(o).find(b => b.id === selId) || null : null;
@@ -79,7 +95,7 @@ function Builder({ o }: { o: Opk }) {
     const i = list.findIndex(b => b.id === id); if (i < 0) return;
     const [b] = list.splice(i, 1); if (selId === id) setSelId(null);
     upd(() => {});
-    toast(`"${b.title || 'Naamloos onderdeel'}" verwijderd`, { label: 'Ongedaan maken', fn: () => { list.splice(Math.min(i, list.length), 0, b); saveOpk({ ...o }); bump(x => x + 1); } });
+    toast(`"${b.title || 'Naamloos onderdeel'}" verwijderd`, { label: 'Ongedaan maken', fn: () => upd(() => { list.splice(Math.min(i, list.length), 0, b); }) });
   };
   const firstFree = (dur: number) => { const bl = [...D.blocks].sort((a, b) => a.start - b.start); let t = D.start; for (const b of bl) { if (b.start - t >= dur) return t; t = Math.max(t, b.start + b.dur); } return D.end - t >= dur ? t : null; };
   const insertLib = (l: Lib, start: number) => {
@@ -104,20 +120,25 @@ function Builder({ o }: { o: Opk }) {
   const pill = o.state === 'bank' ? <span className="pill good">In opkomstenbank</span> : o.state === 'planned' ? <span className="pill acc">Ingepland</span> : <span className="pill neutral">Concept</span>;
   const toBank = () => {
     if (!allBlocks(o).length && !o.title) { toast('Geef de opkomst eerst een titel of een onderdeel.'); return; }
-    if (o.state === 'draft') { upd(() => { o.state = 'bank'; o.lead = ''; o.shared = true; allBlocks(o).forEach(b => b.names = []); }); toast(S.sp?.gid ? 'In de opkomstenbank gezet en gedeeld met de groep, zonder namen' : 'Opgeslagen in de opkomstenbank, zonder namen van leiding'); return; }
-    const b = copyOpk(o); b.state = 'bank'; b.srcId = null; b.lead = ''; b.shared = true; b.fromShared = null; allBlocks(b).forEach(x => x.names = []);
-    saveOpk(b); upd(() => { o.srcId = b.id; }); toast('Kopie opgeslagen in de opkomstenbank, zonder leiding');
+    const ask = { title: 'Andere naam kiezen', sub: o.title.trim() ? `"${o.title.trim()}" staat al in de opkomstenbank. Kies een andere naam.` : 'Geef de opkomst een titel voor de bank.', label: 'Opkomst titel', okLabel: 'In bank zetten', suggest: o.title.trim() ? freeName(bankOpks, o.title) : '' };
+    if (o.state === 'draft') return withFreeName(o.title, { ...ask, taken: n => nameTaken(bankOpks, n, o.id), ok: name => { upd(() => { o.title = name; o.state = 'bank'; o.lead = ''; o.shared = true; allBlocks(o).forEach(b => b.names = []); }); toast(S.sp?.gid ? 'In de opkomstenbank gezet en gedeeld met de groep, zonder namen' : 'Opgeslagen in de opkomstenbank, zonder namen van leiding'); } });
+    withFreeName(o.title, { ...ask, taken: n => nameTaken(bankOpks, n), ok: name => {
+      const b = copyOpk(o); b.title = name; b.state = 'bank'; b.srcId = null; b.lead = ''; b.shared = true; b.fromShared = null; allBlocks(b).forEach(x => x.names = []);
+      saveOpk(b); upd(() => { o.srcId = b.id; }); toast('Kopie opgeslagen in de opkomstenbank, zonder leiding');
+    } });
   };
-  const dup = () => { const c = copyOpk(o); c.state = 'draft'; c.srcId = null; c.title = (o.title || 'Opkomst') + ' (kopie)'; saveOpk(c); nav(`/s/${sid}/bouwer/${c.id}`); toast('Kopie gemaakt'); };
+  const dup = () => guardLeave(() => { const c = copyOpk(o); c.state = 'draft'; c.srcId = null; c.title = (o.title || 'Opkomst') + ' (kopie)'; saveOpk(c); nav(`/s/${sid}/bouwer/${c.id}`); toast('Kopie gemaakt'); });
   const updBank = () => {
-    if (!src) return; const fresh = normOpk(clone(o)); allBlocks(fresh).forEach(b => b.names = []);
+    if (!src) return;
+    if (nameTaken(bankOpks, o.title, src.id)) { toast(`"${o.title.trim()}" bestaat al in de opkomstenbank. Geef deze opkomst eerst een andere titel.`); return; }
+    const fresh = normOpk(clone(o)); allBlocks(fresh).forEach(b => b.names = []);
     saveOpk({ ...src, cats: [...o.cats], kind: fresh.kind, title: o.title, short: o.short, group: o.group, location: o.location, start: o.start, end: o.end, prep: o.prep, post: o.post, blocks: fresh.blocks, days: fresh.days });
     toast('Opkomstenbank bijgewerkt');
   };
   const pdfBtn = <button className="btn primary" onClick={() => pdf(o)}><Download size={16} />PDF maken</button>;
   const actions = readOnly ? pdfBtn : o.state === 'draft' ? <><button className="btn" onClick={toBank}><Bookmark size={16} />In bank</button><button className="btn" onClick={() => openModal({ kind: 'toplan', oid: o.id })}><CalendarDays size={16} />Inplannen</button>{pdfBtn}{can('build') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Concept verwijderen" onConfirm={() => { nav(`/s/${sid}/bouwer`); delDraft(o); }} />}</>
-    : o.state === 'bank' ? <><button className="btn" onClick={dup}><Copy size={16} />Kopie</button><button className="btn" onClick={() => openModal({ kind: 'toplan', oid: o.id })}><CalendarDays size={16} />Inplannen</button>{pdfBtn}</>
-      : <><button className="btn" onClick={toBank}><Bookmark size={16} />In bank</button><button className="btn" onClick={() => nav(`/s/${sid}/jaarplanning?focus=${e ? e.id : ''}`)}><CalendarDays size={16} />Jaarplanning</button>{pdfBtn}</>;
+    : o.state === 'bank' ? <><button className="btn" onClick={dup}><Copy size={16} />Kopie</button><button className="btn" onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: o.id }))}><CalendarDays size={16} />Inplannen</button>{pdfBtn}</>
+      : <><button className="btn" onClick={toBank}><Bookmark size={16} />In bank</button><button className="btn" onClick={() => go(`/s/${sid}/jaarplanning?focus=${e ? e.id : ''}`)}><CalendarDays size={16} />Jaarplanning</button>{pdfBtn}</>;
   const w = whole.warn;
   return <div className="stack pt-5 md:pt-7" style={{ gap: 16 }}>
     <section className="plan-head">
@@ -126,7 +147,7 @@ function Builder({ o }: { o: Opk }) {
           <div className="row"><span className="eyebrow">{kamp ? 'Weekendkampplanner' : 'Opkomstbouwer'}</span>{kamp && <span className="pill kamp">Kamp</span>}{pill}{readOnly && <span className="pill neutral">Alleen lezen</span>}</div>
           <input id="om-title" value={o.title} readOnly={readOnly} onChange={ev => upd(() => { o.title = ev.target.value; if (e) savePlan({ ...e, topic: ev.target.value }); })} aria-label="Opkomst titel" placeholder={kamp ? 'Titel van het kamp' : 'Opkomst titel'} />
         </div>
-        <div className="row">{actions}<button className="btn ghost" onClick={() => nav(`/s/${sid}/bouwer`)} title="Nieuwe opkomst of weekendkamp"><Plus size={16} />Nieuw</button></div>
+        <div className="row">{actions}<button className="btn ghost" onClick={() => go(`/s/${sid}/bouwer`)} title="Nieuwe opkomst of weekendkamp"><Plus size={16} />Nieuw</button></div>
       </div>
       {o.state === 'planned' && e && <div className="ctx">{!readOnly && <button className="btn sm" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })}>Leiding indelen</button>}<span>eindverantwoordelijke: <b>{o.lead || 'nog niet gekozen'}</b></span>Ingepland op <b>{fmtRange(e.date, e.endDate, true)}</b><span>week {isoWeek(e.date)}</span><span>planning: {e.planners.length ? e.planners.join(', ') : 'nog niemand'}</span>
         {src && can('bank') && <span>uit de opkomstenbank: {src.title || 'naamloos'} · <ConfirmBtn className="linkbtn" label="bank bijwerken met deze versie" confirm="Klik nogmaals: bank overschrijven" onConfirm={updBank} /></span>}</div>}
@@ -175,12 +196,13 @@ function Builder({ o }: { o: Opk }) {
       </aside>
       <div className={'scrim' + (sel ? ' on' : '')} onClick={() => setSelId(null)} />
     </div>
+    {draft && !readOnly && <SaveBar sticky dirty={dirty} title={o.title} taken={(n, c) => nameTaken(bankOpks, n, c ? null : o.id)} suggest={freeName(bankOpks, o.title || stored.title)} onCancel={cancelBank} onSave={saveBank} onCopy={copyBank} />}
   </div>;
 }
 
 /* ============ Dagen (kamp) ============ */
 function DaysBar({ o, di, setDayIdx, upd, date, readOnly }: { o: Opk; di: number; setDayIdx: (i: number) => void; upd: (fn: () => void) => void; date: string | null; readOnly: boolean }) {
-  const { settings, saveOpk } = useSpeltak();
+  const { settings } = useSpeltak();
   const d = o.days[di];
   const addDay = () => {
     const last = o.days[o.days.length - 1], li = DAYS.findIndex(x => x.toLowerCase() === (last.label || '').toLowerCase());
@@ -191,7 +213,7 @@ function DaysBar({ o, di, setDayIdx, upd, date, readOnly }: { o: Opk; di: number
   const delDay = () => {
     if (o.days.length < 2) return; const [rm] = o.days.splice(di, 1); const at = di;
     setDayIdx(Math.max(0, di - 1)); upd(() => {});
-    toast(`${rm.label} verwijderd`, { label: 'Ongedaan maken', fn: () => { o.days.splice(at, 0, rm); syncKamp(o); saveOpk({ ...o }); setDayIdx(at); } });
+    toast(`${rm.label} verwijderd`, { label: 'Ongedaan maken', fn: () => { upd(() => { o.days.splice(at, 0, rm); }); setDayIdx(at); } });
   };
   const meals = () => {
     const pauze = settings.categories.find(c => /eten|maaltijd/i.test(c.label)) || settings.categories.find(c => /pauze/i.test(c.label));
@@ -368,7 +390,7 @@ export function LocInput({ id, value, onChange, placeholder }: { id: string; val
 }
 
 function Editor({ b, ctx, upd, onClose, onDelete, onDup, saveLib }: { b: Block; ctx: Ctx; upd: (fn: () => void) => void; onClose: () => void; onDelete: () => void; onDup: () => void; saveLib: (l: Lib) => void }) {
-  const { settings, leaders, getL, entryOfOpk, can } = useSpeltak();
+  const { settings, leaders, lib, getL, entryOfOpk, can } = useSpeltak();
   const { o, T0, T1, nn, present, readOnly } = ctx;
   const maxDur = Math.max(5, T1 - b.start); const durs: number[] = []; for (let d = 5; d <= Math.max(maxDur, b.dur); d += 5) durs.push(d);
   const extras = b.names.filter(n => !leaders.includes(n)), L = b.libId ? getL(b.libId) : undefined;
@@ -382,9 +404,17 @@ function Editor({ b, ctx, upd, onClose, onDelete, onDup, saveLib }: { b: Block; 
   };
   const toLib = () => {
     if (!b.title.trim()) { toast('Geef het onderdeel eerst een naam.'); document.getElementById('bf-title')?.focus(); return; }
-    const l = normLib({ id: uid() }); LIB_FIELDS.forEach(k => { (l as any)[k] = (b as any)[k]; }); saveLib(l); upd(() => { b.libId = l.id; }); toast('Opgeslagen in de activiteitenbank');
+    withFreeName(b.title, {
+      title: 'Andere naam kiezen', sub: `"${b.title.trim()}" staat al in de activiteitenbank. Geef de activiteit een andere naam.`, label: 'Titel van de activiteit', okLabel: 'Bewaren in activiteitenbank',
+      suggest: freeName(lib, b.title), taken: n => nameTaken(lib, n),
+      ok: name => { const l = normLib({ id: uid() }); LIB_FIELDS.forEach(k => { (l as any)[k] = (b as any)[k]; }); l.title = name; saveLib(l); upd(() => { b.title = name; b.libId = l.id; }); toast('Opgeslagen in de activiteitenbank'); },
+    });
   };
-  const updLib = () => { if (!L) return; const l = { ...L }; LIB_FIELDS.forEach(k => { (l as any)[k] = (b as any)[k]; }); saveLib(l); toast('Activiteitenbank bijgewerkt'); };
+  const updLib = () => {
+    if (!L) return;
+    if (nameTaken(lib, b.title, L.id)) { toast(`"${b.title.trim()}" bestaat al in de activiteitenbank. Geef het onderdeel eerst een andere naam.`); return; }
+    const l = { ...L }; LIB_FIELDS.forEach(k => { (l as any)[k] = (b as any)[k]; }); saveLib(l); toast('Activiteitenbank bijgewerkt');
+  };
   const ro = readOnly;
   return <div className="pad stack">
     <div className="row between" style={{ alignItems: 'flex-start', flexWrap: 'nowrap' }}><div><span className="eyebrow">Onderdeel</span><div className="mono muted" style={{ fontSize: 13 }}>{fmtT(b.start)} – {fmtT(b.start + b.dur)}</div></div>

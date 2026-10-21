@@ -43,7 +43,7 @@ type Ctx = {
   /** Oefenomgeving: voorbeelddata terugzetten. */
   resetPractice: (() => void) | null;
   /** Gedeelde opkomst als kopie in de eigen opkomstenbank zetten. */
-  importShared: (g: Gedeeld) => Opk;
+  importShared: (g: Gedeeld, title?: string) => Opk;
 };
 const C = createContext<Ctx>(null as any);
 
@@ -239,8 +239,9 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
     return () => clearTimeout(t);
   }, [gid, shared, opks, mayShare, loading, opksReady, sp?.name, settings]);
 
-  const importShared = (g: Gedeeld) => {
+  const importShared = (g: Gedeeld, title?: string) => {
     const { opk, add } = copyFromShared(g, settings, can('settings'));
+    if (title) opk.title = title;
     if (add.length) saveSettings({ categories: [...settings.categories, ...add] });
     saveOpk(opk);
     if (gid) countCopy(gid, g.id).catch(() => {});
