@@ -7,3 +7,4 @@ dist
 .firebase
 *.log
 dist-demo
+test/e2e/out
