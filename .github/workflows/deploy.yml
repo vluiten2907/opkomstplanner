@@ -1,8 +1,11 @@
-# Bouwt de app en zet hem via FTP op Strato (conqueston.nl/opkomst) bij elke push naar main.
+# Bouwt de app en zet hem via SFTP op Strato (conqueston.nl/opkomst) bij elke push naar main.
 # De Firebase-config staat in .env.production (niet geheim).
 # Vereist in GitHub > Settings > Secrets and variables > Actions:
-#   STRATO_FTP_SERVER (bijv. ftp.strato.com), STRATO_FTP_USER, STRATO_FTP_PASSWORD
-#   STRATO_DIR: map op de server die bij conqueston.nl/opkomst/ hoort (bijv. /opkomst/ of /conqueston.nl/opkomst/)
+#   STRATO_SFTP_HOST      SFTP-server uit het Strato-klantmenu (bijv. ssh.strato.de)
+#   STRATO_SFTP_USER      SFTP-gebruikersnaam
+#   STRATO_SFTP_PASSWORD  SFTP-wachtwoord
+#   STRATO_DIR            map die bij conqueston.nl/opkomst/ hoort, bijv. /opkomst of /conqueston/opkomst
+# Optioneel: STRATO_SFTP_PORT (standaard 22)
 name: Deploy naar Strato
 
 on:
@@ -26,15 +29,31 @@ jobs:
       - run: npm ci
       - name: Build
         run: npm run build
-      - name: Upload naar Strato
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.STRATO_FTP_SERVER }}
-          username: ${{ secrets.STRATO_FTP_USER }}
-          password: ${{ secrets.STRATO_FTP_PASSWORD }}
-          protocol: ftps
-          local-dir: ./dist/
-          server-dir: ${{ secrets.STRATO_DIR }}
-          exclude: |
-            **/.git*
-            **/.git*/**
+      - name: Controleer instellingen
+        env:
+          HOST: ${{ secrets.STRATO_SFTP_HOST }}
+          DIR: ${{ secrets.STRATO_DIR }}
+        run: |
+          if [ -z "$HOST" ] || [ -z "$DIR" ]; then echo "::error::STRATO_SFTP_HOST en STRATO_DIR moeten als secret zijn ingesteld."; exit 1; fi
+          # Veiligheid: nooit de hoofdmap van de webruimte overschrijven.
+          case "${DIR%/}" in ""|"/"|".") echo "::error::STRATO_DIR mag niet de hoofdmap zijn; gebruik bijv. /opkomst"; exit 1;; esac
+          test -f dist/.htaccess || { echo "::error::dist/.htaccess ontbreekt"; exit 1; }
+      - name: Upload naar Strato (SFTP)
+        env:
+          HOST: ${{ secrets.STRATO_SFTP_HOST }}
+          PORT: ${{ secrets.STRATO_SFTP_PORT }}
+          USER: ${{ secrets.STRATO_SFTP_USER }}
+          PASS: ${{ secrets.STRATO_SFTP_PASSWORD }}
+          DIR: ${{ secrets.STRATO_DIR }}
+        run: |
+          sudo apt-get install -y -qq lftp > /dev/null
+          DIR="${DIR%/}"
+          # Eerst alles uploaden; daarna alleen in assets/ oude (gehashte) bestanden opruimen.
+          lftp -p "${PORT:-22}" -u "$USER","$PASS" "sftp://$HOST" -e "
+            set sftp:auto-confirm yes;
+            set net:max-retries 2;
+            set net:timeout 20;
+            mkdir -p -f $DIR;
+            mirror --reverse --verbose --exclude-glob assets/ dist/ $DIR;
+            mirror --reverse --verbose --delete dist/assets/ $DIR/assets;
+            bye"

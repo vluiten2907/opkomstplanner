@@ -23,11 +23,13 @@ React + TypeScript + Vite; gegevens en accounts in Firebase (Firestore + Authent
 
 De app is statische bestanden; een `.htaccess` in `public/` stuurt alle routes naar `index.html`. De build staat standaard op pad `/opkomst/`.
 
-**Automatisch via GitHub (aanbevolen)** — elke push naar `main` bouwt en uploadt naar Strato.
+**Automatisch via GitHub (aanbevolen)** — elke push naar `main` bouwt de app en zet hem via SFTP op Strato.
 
 1. In de GitHub-repo: **Settings → Secrets and variables → Actions → New repository secret**, maak aan:
-   - `STRATO_FTP_SERVER` (bijv. `ftp.strato.com`), `STRATO_FTP_USER`, `STRATO_FTP_PASSWORD` (Strato-klantenlogin → Website → FTP-toegang)
-   - `STRATO_DIR`: de map op de server die bij `conqueston.nl/opkomst/` hoort. Staat conqueston.nl in de hoofdmap, dan `/opkomst/`; staat het domein in een eigen map (bijv. `/conqueston/`), dan `/conqueston/opkomst/`.
+   - `STRATO_SFTP_HOST`: de SFTP-server uit het Strato-klantmenu (*Hosting → SFTP/SSH*), bijv. `ssh.strato.de`
+   - `STRATO_SFTP_USER` en `STRATO_SFTP_PASSWORD`: je SFTP-login
+   - `STRATO_DIR`: de map op de server die bij `conqueston.nl/opkomst/` hoort. Staat conqueston.nl in de hoofdmap, dan `/opkomst`; staat het domein in een eigen map (bijv. `/conqueston`), dan `/conqueston/opkomst`. De hoofdmap zelf wordt geweigerd, zodat de rest van je site nooit overschreven wordt.
+   - optioneel `STRATO_SFTP_PORT` als het niet 22 is.
 2. Push naar `main` (of **Actions → Deploy naar Strato → Run workflow**). Na een minuut staat de app op <https://conqueston.nl/opkomst/>.
 
 **Handmatig** — `npm install`, `npm run build` (de Firebase-config staat al in `.env.production`), en upload de inhoud van `dist/` (inclusief het verborgen bestand `.htaccess`) naar de map `opkomst` van conqueston.nl.
