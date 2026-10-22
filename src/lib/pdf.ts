@@ -193,17 +193,25 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
     y += 6;
     if (y + 20 > BOTTOM) newPage();
     font('bold', 13); doc.text('Voorbereiding', M, y + 4); y += 8;
+    // per onderdeel: kop (tijd + titel), daaronder grijs wie het doet, dan de tekst; alles afgebroken, niets afgekapt
     preps.forEach(b => {
-      font('bold', 9.5); const head = clean(tpfx(b)) + '  ' + clean(b.title || 'Naamloos onderdeel');
-      font('normal', 9.5); const L = wrap(b.prep, CW - 9);
+      font('bold', 9.5); const head = wrap(tpfx(b) + '  ' + (b.title || 'Naamloos onderdeel'), CW - 9);
       const who = splitNames(b.names).join(', ');
-      const hh = lh(9.5) + L.length * lh(9.5) + 3;
-      if (y + hh > BOTTOM) newPage();
+      font('normal', 8.5); const W2 = who ? wrap(who, CW - 9) : [];
+      font('normal', 9.5); const L = wrap(b.prep, CW - 9);
+      const headH = head.length * lh(9.5) + W2.length * lh(8.5);
+      const hh = headH + L.length * lh(9.5) + 3;
+      // past het niet meer: nieuwe pagina, tenzij het toch niet op één pagina past en de kop met een paar regels nog wel
+      if (y + hh > BOTTOM && (hh <= BOTTOM - M || y + headH + Math.min(3, L.length) * lh(9.5) + 3 > BOTTOM)) newPage();
       doc.setDrawColor(...INK); doc.setLineWidth(0.3); doc.rect(M + 1, y + 1, 3.2, 3.2);
-      font('bold', 9.5); doc.text(head, M + 9, y + 3.8);
-      if (who) { font('normal', 8.5, MUTED); doc.text(wrap(who, 60)[0], M + CW, y + 3.8, { align: 'right' }); }
-      font('normal', 9.5); doc.text(L, M + 9, y + 3.8 + lh(9.5));
-      y += hh;
+      let ty = y + 3.8;
+      font('bold', 9.5); doc.text(head, M + 9, ty); ty += head.length * lh(9.5);
+      if (W2.length) { font('normal', 8.5, MUTED); doc.text(W2, M + 9, ty - 0.2); ty += W2.length * lh(8.5); }
+      L.forEach(line => {
+        if (ty + 1.2 > BOTTOM) { newPage(); font('italic', 8.5, MUTED); doc.text('vervolg ' + clean(b.title || ''), M + 9, y + 3); y += 7; ty = y + 3.8; }
+        font('normal', 9.5); doc.text(line, M + 9, ty); ty += lh(9.5);
+      });
+      y = ty - 3.8 + 3;
     });
   }
 

@@ -22,9 +22,11 @@ export function fmtRange(d: string, end?: string | null, long?: boolean) {
   return `${wd2(d)} ${a.getDate()}${sameM ? '' : ' ' + mon3(d)} – ${wd2(end)} ${b.getDate()} ${mon3(end)}`;
 }
 export function parseNL(s: string): string | null {
-  const m = /^\s*(\d{1,2})[-./ ](\d{1,2})[-./ ](\d{2,4})\s*$/.exec(s || '');
+  // jaartal: 2 of 4 cijfers (een tikfout als 202 geeft anders een rij in het jaar 202)
+  const m = /^\s*(\d{1,2})[-./ ](\d{1,2})[-./ ](\d{2}|\d{4})\s*$/.exec(s || '');
   if (!m) return null;
-  let y = +m[3]; if (y < 100) y += 2000;
+  let y = +m[3]; if (m[3].length === 2) y += 2000;
+  if (y < 2000 || y > 2100) return null;
   const d = new Date(y, +m[2] - 1, +m[1], 12);
   if (d.getMonth() !== +m[2] - 1 || d.getDate() !== +m[1]) return null;
   return toISO(d);

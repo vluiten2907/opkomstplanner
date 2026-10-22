@@ -1,4 +1,4 @@
-import { ACCENTS, FIXED_CATS, allBlocks, dayTitle, isKamp, minNeed, opkCatOf, plannersOf, type Opk, type Plan, type Settings } from './model';
+import { ACCENTS, FIXED_CATS, allBlocks, dayShort, dayTitle, isKamp, minNeed, opkCatOf, plannersOf, type Opk, type Plan, type Settings } from './model';
 import { fmtNL, fmtRange, addDays } from './time';
 import { toast } from '../store/toast';
 
@@ -24,7 +24,7 @@ export async function makePdf(o: Opk | undefined | null, settings: Settings, e: 
     catsLabel: (o.cats || []).map(c => opkCatOf(settings, c)).filter(Boolean).map(c => c!.label).join(', '),
     groupName: settings.groupName, headLabel: groupLine(settings) ? groupLine(settings).toUpperCase() : 'PROGRAMMA OPKOMST',
     logo: settings.logo, logoW: settings.logoW, logoH: settings.logoH, accentRgb: A.rgb,
-    days: isKamp(o) ? o.days.map((d, i) => ({ label: dayTitle(o, i, e ? addDays(e.date, i) : null, true), short: d.label.slice(0, 2).toLowerCase(), start: d.start, end: d.end, blocks: d.blocks })) : null,
+    days: isKamp(o) ? o.days.map((d, i) => ({ label: dayTitle(o, i, e ? addDays(e.date, i) : null, true), short: dayShort(o, i, e ? addDays(e.date, i) : null), start: d.start, end: d.end, blocks: d.blocks })) : null,
   };
   try {
     const [{ jsPDF }, { buildPdf }] = await Promise.all([import('jspdf'), import('./pdf')]);

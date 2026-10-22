@@ -1,4 +1,4 @@
-import { addDays, clone, fmtDur, fmtT, fromISO, num, splitNames, todayISO, toISO, uid, DAYS, cap, mon3 } from './time';
+import { addDays, clone, dayDiff, fmtDur, fmtT, fromISO, num, splitNames, todayISO, toISO, uid, wd2, DAYS, MONTHS, cap, mon3 } from './time';
 
 /* ---------- Types ---------- */
 export type Cat = { id: string; label: string; color: string };
@@ -169,6 +169,25 @@ export function newKamp(s: Settings, n = 3, firstISO: string | null = null, st?:
   const o = newOpk(s); o.kind = 'kamp'; o.prep = 0; o.post = 0; o.blocks = [];
   o.days = kampDaysFor(n, firstISO, st, en); syncKamp(o); return o;
 }
+/** Aantal kampdagen: t/m de einddatum (hooguit 14), of zonder einddatum t/m de eerstvolgende zondag (vr 3, za 2, zo 1; andere dagen 3). */
+export function kampLength(date: string, endDate?: string | null) {
+  if (endDate) return Math.max(1, Math.min(14, dayDiff(date, endDate) + 1));
+  const toSun = (7 - fromISO(date).getDay()) % 7 + 1;
+  return toSun <= 3 ? toSun : 3;
+}
+/** Is de naam van een kampdag gewoon een weekdag ("Zaterdag")? Dan volgt hij de datum. */
+export const isWeekdayLabel = (l: string) => DAYS.includes((l || '').trim().toLowerCase());
+/** Kampdagen die een weekdag heten krijgen de weekdag van hun datum (vanaf firstISO). Geeft true als er iets veranderde. */
+export function relabelDays(o: Opk, firstISO: string) {
+  if (!isKamp(o) || isNaN(fromISO(firstISO).getTime())) return false;
+  let changed = false;
+  o.days.forEach((d, i) => {
+    if (!isWeekdayLabel(d.label)) return;
+    const l = cap(DAYS[fromISO(addDays(firstISO, i)).getDay()]);
+    if (l !== d.label) { d.label = l; changed = true; }
+  });
+  return changed;
+}
 export function blockFromLib(l: Lib, start: number): Block {
   const b = normBlock({}); LIB_FIELDS.forEach(k => { (b as any)[k] = (l as any)[k]; }); b.libId = l.id; b.start = start; return b;
 }
@@ -185,6 +204,19 @@ export function setOpkTime(o: Opk, which: 'start' | 'end', v: number): string | 
     if (b.cat === '__ranja') { const mid = Math.round(((os + oe) / 2 - b.dur / 2) / 5) * 5; if (b.start === mid) b.start = Math.round(((o.start + o.end) / 2 - b.dur / 2) / 5) * 5; }
   });
   return msg === 'De eindtijd moet na de begintijd liggen.' ? msg : msg;
+}
+/** Tijden uit de jaarplanning die bewust afwijken (niet de standaardtijden) van een gewone opkomst. */
+export function planTimesDiffer(s: Settings, e: Plan, o: Opk) {
+  if (isKamp(o) || e.type !== 'opkomst' || e.start == null || e.end == null || e.end <= e.start) return false;
+  if (e.start === s.defStart && e.end === s.defEnd) return false;
+  return e.start !== o.start || e.end !== o.end;
+}
+/** Hele programma verschuiven naar een nieuwe begintijd en daarna de eindtijd zetten (vaste blokken schuiven mee). */
+export function applyPlanTimes(o: Opk, st: number, en: number) {
+  if (isKamp(o) || en <= st) return;
+  const delta = st - o.start;
+  o.start += delta; o.end += delta; o.blocks.forEach(b => { b.start += delta; });
+  if (o.end !== en) setOpkTime(o, 'end', en);
 }
 export const minNeed = (o: Opk) => allBlocks(o).filter(b => !isFixed(b)).reduce((m, b) => Math.max(m, b.minLeaders || 0), 0);
 export const catOf = (s: Settings, id: string): Cat => s.categories.find(c => c.id === id) || (FIXED_CATS.find(c => c.id === id) as Cat) || { id: '', label: 'Zonder categorie', color: '#7E837A' };
@@ -237,7 +269,7 @@ export function analyzeOne(o: { start: number; end: number; blocks: Block[]; pre
   });
   const big = bl.filter(b => !isFixed(b)).reduce<Block | null>((m, b) => (b.minLeaders || 0) > (m ? m.minLeaders : 0) ? b : m, null);
   const peak = big ? big.minLeaders : 0;
-  if (!nn && peak && pres.size && pres.size < peak) issues.push({ lvl: 'warn', at: big!.start, id: big!.id, text: `Minimaal ${peak} leiding nodig (voor ${big!.title || 'naamloos'}), ${pres.size} aanwezig` });
+  if (!nn && peak && (leaders.length > 0 || pres.size > 0) && pres.size < peak) issues.push({ lvl: 'warn', at: big!.start, id: big!.id, text: `Minimaal ${peak} leiding nodig (voor ${big!.title || 'naamloos'}), ${pres.size} aanwezig` });
   issues.sort((a, b) => a.at - b.at);
   return { total, planned, free: Math.max(0, total - planned), issues, warn: issues.filter(i => i.lvl === 'warn').length, per, clashes, peak, present: [...pres] };
 }
@@ -257,7 +289,12 @@ export function analyze(o: Opk, present: string[], leaders: string[]): Analysis 
 
 /* ---------- Seizoen en planning ---------- */
 export function nextOpkDay(s: Settings) { const t = todayISO(); return addDays(t, (s.opkDay - fromISO(t).getDay() + 7) % 7); }
-export function seasonOf(s: Settings, iso: string) { const d = fromISO(iso); return d.getMonth() + 1 >= s.seasonStartMonth ? d.getFullYear() : d.getFullYear() - 1; }
+/** Seizoen (beginjaar) van een datum. Maanden in de pauze tussen twee seizoenen horen bij het komende seizoen. */
+export function seasonOf(s: Settings, iso: string) {
+  const d = fromISO(iso), m = d.getMonth() + 1, y = d.getFullYear(), sm = s.seasonStartMonth, em = s.seasonEndMonth;
+  if (em >= sm) return m > em ? y + 1 : y;
+  return m >= sm ? y : m <= em ? y - 1 : y;
+}
 export function seasonRange(s: Settings, Y: number) {
   const sm = s.seasonStartMonth, em = s.seasonEndMonth, endY = em >= sm ? Y : Y + 1;
   return { from: toISO(new Date(Y, sm - 1, 1, 12)), to: toISO(new Date(endY, em, 0, 12)) };
@@ -265,7 +302,9 @@ export function seasonRange(s: Settings, Y: number) {
 export const seasonLabel = (s: Settings, Y: number) => s.seasonEndMonth >= s.seasonStartMonth ? String(Y) : `${Y}–${Y + 1}`;
 export function opkDaysIn(s: Settings, from: string, to: string) {
   const out: string[] = []; let d = from;
-  while (fromISO(d).getDay() !== s.opkDay) d = addDays(d, 1);
+  if (isNaN(fromISO(from).getTime()) || isNaN(fromISO(to).getTime())) return out; // oude, foute datum: niet blijven hangen
+  for (let i = 0; i < 7 && fromISO(d).getDay() !== s.opkDay; i++) d = addDays(d, 1);
+  if (fromISO(d).getDay() !== s.opkDay) return out;
   while (d <= to) { out.push(d); d = addDays(d, 7); }
   return out;
 }
@@ -289,18 +328,28 @@ export function entryTimes(s: Settings, e: Plan | null, o: Opk | null): [number,
   return [s.defStart, s.defEnd];
 }
 export const letterDue = (s: Settings, e: Plan) => e.letter.due || addDays(e.date, -s.letterDays);
-export function entryStatus(e: Plan | null, o: Opk | null, warn: number): 'open' | 'off' | 'kamp' | 'warn' | 'ok' | 'topic' {
+/** Status van een rij in de jaarplanning. Met een gekoppelde opkomst telt de analyse mee (afwezige leiding, te weinig leiding, enz.). */
+export function entryStatus(e: Plan | null, o: Opk | null, leaders: string[] = []): 'open' | 'off' | 'kamp' | 'warn' | 'ok' | 'topic' {
   if (!e) return 'open';
   if (e.type === 'geen') return 'off';
   if (e.type === 'kamp') return 'kamp';
-  if (o) return (!allBlocks(o).length || warn) ? 'warn' : 'ok';
+  if (o) return (!allBlocks(o).length || analyze(o, presentNames(leaders, e.absent, o), leaders).warn) ? 'warn' : 'ok';
   return e.topic ? 'topic' : 'open';
 }
 export function dayTitle(o: Opk, i: number, date: string | null, long?: boolean) {
   const d = o.days[i];
   if (!date) return d.label;
   const x = fromISO(date);
-  return d.label + ' ' + x.getDate() + ' ' + (long ? ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december'][x.getMonth()] : mon3(date));
+  if (isNaN(x.getTime())) return d.label;
+  // heet de dag naar een weekdag, dan telt de datum (een kamp dat verzet is, of op een andere dag begint)
+  const lbl = isWeekdayLabel(d.label) ? cap(DAYS[x.getDay()]) : d.label;
+  return lbl + ' ' + x.getDate() + ' ' + (long ? MONTHS[x.getMonth()] : mon3(date));
+}
+/** Korte, unieke dagnaam (pdf): met datum "za 17"; zonder datum de eerste twee letters als die uniek zijn, anders "dag 2". */
+export function dayShort(o: Opk, i: number, date: string | null) {
+  if (date && !isNaN(fromISO(date).getTime())) return wd2(date) + ' ' + fromISO(date).getDate();
+  const two = (l: string) => (l || '').trim().slice(0, 2).toLowerCase(), t = two(o.days[i].label);
+  return t.length === 2 && o.days.filter(d => two(d.label) === t).length === 1 ? t : 'dag ' + (i + 1);
 }
 /** Verdeelt overlappende onderdelen over banen naast elkaar. */
 export function lanesLayout(blocks: Block[]) {

@@ -58,6 +58,11 @@ with sync_playwright() as p:
     def invite_link():
         return pg.locator('.banknote .mono-code').last.inner_text()
 
+    def pdf_texts(path):
+        # tekstregels uit de pdf (jsPDF comprimeert niet): (x, y, tekst)
+        raw = open(path, 'rb').read().decode('latin-1')
+        return [(float(x), float(y), t) for x, y, t in re.findall(r'([\d.]+) ([\d.]+) Td\s*\(((?:[^()\\]|\\.)*)\) Tj', raw)]
+
     # --- wachtwoord vergeten
     pg.goto(BASE + '/wachtwoord'); w(); pg.fill('input[type=email]', 'iemand@test.nl'); pg.click('.btn.primary'); w(600)
     check(pg.locator('text=spammap').count() > 0, 'wachtwoord vergeten → bevestiging met spamtip')
@@ -211,6 +216,61 @@ with sync_playwright() as p:
     check(pg.locator('.modal h2:has-text("Opkomst overnemen")').count() == 1, 'overnemen uit bank opent overneemvenster')
     pg.click('.modal >> text=Klaar'); w(300)
 
+    # --- jaarplanning: datum controleren, eigen tijden bij koppelen, iedereen afwezig, weekendkamp op zaterdag
+    prow = lambda i: pg.locator('.prow:not(.head)').nth(i)
+    def tp(label, h, m):
+        f = pg.locator(f'.modal .field:has(> label:text-is("{label}"))')
+        f.locator('.tp-h').select_option(str(h)); w(100); f.locator('.tp-m').select_option(str(m)); w(100)
+    def row_times(i, h1, h2):
+        prow(i).locator('.pdate').click(); w(300)
+        tp('Begintijd / vertrek', h1, 0); tp('Eindtijd / terug', h2, 0); pg.click('.modal >> text=Opslaan'); w(400)
+    opk_times = lambda: [pg.locator('.meta .timefield').nth(k).locator(c).input_value() for k in (0, 1) for c in ('.tp-h', '.tp-m')]
+    pg.click('nav >> text=Jaarplanning'); w(500); pg.click('.presets >> text=Dit seizoen'); w(400)
+    prow(3).locator('.pdate').click(); w(300)
+    d_ok = pg.input_value('#md-date'); pg.fill('#md-date', d_ok[:-1]); pg.click('.modal >> text=Opslaan'); w(300)
+    check(pg.locator('.modal #md-date').count() == 1 and 'dd-mm-jjjj' in pg.locator('.toast').inner_text(), 'datum met een jaartal van 3 cijfers wordt geweigerd')
+    pg.fill('#md-date', d_ok); tp('Begintijd / vertrek', 10, 0); tp('Eindtijd / terug', 12, 0); pg.click('.modal >> text=Opslaan'); w(400)
+    check('10:00–12:00' in prow(3).locator('.pdate').inner_text(), 'jaarplanning: eigen tijden opgeslagen')
+    prow(3).locator('.btn:has-text("Koppelen")').click(); w(300); pg.click('.modal >> text=Nieuwe opkomst'); w(800)
+    check('/bouwer/' in pg.url and opk_times() == ['10', '0', '12', '0'], 'koppelen → nieuwe opkomst neemt de tijden uit de jaarplanning over')
+    # concept koppelen aan een rij met andere tijden: melding met knop; iedereen afwezig
+    pg.click('nav >> text=Opkomstbouwer'); w(300); pg.click('text=Nieuwe opkomst'); w(700); pg.fill('#om-title', 'Ochtendspel'); w(300)
+    add_block(120, 'Zoeken', '30')
+    pg.click('nav >> text=Jaarplanning'); w(500)
+    row_times(4, 10, 12)
+    prow(4).locator('.addbtn').nth(1).click(); w(300)
+    for n in pg.locator('.modal .chip').all_inner_texts(): pg.click(f'.modal .chip:text-is("{n.strip()}")'); w(150)
+    pg.click('.modal >> text=Klaar'); w(300)
+    prow(4).locator('.btn:has-text("Koppelen")').click(); w(300); pg.click('.modal .pick:has-text("Ochtendspel") >> text=Kiezen'); w(400)
+    tbtn = pg.locator('.toast button:has-text("Tijden uit jaarplanning gebruiken")')
+    check(tbtn.count() == 1 and '10:00–12:00' in pg.locator('.toast').inner_text(), 'koppelen met andere tijden in de jaarplanning: melding met knop')
+    shot('16-tijden-melding', False); pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('16b-tijden-melding-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'melding tijden mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    tbtn.click(); w(600)
+    prow(4).locator('.plink').click(); w(800)
+    check(opk_times() == ['10', '0', '12', '0'], 'tijden uit de jaarplanning overgenomen in het concept')
+    pg.click('button.stat:has-text("Aandachtspunten")'); w(300)
+    check(pg.locator('.issues li:has-text("Minimaal 1 leiding nodig"):has-text("0 aanwezig")').count() == 1, 'iedereen afwezig: waarschuwing minimaal leiding, 0 aanwezig')
+    # weekendkamp op een zaterdag zonder einddatum: za en zo, met de juiste weekdagen
+    pg.click('nav >> text=Jaarplanning'); w(500)
+    prow(5).locator('.btn:has-text("Koppelen")').click(); w(300); pg.click('.modal >> text=Weekendkamp'); w(800)
+    tabs = pg.locator('.daytab:not(.add)')
+    check(tabs.count() == 2 and tabs.nth(0).inner_text().startswith('Zaterdag') and tabs.nth(1).inner_text().startswith('Zondag'), 'weekendkamp op zaterdag: zaterdag en zondag')
+    pg.fill('#dy-label', 'Vrijdag'); w(300)
+    check(tabs.nth(0).inner_text().startswith('Zaterdag'), 'kampdag met een weekdagnaam toont de weekdag van de datum')
+    pg.fill('#dy-label', 'Zaterdag'); w(300); shot('17-kamp-zaterdag', False)
+    kday = re.search(r'\d+', tabs.nth(0).inner_text()).group(0)
+    add_block(60, 'Kampvuur', '30', 'Veld', 'Carla')
+    pg.click('.blk:has-text("Kampvuur")'); w(300); pg.fill('#bf-prep', 'Hout halen'); w(600); pg.click('.side .closex'); w(300)
+    with pg.expect_download() as dl: pg.click('button:has-text("PDF maken")')
+    dl.value.save_as(f'{OUT}/kamp.pdf'); T = pdf_texts(f'{OUT}/kamp.pdf')
+    head = [(x, y) for x, y, t in T if re.fullmatch(rf'za {kday} \d\d:\d\d  Kampvuur', t)]
+    check(len(head) == 1, f'kamp-pdf: voorbereiding met dag en datum ("za {kday}")')
+    check(len(head) == 1 and any(t == 'Carla' and abs(x - head[0][0]) < 0.5 and y < head[0][1] for x, y, t in T), 'kamp-pdf: namen bij de voorbereiding op een eigen regel onder de kop')
+    pg.click('nav >> text=Jaarplanning'); w(500)
+    check('– zo' in prow(5).locator('.pdate b').inner_text(), 'jaarplanning: weekendkamp loopt t/m zondag')
+
     # --- concepten verwijderen (in de bouwer en vanaf de startpagina)
     pg.click('nav >> text=Opkomstbouwer'); w(300); pg.click('text=Nieuwe opkomst'); w(700); pg.fill('#om-title', 'Weg ermee'); w(700)
     pg.click('.plan-head >> button:has-text("Verwijderen")'); w(200); pg.click('.plan-head >> text=Klik nogmaals om te verwijderen'); w(700)
@@ -281,6 +341,10 @@ with sync_playwright() as p:
 
     # --- dashboard, banken, kamp
     pg.click('nav >> text=Dashboard'); w(700); check(pg.locator('.hero').count() == 1, 'dashboard toont komende opkomst'); shot('05-dashboard')
+    check(int(pg.locator('.counts li:has-text("met aandachtspunten") b').inner_text()) >= 1, 'seizoen: opkomsten met aandachtspunten worden geteld')
+    cal_warn = pg.locator('.cal .cday.warn').count()
+    if not cal_warn: pg.click('.cal-head [aria-label="Volgende maand"]'); w(200); cal_warn = pg.locator('.cal .cday.warn').count(); pg.click('.cal >> text=Naar deze maand'); w(200)
+    check(cal_warn >= 1, 'agenda: opkomst met aandachtspunten krijgt die kleur')
     check(pg.locator('.hero .people .lbl:text-is("Eindverantwoordelijke")').count() == 0 and pg.locator('.hero .people .lbl:text-is("Planning door")').count() == 1, 'dashboard: één vak Planning door')
     pg.dblclick('.hero h2.hero-title'); w(200); pg.fill('.hero input.inline-edit', 'Dashboardtitel'); pg.keyboard.press('Enter'); w(600)
     check(pg.locator('.hero h2.hero-title').inner_text() == 'Dashboardtitel', 'dashboard: titel aanpassen met dubbelklik')
@@ -420,6 +484,23 @@ with sync_playwright() as p:
     pg.click('a:has-text("Oefenomgeving")'); w(1200)
     check('/s/oefen/' in pg.url and pg.locator('.watermark.on').count() == 1, 'oefenomgeving werkt zonder inloggen')
     shot('14-oefenen')
+
+    # --- seizoen rond de zomerpauze (klok verzet) en een datum in de pauze openen
+    def at_time(day):
+        c = b.new_context(viewport={'width': 1360, 'height': 900}, locale='nl-NL')
+        c.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())
+        q = c.new_page(); q.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+        q.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' and 'ERR_FAILED' not in m.text else None)
+        q.clock.set_fixed_time(day + 'T12:00:00'); return c, q
+    for day, want in (('2026-07-31', '2025–2026'), ('2026-08-01', '2026–2027'), ('2026-09-01', '2026–2027')):
+        c, q = at_time(day); q.goto(BASE + '/s/oefen/dashboard'); q.wait_for_timeout(1200)
+        check(q.locator(f'h3:text-is("Seizoen {want}")').count() == 1, f'dashboard op {day}: seizoen {want}')
+        if day == '2026-08-01':
+            q.goto(BASE + '/s/oefen/jaarplanning'); q.wait_for_timeout(800); q.click('.presets >> text=Dit seizoen'); q.wait_for_timeout(300)
+            check(q.locator('h1:has-text("Seizoen 2026–2027")').count() == 1, 'jaarplanning in augustus: Dit seizoen is het komende seizoen')
+            q.goto(BASE + '/s/oefen/jaarplanning?focus=s:2026-08-08'); q.wait_for_timeout(1200)
+            check(q.locator('.rangebar .field:has(label:text-is("Van")) input').input_value() == '09-07-2026', 'datum in de zomerpauze openen: bereik eromheen, geen eindeloze lus')
+        c.close()
     b.close()
 
 check(not errors, 'geen fouten in de console' + ('' if not errors else ': ' + '; '.join(errors[:5])))

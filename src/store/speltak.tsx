@@ -2,11 +2,11 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import * as F from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './auth';
-import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, isKamp, addDaysSafe, presentNames } from '../lib/model';
+import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, isKamp, addDaysSafe, presentNames, relabelDays, planTimesDiffer, applyPlanTimes } from '../lib/model';
 import { isTeamleider, normPerms, type Member, type PermKey, type Speltak, type Invite, type Perms } from '../lib/types';
 import { useRoles } from './roles';
 import { createInvite as mkInvite } from './beheer';
-import { uid as mkId, clone } from '../lib/time';
+import { uid as mkId, clone, fmtT } from '../lib/time';
 import { toast } from './toast';
 import { ensureLid, normGedeeld, snapshotOf, writeShared, removeShared, sharedId, copyFromShared, countCopy, type Gedeeld } from './groepsbank';
 
@@ -31,6 +31,8 @@ type Ctx = {
   presentForEntry: (e: Plan | null, o?: Opk | null) => string[];
   presentFor: (o: Opk) => string[];
   linkOpk: (src: Opk, e: Plan, copy: boolean, keepNames: boolean) => Opk;
+  /** Wijken de tijden in de jaarplanning af van de (net gekoppelde) opkomst? Dan een melding met de knop om ze over te nemen. Geeft true als die melding er staat. */
+  offerPlanTimes: (o: Opk, e: Plan, prefix?: string) => boolean;
   unlinkEntry: (e: Plan) => void;
   entryFor: (key: string) => Plan;
   peekEntry: (key: string) => Plan | null;
@@ -67,6 +69,8 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   // lokale, optimistische kopie: wijzigingen tonen direct, opslaan gebeurt met een korte vertraging
   const pending = useRef(new Map<string, { kind: string; obj: any; t: any }>());
   const [, bump] = useState(0);
+  // nieuwste opkomsten, voor acties die later (vanuit een melding) worden uitgevoerd
+  const opksRef = useRef<Opk[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -92,6 +96,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   }, [sid, user]);
 
   const settings = sp ? sp.settings : normSettings(null);
+  useEffect(() => { opksRef.current = opks; }, [opks]);
   const me = user && sp ? sp.members[user.uid] : null;
   const myName = me?.name || user?.displayName || '';
   const roles = useRoles();
@@ -185,7 +190,8 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
       if (src.state === 'bank') { o.lead = ''; if (!isKamp(o)) { o.prep = settings.prepMin; o.post = settings.postMin; } }
     }
     if (!keepNames) allBlocks(o).forEach(b => b.names = []);
-    if (isKamp(o)) { e.type = 'kamp'; if (!e.endDate && o.days.length > 1) e.endDate = addDaysSafe(e.date, o.days.length - 1); }
+    // kamp: de jaarplanning gaat voor; dagen die een weekdag heten krijgen de weekdag van hun datum
+    if (isKamp(o)) { e.type = 'kamp'; if (!e.endDate && o.days.length > 1) e.endDate = addDaysSafe(e.date, o.days.length - 1); relabelDays(o, e.date); }
     if (e.opkId && e.opkId !== o.id) { const prev = getO(e.opkId); if (prev) saveOpk({ ...prev, state: 'draft' }); }
     const old = entryOfOpk(o); if (old && old !== e) savePlan({ ...old, opkId: null });
     o.state = 'planned'; e.opkId = o.id; if (e.type === 'geen') e.type = 'opkomst';
@@ -193,6 +199,15 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
     saveOpk({ ...o }); savePlan({ ...e });
     dropAbsent(e, true);
     return o;
+  };
+  const offerPlanTimes = (o: Opk, e: Plan, prefix = '') => {
+    if (!can('build') || !planTimesDiffer(settings, e, o)) return false;
+    const st = e.start!, en = e.end!;
+    toast(`${prefix ? prefix + ' ' : ''}In de jaarplanning staat ${fmtT(st)}–${fmtT(en)}, de opkomst is ${fmtT(o.start)}–${fmtT(o.end)}.`, { label: 'Tijden uit jaarplanning gebruiken', fn: () => {
+      const cur = opksRef.current.find(x => x.id === o.id); if (!cur) return;
+      const c = clone(cur); applyPlanTimes(c, st, en); saveOpk(c); toast(`Opkomst staat nu op ${fmtT(c.start)}–${fmtT(c.end)}`);
+    } });
+    return true;
   };
   const unlinkEntry = (e: Plan) => {
     const o = e.opkId ? getO(e.opkId) : null;
@@ -250,7 +265,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
 
   const value: Ctx = { sid, sp, loading, denied, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
     saveOpk, deleteOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
-    getO, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null };
+    getO, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null };
   return <C.Provider value={value}>{children}</C.Provider>;
 }
 export const useSpeltak = () => useContext(C);

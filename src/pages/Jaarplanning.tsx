@@ -32,7 +32,11 @@ export default function Jaarplanning() {
   useEffect(() => {
     if (!focus) return;
     const e = plans.find(p => p.id === focus) || (focus.startsWith('s:') ? { date: focus.slice(2), endDate: '' } : null);
-    if (e && (e.date < range.from || e.date > range.to)) { setRange(seasonRange(settings, seasonOf(settings, e.date))); return; }
+    if (e && (e.date < range.from || e.date > range.to)) {
+      // het seizoen van de datum; valt die in de pauze tussen twee seizoenen, dan een bereik eromheen (anders blijft dit effect lopen)
+      const R = seasonRange(settings, seasonOf(settings, e.date));
+      setRange(e.date >= R.from && e.date <= R.to ? R : { from: addDays(e.date, -30), to: addDays(e.date, 60) }); return;
+    }
     const t = setTimeout(() => {
       const el = document.getElementById(rowDomId(focus));
       if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); }
@@ -45,7 +49,7 @@ export default function Jaarplanning() {
   const groups: Record<string, Row[]> = {};
   rows.forEach(r => { const k = rowDate(r).slice(0, 7); (groups[k] = groups[k] || []).push(r); });
   const cnt = { opk: 0, kamp: 0, off: 0, open: 0 };
-  rows.forEach(r => { const st = entryStatus(r.e, null, 0); if (st === 'kamp') cnt.kamp++; else if (st === 'off') cnt.off++; else if (r.e && (r.e.opkId || r.e.topic)) cnt.opk++; else if (rowEnd(r) >= today) cnt.open++; });
+  rows.forEach(r => { const st = entryStatus(r.e, null); if (st === 'kamp') cnt.kamp++; else if (st === 'off') cnt.off++; else if (r.e && (r.e.opkId || r.e.topic)) cnt.opk++; else if (rowEnd(r) >= today) cnt.open++; });
   const Y = seasonOf(settings, range.from), isSeason = same(seasonRange(settings, Y), range);
   const presets: [string, string][] = [['prev', 'Vorig seizoen'], ['season', 'Dit seizoen'], ['next', 'Volgend seizoen'], ['3m', 'Komende 3 maanden'], ['year', 'Dit kalenderjaar']];
   const dayPlural = DAYS[settings.opkDay] + 'en';
