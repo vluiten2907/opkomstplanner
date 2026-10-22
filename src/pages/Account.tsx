@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { TentTree, LogOut, ArrowLeft, Save } from 'lucide-react';
+import VerifyNote from '../components/VerifyNote';
 import { useAuth } from '../store/auth';
 import { useRoles } from '../store/roles';
 import { saveProfile } from '../store/beheer';
@@ -29,6 +30,7 @@ export default function AccountPage() {
         <div className="row" style={{ gap: 6 }}><button className="btn ghost sm" onClick={back}><ArrowLeft size={14} />Terug</button><button className="btn ghost sm" onClick={() => logout().then(() => nav('/inloggen'))}><LogOut size={14} />Uitloggen</button></div>
       </div>
       <h1 className="display text-5xl md:text-7xl font-black tracking-tighter">Mijn account</h1>
+      <VerifyNote />
       <section className="card pad stack">
         <Field label="Gebruikersnaam" hint="Zo kent de leiding je, bijvoorbeeld Akela. Uniek binnen je Scouting-groep."><input value={user?.displayName || ''} readOnly aria-readonly="true" /></Field>
         <Field label="E-mailadres"><input type="email" value={user?.email || ''} readOnly aria-readonly="true" /></Field>

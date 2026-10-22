@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { TentTree, LogOut, ShieldCheck, UserRound, GraduationCap } from 'lucide-react';
 import { db } from '../lib/firebase';
+import VerifyNote from '../components/VerifyNote';
 import { useAuth } from '../store/auth';
 import { useRoles } from '../store/roles';
 import { isTeamleider } from '../lib/types';
@@ -25,6 +26,7 @@ export default function SpeltakkenPage() {
         <div className="row" style={{ gap: 6 }}><Link className="btn ghost sm" to="/account"><UserRound size={14} />Account</Link><button className="btn ghost sm" onClick={() => logout().then(() => nav('/inloggen'))}><LogOut size={14} />Uitloggen</button></div>
       </div>
       <h1 className="display text-5xl md:text-7xl font-black tracking-tighter">Mijn speltakken</h1>
+      <VerifyNote />
       {isAdmin && <div className="banknote"><span><ShieldCheck size={16} style={{ verticalAlign: -3, marginRight: 6 }} />Je bent {isRoot ? 'Beheer (totaal)' : 'beheerder van een groep'}.</span><div className="row"><Link className="btn sm primary" to="/beheer">Naar beheer</Link></div></div>}
       {list === null ? <p className="hint">Laden…</p> : list.length ? <div className="picklist">{list.map(s => <div key={s.id} className="pick"><div className="info"><b>{[s.groupName, s.name].filter(Boolean).join(' · ')}</b>
         <span className="hint">{isTeamleider({ tlIds: Array.isArray(s.tlIds) ? s.tlIds : null, members: s.members || {} }, user!.uid) ? 'Teamleider' : 'Leiding'} · {s.memberIds?.length || 1} in het team</span></div>

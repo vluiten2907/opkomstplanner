@@ -7,6 +7,10 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function me() { return request.auth.uid; }
     function myEmail() { return request.auth.token.email != null ? request.auth.token.email.lower() : ''; }
+    // e-mailadres bevestigd via de link in de mail: pas dan weten we dat het adres echt van jou is
+    function verified() { return signedIn() && request.auth.token.get('email_verified', false) == true; }
+    // korte vrije tekst (komt in de uitnodigingsmail)
+    function shortText(d, k) { return !d.keys().hasAny([k]) || (d[k] is string && d[k].size() <= 60); }
     function nowMs() { return request.time.toMillis(); }
     function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
 
@@ -27,7 +31,7 @@ service cloud.firestore {
     function invite(id) { return get(/databases/$(database)/documents/invites/$(id)).data; }
     function inviteKind(i) { return i.get('kind', i.get('role', '')); }
     function inviteOk(i, kind) {
-      return inviteKind(i) == kind && i.email == myEmail() && i.usedBy == null && i.get('expiresAt', 9999999999999) > nowMs();
+      return verified() && inviteKind(i) == kind && i.email == myEmail() && i.usedBy == null && i.get('expiresAt', 9999999999999) > nowMs();
     }
 
     // ---- gebruikersprofiel: alleen van jezelf ----
@@ -39,7 +43,7 @@ service cloud.firestore {
     match /accounts/{email} {
       allow get: if signedIn();
       allow list: if false;
-      allow create, update: if signedIn() && email == myEmail()
+      allow create, update: if verified() && email == myEmail()
         && request.resource.data.uid == me()
         && request.resource.data.email == myEmail()
         && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'firstName', 'lastName', 'updatedAt']);
@@ -105,10 +109,16 @@ service cloud.firestore {
         // vooraf controleren bij het aanmaken van een account (nog niet ingelogd)
         allow get: if true;
         allow list: if isAdminOf(gid);
+        // je eigen naam: als lid van een speltak in deze groep, of met een uitnodiging voor deze groep
         allow create: if signedIn()
-          && request.resource.data.keys().hasOnly(['uid', 'name'])
+          && request.resource.data.keys().hasOnly(['uid', 'name', 'inviteId'])
           && request.resource.data.uid is string && request.resource.data.name is string
-          && (request.resource.data.uid == me() || isAdminOf(gid));
+          && request.resource.data.name.size() <= 60
+          && (isAdminOf(gid)
+            || (request.resource.data.uid == me()
+              && (inGroup()
+                || (request.resource.data.get('inviteId', null) is string
+                  && nameInviteOk(invite(request.resource.data.inviteId))))));
         allow update: if false;
         allow delete: if isAdminOf(gid) || (signedIn() && resource.data.uid == me());
       }
@@ -123,6 +133,8 @@ service cloud.firestore {
         return signedIn() && spGid(d) == gid && me() in d.memberIds
           && (tlOf(d) || d.members[me()].perms.bank == true || d.members[me()].perms.build == true);
       }
+
+      function nameInviteOk(i) { return verified() && i.get('gid', null) == gid && i.email == myEmail() && i.usedBy == null; }
 
       match /leden/{uid} {
         allow get: if signedIn() && uid == me();
@@ -169,6 +181,9 @@ service cloud.firestore {
         && request.resource.data.email is string
         && request.resource.data.expiresAt is int
         && request.resource.data.expiresAt <= nowMs() + 31 * 86400000
+        && shortText(request.resource.data, 'invitedByName')
+        && shortText(request.resource.data, 'groupName')
+        && shortText(request.resource.data, 'speltakName')
         && (
           // Beheer (totaal) nodigt mede-beheer (totaal) uit
           (request.resource.data.kind == 'totaal' && isRoot())

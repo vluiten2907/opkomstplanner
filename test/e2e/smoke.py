@@ -32,6 +32,11 @@ with sync_playwright() as p:
         pg.fill('#i-first', first); pg.fill('#i-last', last or 'Test'); pg.fill('#i-name', name); pg.fill('input[type=password]', 'geheim123')
         if pg.locator('input[type=email]').is_editable(): pg.fill('input[type=email]', email)
         pg.click('.btn.primary'); w(800)
+        # nieuw account: eerst het e-mailadres bevestigen (in de demo telt de link meteen als aangeklikt)
+        if pg.locator('text=Ik heb bevestigd').count() and localStorage_noverify() != '1': pg.click('text=Ik heb bevestigd'); w(900)
+
+    def localStorage_noverify():
+        return pg.evaluate("localStorage.getItem('fake.noverify')")
 
     def add_block(y, title, dur='15', loc='', who=None):
         pg.locator('.lanes').click(position={'x': 100, 'y': y}); w()
@@ -107,7 +112,16 @@ with sync_playwright() as p:
     # --- teamleider maakt account via de uitnodiging
     logout_to(tl_link)
     check(pg.locator('input[type=email]').input_value() == 'vincent@test.nl', 'uitnodiging: e-mailadres staat vast')
+    pg.evaluate("localStorage.setItem('fake.noverify','1')")
     register('Vincent Test', 'vincent@test.nl')
+    check('/uitnodiging/' in pg.url and pg.locator('text=Bevestig je e-mailadres').count() == 1, 'na registreren eerst e-mailadres bevestigen'); shot('00-bevestigen')
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('00-bevestigen-mobiel')
+    check(pg.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'bevestigen: mobiel zonder horizontaal scrollen')
+    pg.set_viewport_size({'width': 1360, 'height': 900})
+    pg.click('text=Ik heb bevestigd'); w(500)
+    check('/uitnodiging/' in pg.url and pg.locator('text=Nog niet bevestigd').count() == 1, 'zonder klikken op de link geen toegang')
+    pg.evaluate("localStorage.setItem('fake.clicked','vincent@test.nl'); localStorage.removeItem('fake.noverify')")
+    pg.click('text=Ik heb bevestigd'); w(900)
     check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'account via uitnodiging → dashboard speltak'); shot('01-dashboard')
     check(pg.locator('h1').first.inner_text().strip() == 'Scouts', 'dashboard: speltaknaam is de titel')
     check(pg.locator('.kicker-switch').count() == 1, 'dashboard: knop andere speltak')
@@ -177,7 +191,7 @@ with sync_playwright() as p:
 
     # --- pdf
     with pg.expect_download() as dl: pg.click('text=PDF maken')
-    check(dl.value.suggested_filename.endswith('.pdf'), 'pdf gedownload')
+    check(dl.value.suggested_filename.endswith('.pdf'), 'pdf gedownload'); dl.value.save_as(f'{OUT}/opkomst.pdf')
 
     # --- inplannen vanuit bouwer houdt namen, bank verwijdert ze
     pg.click('nav >> text=Opkomstbouwer'); w(300); pg.click('text=Nieuwe opkomst'); w(700); pg.fill('#om-title', 'Sluipspel'); w()

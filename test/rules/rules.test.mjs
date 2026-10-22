@@ -5,7 +5,9 @@ import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, 
 
 const env = await initializeTestEnvironment({ projectId: 'demo-opk', firestore: { rules: readFileSync('firestore.rules', 'utf8'), host: '127.0.0.1', port: 8085 } });
 const ROOT = 'vluiten2907@gmail.com';
-const as = (uid, email) => env.authenticatedContext(uid, { email }).firestore();
+const as = (uid, email) => env.authenticatedContext(uid, { email, email_verified: true }).firestore();
+// account waarvan het e-mailadres nog niet is bevestigd
+const unv = (uid, email) => env.authenticatedContext(uid, { email, email_verified: false }).firestore();
 const anon = () => env.unauthenticatedContext().firestore();
 const ALL = { plan: true, build: true, bank: true, settings: true }, NONE = { plan: false, build: false, bank: false, settings: false };
 const far = Date.now() + 20 * 864e5;
@@ -90,6 +92,7 @@ await seed();
 /* ---- teamleider ---- */
 const tl = as('tl', 'tl@t.nl');
 await t('teamleider: leiding uitnodigen', () => assertSucceeds(setDoc(doc(tl, 'invites/n7'), inv({}))));
+await t('teamleider: uitnodiging met te lange naam niet', () => assertFails(setDoc(doc(tl, 'invites/n7c'), inv({ invitedByName: 'x'.repeat(61) }))));
 await t('teamleider: leiding uitnodigen met verkeerde gid niet', () => assertFails(setDoc(doc(tl, 'invites/n7b'), inv({ gid: 'g2' }))));
 await t('teamleider: teamleider uitnodigen niet', () => assertFails(setDoc(doc(tl, 'invites/n8'), inv({ kind: 'teamleider', role: 'teamleider', perms: ALL }))));
 await t('teamleider: rol overdragen via uitnodiging', () => assertSucceeds(setDoc(doc(tl, 'invites/n9'), inv({ kind: 'teamleider', role: 'teamleider', perms: ALL, transfer: true }))));
@@ -116,6 +119,7 @@ await seed();
 const nw = as('nw', 'new@t.nl');
 const mem = (role, inviteId, perms) => ({ name: 'N', email: 'x', role, perms, inviteId, since: 1 });
 await t('accepteren leiding met ander e-mailadres niet', () => assertFails(updateDoc(doc(as('zz', 'zz@t.nl'), 'speltakken/s1'), { 'members.zz': mem('leiding', 'iLd', NONE), memberIds: arrayUnion('zz') })));
+await t('accepteren leiding met onbevestigd e-mailadres niet', () => assertFails(updateDoc(doc(unv('nw', 'new@t.nl'), 'speltakken/s1'), { 'members.nw': mem('leiding', 'iLd', NONE), memberIds: arrayUnion('nw') })));
 await t('accepteren leiding als teamleider niet', () => assertFails(updateDoc(doc(nw, 'speltakken/s1'), { 'members.nw': mem('teamleider', 'iLd', NONE), memberIds: arrayUnion('nw') })));
 await t('accepteren leiding', () => assertSucceeds(updateDoc(doc(nw, 'speltakken/s1'), { 'members.nw': mem('leiding', 'iLd', NONE), memberIds: arrayUnion('nw') })));
 await t('uitnodiging als gebruikt markeren', () => assertSucceeds(updateDoc(doc(nw, 'invites/iLd'), { usedBy: 'nw' })));
@@ -183,6 +187,7 @@ await t('groepsbank: wie de speltak verlaat leest niet meer', async () => {
 
 /* ---- accounts, direct toevoegen, verwijderen ---- */
 await seed();
+await t('account: niet met onbevestigd e-mailadres', () => assertFails(setDoc(doc(unv('x', 'x@t.nl'), 'accounts/x@t.nl'), { uid: 'x', name: 'X', email: 'x@t.nl', updatedAt: 1 })));
 await t('account: eigen account opslaan', () => assertSucceeds(setDoc(doc(as('x', 'x@t.nl'), 'accounts/x@t.nl'), { uid: 'x', name: 'X', email: 'x@t.nl', updatedAt: 1 })));
 await t('account: andermans e-mailadres niet', () => assertFails(setDoc(doc(as('x', 'x@t.nl'), 'accounts/y@t.nl'), { uid: 'x', name: 'X', email: 'y@t.nl', updatedAt: 1 })));
 await t('account: met andere uid niet', () => assertFails(setDoc(doc(as('x', 'x@t.nl'), 'accounts/x@t.nl'), { uid: 'tl', name: 'X', email: 'x@t.nl', updatedAt: 1 })));
@@ -205,11 +210,21 @@ await t('groep: inhoud nog steeds niet bewerken', () => assertFails(setDoc(doc(a
 /* ---- namen uniek per groep ---- */
 await seed();
 await t('namen: vrij controleren zonder account', () => assertSucceeds(getDoc(doc(anon(), 'groepen/g1/namen/akela'))));
-await t('namen: eigen naam vastleggen', () => assertSucceeds(setDoc(doc(as('x', 'x@t.nl'), 'groepen/g1/namen/akela'), { uid: 'x', name: 'Akela' })));
+await t('namen: zonder uitnodiging of lidmaatschap niet', () => assertFails(setDoc(doc(as('x', 'x@t.nl'), 'groepen/g1/namen/akela'), { uid: 'x', name: 'Akela' })));
+await t('namen: met uitnodiging, e-mail niet bevestigd, niet', () => assertFails(setDoc(doc(unv('nw', 'new@t.nl'), 'groepen/g1/namen/akela'), { uid: 'nw', name: 'Akela', inviteId: 'iLd' })));
+await t('namen: met uitnodiging voor andere groep niet', () => assertFails(setDoc(doc(as('nw', 'new@t.nl'), 'groepen/g2/namen/akela'), { uid: 'nw', name: 'Akela', inviteId: 'iLd' })));
+await t('namen: met andermans uitnodiging niet', () => assertFails(setDoc(doc(as('x', 'x@t.nl'), 'groepen/g1/namen/akela'), { uid: 'x', name: 'Akela', inviteId: 'iLd' })));
+await t('namen: te lange naam niet', () => assertFails(setDoc(doc(as('nw', 'new@t.nl'), 'groepen/g1/namen/lang'), { uid: 'nw', name: 'x'.repeat(61), inviteId: 'iLd' })));
+await t('namen: eigen naam vastleggen met uitnodiging', () => assertSucceeds(setDoc(doc(as('nw', 'new@t.nl'), 'groepen/g1/namen/akela'), { uid: 'nw', name: 'Akela', inviteId: 'iLd' })));
+await t('namen: eigen naam vastleggen als lid van de groep', async () => {
+  const ld = as('ld', 'ld@t.nl');
+  await assertSucceeds(setDoc(doc(ld, 'groepen/g1/leden/ld'), { sid: 's1' }));
+  await assertSucceeds(setDoc(doc(ld, 'groepen/g1/namen/kaa'), { uid: 'ld', name: 'Kaa' }));
+});
 await t('namen: bezette naam niet overnemen', () => assertFails(setDoc(doc(as('y', 'y@t.nl'), 'groepen/g1/namen/akela'), { uid: 'y', name: 'Akela' })));
 await t('namen: voor een ander niet (geen beheerder)', () => assertFails(setDoc(doc(as('x', 'x@t.nl'), 'groepen/g1/namen/baloe'), { uid: 'y', name: 'Baloe' })));
 await t('namen: beheerder legt vast voor een ander', () => assertSucceeds(setDoc(doc(as('ga', 'ga@t.nl'), 'groepen/g1/namen/baloe'), { uid: 'y', name: 'Baloe' })));
-await t('namen: andere groep mag dezelfde naam', () => assertSucceeds(setDoc(doc(as('z', 'z@t.nl'), 'groepen/g2/namen/akela'), { uid: 'z', name: 'Akela' })));
+await t('namen: andere groep mag dezelfde naam', () => assertSucceeds(setDoc(doc(as('root', ROOT), 'groepen/g2/namen/akela'), { uid: 'z', name: 'Akela' })));
 await t('namen: lijst alleen beheerder', async () => { await assertFails(getDocs(collection(as('x', 'x@t.nl'), 'groepen/g1/namen'))); await assertSucceeds(getDocs(collection(as('ga', 'ga@t.nl'), 'groepen/g1/namen'))); });
 await t('namen: ander verwijdert niet', () => assertFails(deleteDoc(doc(as('y', 'y@t.nl'), 'groepen/g1/namen/akela'))));
 await t('namen: beheerder geeft vrij', () => assertSucceeds(deleteDoc(doc(as('ga', 'ga@t.nl'), 'groepen/g1/namen/akela'))));

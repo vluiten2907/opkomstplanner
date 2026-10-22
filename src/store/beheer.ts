@@ -34,15 +34,17 @@ export async function sendInviteMail(id: string): Promise<'ok' | 'niet-ingesteld
 export const isEmail = (s: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s.trim());
 
 /* ---------- uitnodigingen ---------- */
+/** Vrije tekst in een uitnodiging (komt in de mail): hoogstens 60 tekens, zoals firestore.rules eist. */
+const short = (s?: string) => (s || '').trim().slice(0, 60);
 export type InviteInput = { kind: InviteKind; email: string; gid?: string | null; groupName?: string; sid?: string | null; speltakName?: string; perms?: Perms; transfer?: boolean };
 export async function createInvite(inp: InviteInput, me: Me): Promise<Invite> {
   const id = newToken();
   const role = inp.kind === 'teamleider' || inp.kind === 'leiding' ? inp.kind : null;
   const now = Date.now();
   const inv: Invite = {
-    id, kind: inp.kind, email: inp.email.trim().toLowerCase(), gid: inp.gid || null, groupName: inp.groupName || '', sid: inp.sid || null, speltakName: inp.speltakName || '',
+    id, kind: inp.kind, email: inp.email.trim().toLowerCase(), gid: inp.gid || null, groupName: short(inp.groupName), sid: inp.sid || null, speltakName: short(inp.speltakName),
     role, perms: normPerms(inp.kind === 'leiding' ? inp.perms : inp.kind === 'teamleider' ? ALL_PERMS : NO_PERMS),
-    invitedBy: me.uid, invitedByName: me.name, createdAt: now, expiresAt: now + INVITE_DAYS * 864e5, usedBy: null, transfer: !!inp.transfer,
+    invitedBy: me.uid, invitedByName: short(me.name), createdAt: now, expiresAt: now + INVITE_DAYS * 864e5, usedBy: null, transfer: !!inp.transfer,
   };
   const { id: _id, ...data } = inv;
   await setDoc(doc(db, 'invites', id), data);
@@ -154,15 +156,17 @@ export async function stepDownTeamleider(sp: Speltak, uid: string) {
 /* ---------- bestaande accounts ---------- */
 export type Person = { uid: string; name: string; email: string };
 /** Eigen account vindbaar maken op e-mailadres (bij elke login). */
-export async function saveAccount(uid: string, name: string, email: string) {
+export async function saveAccount(uid: string, name: string, email: string, names?: { firstName: string; lastName: string }) {
   const em = email.trim().toLowerCase(); if (!em) return;
-  await setDoc(doc(db, 'accounts', em), { uid, name: name || em, email: em, updatedAt: Date.now() }, { merge: true });
+  const extra = names && (names.firstName || names.lastName) ? { firstName: names.firstName, lastName: names.lastName } : {};
+  await setDoc(doc(db, 'accounts', em), { uid, name: name || em, email: em, ...extra, updatedAt: Date.now() }, { merge: true });
 }
 /** Voor- en achternaam opslaan: in je profiel en in je account (zodat beheer het ziet). */
 export async function saveProfile(uid: string, email: string, firstName: string, lastName: string) {
   const f = firstName.trim(), l = lastName.trim(), em = email.trim().toLowerCase();
   await setDoc(doc(db, 'users', uid), { firstName: f, lastName: l }, { merge: true });
-  if (em) await setDoc(doc(db, 'accounts', em), { uid, email: em, firstName: f, lastName: l, updatedAt: Date.now() }, { merge: true });
+  // lukt pas na het bevestigen van je e-mailadres; daarna zet roles.tsx het alsnog goed
+  if (em) await setDoc(doc(db, 'accounts', em), { uid, email: em, firstName: f, lastName: l, updatedAt: Date.now() }, { merge: true }).catch(() => {});
 }
 export type AccountInfo = { firstName: string; lastName: string };
 /** Voor- en achternaam bij e-mailadressen ophalen (voor het leidingoverzicht). */
@@ -243,12 +247,17 @@ export async function nameOwner(gid: string, name: string): Promise<string | nul
   return s.exists() ? ((s.data() as any).uid || null) : null;
 }
 /** Naam vastleggen voor uid binnen de groep. Gooit Error('name-taken') als iemand anders hem al heeft. */
-export async function claimName(gid: string, uid: string, name: string) {
+export async function claimName(gid: string, uid: string, name: string, inviteId?: string) {
   const k = nameKey(name); if (!k) return;
   const owner = await nameOwner(gid, name);
   if (owner === uid) return;
   if (owner) throw new Error('name-taken');
-  await setDoc(doc(db, 'groepen', gid, 'namen', k), { uid, name: name.trim() });
+  try { await setDoc(doc(db, 'groepen', gid, 'namen', k), { uid, name: name.trim(), ...(inviteId ? { inviteId } : {}) }); }
+  catch (e: any) {
+    // oudere firestore.rules kennen het veld inviteId nog niet
+    if (inviteId && e?.code === 'permission-denied') await setDoc(doc(db, 'groepen', gid, 'namen', k), { uid, name: name.trim() });
+    else throw e;
+  }
 }
 /** Naam vrijgeven als hij nog van uid is. */
 export async function releaseName(gid: string, uid: string, name: string) {

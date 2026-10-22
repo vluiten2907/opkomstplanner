@@ -27,7 +27,7 @@ const Ctx = createContext<RolesCtx>({ ready: false, root: null, isRoot: false, g
 export const normGroep = (id: string, d: any): Groep => ({ id, name: d.name || '', admins: d.admins || {}, adminIds: d.adminIds || [], createdAt: d.createdAt || 0, createdBy: d.createdBy || '' });
 
 export function RolesProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, verified } = useAuth();
   const [root, setRoot] = useState<Root | null>(null);
   const [rootReady, setRootReady] = useState(false);
   const [groups, setGroups] = useState<Groep[] | null>(null);
@@ -39,12 +39,17 @@ export function RolesProvider({ children }: { children: ReactNode }) {
     return onSnapshot(doc(db, 'users', uid), s => { const d = (s.data() || {}) as any; setProfile({ firstName: d.firstName || '', lastName: d.lastName || '' }); }, () => setProfile({ firstName: '', lastName: '' }));
   }, [uid]);
 
+  // Vindbaar op e-mailadres, zodat beheer en teamleiders je direct kunnen toevoegen. Pas na bevestigen van je e-mailadres.
+  const pf = profile ? profile.firstName + '\n' + profile.lastName : null;
+  useEffect(() => {
+    if (!user || !verified) return;
+    saveAccount(user.uid, user.displayName || '', user.email || '', profile || undefined).catch(() => {});
+  }, [uid, verified, pf]);
+
   // Beheer (totaal) volgen; het hoofdaccount maakt het de eerste keer zelf aan.
   useEffect(() => {
     setRoot(null); setRootReady(false);
     if (!user) return;
-    // Vindbaar op e-mailadres, zodat beheer en teamleiders je direct kunnen toevoegen.
-    saveAccount(user.uid, user.displayName || '', user.email || '').catch(() => {});
     const ref = doc(db, 'beheer', 'totaal');
     let stop = () => {};
     let alive = true;

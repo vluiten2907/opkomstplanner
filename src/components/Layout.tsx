@@ -6,6 +6,7 @@ import { useAuth } from '../store/auth';
 import { useSpeltak } from '../store/speltak';
 import { ACCENTS } from '../lib/model';
 import ModalHost from './ModalHost';
+import VerifyNote from './VerifyNote';
 import { guardLeave, useUnsaved } from '../store/unsaved';
 
 export function applyAccent(accent: string, logo: string) {
@@ -58,6 +59,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     {practice && <div className="demobar oefenbar"><span><GraduationCap size={16} style={{ verticalAlign: -3, marginRight: 6 }} /><b>Oefenomgeving.</b> Dit is voorbeelddata. Probeer gerust alles uit: wat je verandert, blijft alleen in deze browser.</span>
       <div className="row"><button className="btn sm" onClick={() => resetPractice?.()}><RotateCcw size={14} />Opnieuw beginnen</button><button className="btn sm primary" onClick={() => guardLeave(() => nav('/'))}>Stoppen</button></div></div>}
     {practice && <div className="watermark on" aria-hidden="true"><div><b>OEFENEN</b><span>voorbeelddata · niet echt</span></div></div>}
+    {!practice && <VerifyNote />}
     {roles.profile && !(roles.profile.firstName && roles.profile.lastName) && <div className="banknote namenote"><span>Vul je voor- en achternaam in, zodat de beheerder van je groep weet wie je bent.</span><div className="row"><button className="btn sm primary" onClick={() => guardLeave(() => nav('/account'))}>Naar mijn account</button></div></div>}
     {!isMember && isAdmin && <div className="banknote adminnote"><span><ShieldCheck size={15} style={{ verticalAlign: -3, marginRight: 6 }} />Je bekijkt deze speltak als beheerder: alleen-lezen. Het team beheer je onder Team.</span></div>}
     <main className="pb-16">{children}</main>

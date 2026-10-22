@@ -1,4 +1,15 @@
-# Alleen het verzendscript is van buitenaf bereikbaar; de config met het mailwachtwoord niet.
-<FilesMatch "^(mail-config\.php|verzonden\..*)$">
+# Alleen het mailscript is van buitenaf bereikbaar. De config en de teller nooit.
+<IfModule mod_authz_core.c>
   Require all denied
-</FilesMatch>
+  <Files "uitnodiging-mail.php">
+    Require all granted
+  </Files>
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order deny,allow
+  Deny from all
+  <Files "uitnodiging-mail.php">
+    Allow from all
+  </Files>
+</IfModule>
+Options -Indexes

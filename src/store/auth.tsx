@@ -1,10 +1,16 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, updateProfile, sendPasswordResetEmail, type User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, updateProfile, sendPasswordResetEmail, sendEmailVerification, reload, type User } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 
 type AuthCtx = {
   user: User | null; ready: boolean;
+  /** E-mailadres bevestigd via de link in de mail (firestore.rules eist dit bij uitnodigingen en accounts). */
+  verified: boolean;
+  /** Bevestigingsmail (opnieuw) sturen. */
+  sendVerify: () => Promise<void>;
+  /** Na klikken op de link: gegevens verversen. Geeft true als het adres nu bevestigd is. */
+  refresh: () => Promise<boolean>;
   login: (email: string, pw: string) => Promise<void>;
   register: (name: string, email: string, pw: string) => Promise<void>;
   reset: (email: string) => Promise<void>;
@@ -15,15 +21,28 @@ const Ctx = createContext<AuthCtx>(null as any);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
-  useEffect(() => onAuthStateChanged(auth, u => { setUser(u); setReady(true); }), []);
+  const [verified, setVerified] = useState(false);
+  useEffect(() => onAuthStateChanged(auth, u => { setUser(u); setVerified(!!u?.emailVerified); setReady(true); }), []);
   const value: AuthCtx = {
-    user, ready,
+    user, ready, verified,
+    sendVerify: () => sendVerifyMail(),
+    async refresh() {
+      const u = auth.currentUser; if (!u) return false;
+      await reload(u);
+      const ok = !!auth.currentUser?.emailVerified;
+      // nieuw token ophalen, anders ziet Firestore het bevestigde adres nog niet
+      if (ok) await auth.currentUser!.getIdToken(true);
+      setVerified(ok);
+      return ok;
+    },
     async login(email, pw) { await signInWithEmailAndPassword(auth, email.trim(), pw); },
     async register(name, email, pw) {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), pw);
       await updateProfile(cred.user, { displayName: name.trim() });
       await setDoc(doc(db, 'users', cred.user.uid), { name: name.trim(), email: email.trim().toLowerCase(), createdAt: serverTimestamp() }, { merge: true });
+      await sendVerifyMail().catch(() => {});
       setUser({ ...cred.user, displayName: name.trim() } as User);
+      setVerified(false);
     },
     async reset(email) {
       // Mail in het Nederlands, met na het resetten een knop terug naar het inlogscherm.
@@ -42,10 +61,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 export const useAuth = () => useContext(Ctx);
 
+/** Bevestigingsmail sturen, in het Nederlands, met daarna een knop terug naar de pagina waar je was. */
+async function sendVerifyMail() {
+  const u = auth.currentUser; if (!u) return;
+  auth.languageCode = 'nl';
+  try { await sendEmailVerification(u, { url: window.location.href }); }
+  catch (e: any) {
+    if (e?.code === 'auth/unauthorized-continue-uri' || e?.code === 'auth/invalid-continue-uri') await sendEmailVerification(u);
+    else throw e;
+  }
+}
+
 /** Vaste, nep-ingelogde gebruiker (oefenomgeving): niets gaat naar Firebase. */
 export function FixedAuth({ user, children }: { user: User; children: ReactNode }) {
   const no = async () => { throw new Error('oefenen'); };
-  return <Ctx.Provider value={{ user, ready: true, login: no, register: no, reset: no, logout: async () => {} }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, ready: true, verified: true, sendVerify: no, refresh: async () => true, login: no, register: no, reset: no, logout: async () => {} }}>{children}</Ctx.Provider>;
 }
 
 export function authError(e: any): string {

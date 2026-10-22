@@ -15,13 +15,14 @@ const clone = (x: any) => x === undefined ? undefined : JSON.parse(JSON.stringif
 export function initializeApp(_cfg: any) { return { name: 'fake' }; }
 
 /* ---- auth ---- */
-type U = { uid: string; email: string; displayName: string; pw: string };
+type U = { uid: string; email: string; displayName: string; pw: string; verified?: boolean; mailed?: boolean };
 const users: Record<string, U> = load(LS_AUTH + '.users', {});
 // Demo-account voor Beheer (totaal): open registratie bestaat niet meer, dus de demo begint hiermee (wachtwoord demo123).
-if (!Object.values(users).some(u => u.email === 'vluiten2907@gmail.com')) users.uroot = { uid: 'uroot', email: 'vluiten2907@gmail.com', displayName: 'Beheer (demo)', pw: 'demo123' };
+if (!Object.values(users).some(u => u.email === 'vluiten2907@gmail.com')) users.uroot = { uid: 'uroot', email: 'vluiten2907@gmail.com', displayName: 'Beheer (demo)', pw: 'demo123', verified: true };
 let current: U | null = load(LS_AUTH + '.current', null);
 const authListeners = new Set<(u: any) => void>();
-const pub = (u: U | null) => u ? { uid: u.uid, email: u.email, displayName: u.displayName, getIdToken: async () => 'demo-token' } : null;
+// Oude demo-accounts (van voor de e-mailbevestiging) tellen als bevestigd.
+const pub = (u: U | null) => u ? { uid: u.uid, email: u.email, displayName: u.displayName, emailVerified: u.verified !== false, getIdToken: async (_f?: boolean) => 'demo-token' } : null;
 const saveAuth = () => { localStorage.setItem(LS_AUTH + '.users', JSON.stringify(users)); localStorage.setItem(LS_AUTH + '.current', JSON.stringify(current)); authListeners.forEach(l => l(pub(current))); };
 const err = (code: string) => Object.assign(new Error(code), { code });
 export function getAuth() { return { get currentUser() { return pub(current); } }; }
@@ -34,10 +35,15 @@ export async function createUserWithEmailAndPassword(_a: any, email: string, pw:
   email = email.toLowerCase(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw err('auth/invalid-email');
   if (Object.values(users).some(x => x.email === email)) throw err('auth/email-already-in-use');
   if (pw.length < 6) throw err('auth/weak-password');
-  const u: U = { uid: 'u' + Math.random().toString(36).slice(2, 10), email, displayName: '', pw }; users[u.uid] = u; current = u; saveAuth(); return { user: pub(u) };
+  const u: U = { uid: 'u' + Math.random().toString(36).slice(2, 10), email, displayName: '', pw, verified: false }; users[u.uid] = u; current = u; saveAuth(); return { user: pub(u) };
 }
 export async function updateProfile(user: any, p: { displayName?: string }) { const u = users[user.uid]; if (u && p.displayName != null) { u.displayName = p.displayName; if (current?.uid === u.uid) current = u; saveAuth(); } }
 export async function sendPasswordResetEmail() { /* niets */ }
+// Bevestigingsmail: in de demo telt de link als aangeklikt zodra de mail is 'verstuurd'.
+export async function sendEmailVerification(user: any) { const u = users[user.uid]; if (u) { u.mailed = true; saveAuth(); } }
+// Test: zet localStorage 'fake.noverify' = '1' om de link pas als aangeklikt te zien na 'fake.clicked' = e-mailadres.
+const clicked = (u: U) => localStorage.getItem('fake.noverify') !== '1' || localStorage.getItem('fake.clicked') === u.email;
+export async function reload(user: any) { const u = users[user.uid]; if (u && u.mailed && clicked(u)) { u.verified = true; if (current?.uid === u.uid) current = u; localStorage.setItem(LS_AUTH + '.users', JSON.stringify(users)); localStorage.setItem(LS_AUTH + '.current', JSON.stringify(current)); } }
 export async function signOut() { current = null; saveAuth(); }
 export type User = { uid: string; email: string | null; displayName: string | null };
 

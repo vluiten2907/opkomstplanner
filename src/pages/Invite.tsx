@@ -4,19 +4,22 @@ import { TentTree } from 'lucide-react';
 import { useAuth, authError } from '../store/auth';
 import { acceptInvite, claimName, nameOwner, readInvite, saveProfile } from '../store/beheer';
 import { Field } from '../components/ui';
+import VerifyNote from '../components/VerifyNote';
 import { auth } from '../lib/firebase';
 import { inviteExpired, KIND_LABELS, PERM_LABELS, type Invite } from '../lib/types';
 
 /** Uitnodiging openen. Een account aanmaken kan alleen hier, met het e-mailadres van de uitnodiging. */
 export default function InvitePage() {
   const { token } = useParams();
-  const { user, ready, login, register, logout } = useAuth();
+  const { user, ready, verified, login, register, logout } = useAuth();
   const nav = useNavigate();
   const [inv, setInv] = useState<Invite | null | undefined>(undefined);
   const [mode, setMode] = useState<'register' | 'login'>('register');
   const [name, setName] = useState(''); const [pw, setPw] = useState('');
   const [first, setFirst] = useState(''); const [last, setLast] = useState('');
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
+  // gebruikersnaam die bij het aanmaken is gekozen, voor het toetreden na het bevestigen van het e-mailadres
+  const [chosen, setChosen] = useState('');
   useEffect(() => { readInvite(token!).then(setInv).catch(() => setInv(null)); }, [token]);
   if (!ready || inv === undefined) return <div className="loading">Uitnodiging ophalen…</div>;
   const box = (body: React.ReactNode) => <div className="auth-wrap"><div className="card pad stack auth-card">
@@ -35,7 +38,7 @@ export default function InvitePage() {
 
   const accept = async (u: { uid: string; email: string | null; displayName: string | null }, nm?: string) => {
     // Namen zijn uniek binnen een groep (zoals een gebruikersnaam).
-    if (inv.gid) await claimName(inv.gid, u.uid, nm || u.displayName || '');
+    if (inv.gid) await claimName(inv.gid, u.uid, nm || u.displayName || '', inv.id);
     await acceptInvite(inv, { uid: u.uid, name: nm || u.displayName || u.email || 'Leiding', email: u.email || '' });
     if (inv.sid) { localStorage.setItem('opk.sid', inv.sid); nav(`/s/${inv.sid}`, { replace: true }); }
     else nav('/beheer', { replace: true });
@@ -51,12 +54,15 @@ export default function InvitePage() {
           if (!name.trim()) throw { code: 'name' };
           if (!first.trim() || !last.trim()) throw { code: 'fullname' };
           if (inv.gid && await nameOwner(inv.gid, name).catch(() => null)) throw { code: 'name-taken' };
+          setChosen(name.trim());
           await register(name, inv.email, pw);
         }
         else await login(inv.email, pw);
         const u = auth.currentUser; if (!u) throw new Error('niet ingelogd');
-        if (mode === 'register') await saveProfile(u.uid, inv.email, first, last).catch(() => {});
-        await accept(u, mode === 'register' ? name.trim() : undefined);
+        // Nieuw account: eerst het e-mailadres bevestigen; daarna treed je toe vanaf het scherm hieronder.
+        if (mode === 'register') { await saveProfile(u.uid, inv.email, first, last).catch(() => {}); setBusy(false); return; }
+        if (!u.emailVerified) { setBusy(false); return; }
+        await accept(u);
       } catch (e: any) { setErr(e?.code === 'name' ? 'Vul je gebruikersnaam in.' : e?.code === 'fullname' ? 'Vul je voor- en achternaam in.' : joinErr(e)); setBusy(false); }
     };
     return box(<form className="stack" onSubmit={submit}>{intro}
@@ -78,7 +84,12 @@ export default function InvitePage() {
   }
 
   const mine = (user.email || '').toLowerCase() === inv.email;
-  const join = async () => { setBusy(true); setErr(''); try { await accept(user); } catch (e: any) { setErr(joinErr(e)); setBusy(false); } };
+  const join = async () => { setBusy(true); setErr(''); try { await accept(auth.currentUser || user, chosen || undefined); } catch (e: any) { setErr(joinErr(e)); setBusy(false); } };
+  if (mine && !verified) return box(<>{intro}
+    <VerifyNote box onVerified={join} />
+    {err && <p className="hint" style={{ color: 'var(--danger)', fontWeight: 700 }}>{err}</p>}
+    <div className="row"><button className="btn ghost sm" onClick={() => logout()}>Uitloggen</button></div>
+  </>);
   return box(<>{intro}
     {!mine && <p className="hint" style={{ color: 'var(--danger)', fontWeight: 700 }}>Je bent ingelogd als {user.email}, maar de uitnodiging is voor {inv.email}.</p>}
     {err && <p className="hint" style={{ color: 'var(--danger)', fontWeight: 700 }}>{err}</p>}

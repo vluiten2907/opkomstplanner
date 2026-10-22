@@ -2,7 +2,7 @@
 // Verstuurt een uitnodigingsmail via de Strato-mailbox.
 // Aanroep: POST met header "Authorization: Bearer <Firebase ID-token>" en JSON {"token": "<uitnodiging-id>"}.
 // Veiligheid: alleen wie de uitnodiging zelf heeft aangemaakt kan hem laten mailen, alleen naar het
-// adres in de uitnodiging, met een vaste tekst, en elke uitnodiging hoogstens 3 keer.
+// adres in de uitnodiging, met een vaste tekst, elke uitnodiging hoogstens 3 keer en hoogstens 20 per afzender per dag.
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -52,19 +52,33 @@ if ($verloopt <= microtime(true) * 1000) antwoord(410, ['fout' => 'Uitnodiging i
 $aan = (string)$veld('email');
 if (!filter_var($aan, FILTER_VALIDATE_EMAIL)) antwoord(400, ['fout' => 'Geen geldig e-mailadres']);
 
-// 3. Hoogstens 3 keer per uitnodiging
-$log = __DIR__ . '/verzonden.json';
+// 3. Hoogstens 3 keer per uitnodiging en 20 mails per afzender per dag.
+// De teller bewaart alleen een hash van de code (de code zelf is het geheim van de uitnodiging).
+// De map api/ is afgeschermd met .htaccess; het oude bestand met leesbare codes wordt opgeruimd.
+if (is_file(__DIR__ . '/verzonden.json')) @unlink(__DIR__ . '/verzonden.json');
+$log = __DIR__ . '/.teller.json';
 $fh = fopen($log, 'c+');
 flock($fh, LOCK_EX);
 $teller = json_decode((string)stream_get_contents($fh), true) ?: [];
-if (($teller[$token] ?? 0) >= 3) { flock($fh, LOCK_UN); antwoord(429, ['fout' => 'Deze uitnodiging is al 3 keer gemaild']); }
+$sleutel = 'i:' . hash('sha256', $token);
+$dag = 'u:' . hash('sha256', $uid) . ':' . gmdate('Ymd');
+// tellers van eerdere dagen opruimen
+foreach (array_keys($teller) as $k) if (str_starts_with($k, 'u:') && !str_ends_with($k, ':' . gmdate('Ymd'))) unset($teller[$k]);
+if (($teller[$sleutel] ?? 0) >= 3) { flock($fh, LOCK_UN); antwoord(429, ['fout' => 'Deze uitnodiging is al 3 keer gemaild']); }
+if (($teller[$dag] ?? 0) >= 20) { flock($fh, LOCK_UN); antwoord(429, ['fout' => 'Je hebt vandaag al 20 uitnodigingen gemaild. Probeer het morgen weer.']); }
 
 // 4. Mail opbouwen
-$wie = trim((string)$veld('invitedByName')) ?: 'Een teamleider';
+// Vrije tekst in de mail: kort houden en geen links, zodat niemand de mail voor spam of phishing kan gebruiken.
+function schoon(?string $s): string {
+  $s = trim(preg_replace('/[\x00-\x1F\x7F]+/u', ' ', (string)$s) ?? '');
+  if (preg_match('#(https?:|www\.|://|[a-z0-9-]+\.(nl|com|net|org|be|eu|io|info|ru|xyz)\b)#i', $s)) return '';
+  return mb_substr($s, 0, 60);
+}
+$wie = schoon($veld('invitedByName')) ?: 'Een teamleider';
 $soort = (string)$veld('kind');
 $rol = ['totaal' => 'Beheer (totaal)', 'groep' => 'Beheer (groep)', 'teamleider' => 'Teamleider', 'leiding' => 'Leiding'][$soort] ?? 'Leiding';
-$waar = $soort === 'totaal' ? 'de hele planner' : ($soort === 'groep' ? (string)$veld('groupName')
-  : implode(' · ', array_filter([(string)$veld('groupName'), (string)$veld('speltakName')])));
+$waar = $soort === 'totaal' ? 'de hele planner' : ($soort === 'groep' ? schoon($veld('groupName'))
+  : implode(' · ', array_filter([schoon($veld('groupName')), schoon($veld('speltakName'))])));
 $dagen = max(1, (int)ceil(($verloopt / 1000 - time()) / 86400));
 $link = rtrim($cfg['app_url'], '/') . '/uitnodiging/' . $token;
 $wat = $rol . ($waar ? " voor $waar" : '');
@@ -77,7 +91,8 @@ $tekst = "Hoi,\r\n\r\n$wie nodigt je uit voor de Opkomstplanner als $wat.\r\n\r\
 try { smtp_stuur($cfg, $aan, $onderwerp, $tekst, $wie); }
 catch (Throwable $e) { flock($fh, LOCK_UN); error_log('uitnodiging-mail: ' . $e->getMessage()); antwoord(502, ['fout' => 'Versturen mislukt']); }
 
-$teller[$token] = ($teller[$token] ?? 0) + 1;
+$teller[$sleutel] = ($teller[$sleutel] ?? 0) + 1;
+$teller[$dag] = ($teller[$dag] ?? 0) + 1;
 ftruncate($fh, 0); rewind($fh); fwrite($fh, json_encode($teller)); flock($fh, LOCK_UN); fclose($fh);
 antwoord(200, ['ok' => true, 'aan' => $aan]);
 
