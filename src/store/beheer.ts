@@ -289,7 +289,8 @@ export async function deleteGroep(g: Groep, sps: Speltak[]) {
   for (const sp of sps) await deleteSpeltak(sp);
   await wipe(['groepen', g.id, 'gedeeld']);
   await wipe(['groepen', g.id, 'namen']);
-  await wipe(['groepen', g.id, 'leden']);
+  // groepsleden opruimen kan pas met de nieuwe regels; zonder blijven er losse (onschuldige) regels achter
+  try { await wipe(['groepen', g.id, 'leden']); } catch { /* oude regels */ }
   const s = await getDocs(query(collection(db, 'invites'), where('gid', '==', g.id)));
   await Promise.all(s.docs.map(d => deleteDoc(doc(db, 'invites', d.id))));
   await deleteDoc(doc(db, 'groepen', g.id));
