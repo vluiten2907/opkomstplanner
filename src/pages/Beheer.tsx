@@ -9,7 +9,7 @@ import { toast } from '../store/toast';
 import { applyAccent } from '../components/Layout';
 import { ConfirmBtn, Field } from '../components/ui';
 import { InviteLink, InviteList, useOpenInvites, type InviteScope } from '../components/Invites';
-import { addMember, setPerms, claimName, releaseName, syncNames, createGroep, newGroepId, createInvite, createSpeltakInGroep, deleteSpeltak, ensureTlIds, findAccount, readAccounts, removeFromTeam, type AccountInfo, transferTeamleider, type Person, isEmail, linkSpeltak, removeGroupAdmin, removeRootPerson, renameGroep, setGroupAdmin, setTeamleider } from '../store/beheer';
+import { addMember, setPerms, claimName, releaseName, syncNames, createGroep, newGroepId, createInvite, createSpeltakInGroep, deleteSpeltak, deleteGroep, countOpkomsten, ensureTlIds, findAccount, readAccounts, removeFromTeam, type AccountInfo, transferTeamleider, type Person, isEmail, linkSpeltak, removeGroupAdmin, removeRootPerson, renameGroep, setGroupAdmin, setTeamleider } from '../store/beheer';
 import { DEFAULT_LEIDING_PERMS, PERM_LABELS, normPerms, isTeamleider, type Admin, type Member, type PermKey, type Groep, type Invite, type Speltak } from '../lib/types';
 import { normSettings } from '../lib/model';
 import { plural } from '../lib/time';
@@ -42,6 +42,7 @@ export default function BeheerPage() {
   const sps = useSpeltakken(R.isRoot, gids);
   const scopes: InviteScope[] = R.isRoot ? [{ all: true }] : gids.map(gid => ({ gid }));
   const invites = useOpenInvites(R.ready ? scopes : []);
+  const [gone, setGone] = useState<Gone | null>(null);
   const me = { uid: user!.uid, name: user?.displayName || user?.email || '', email: user?.email || '' };
 
   const head = <div className="row between page-head">
@@ -59,7 +60,8 @@ export default function BeheerPage() {
     {R.isRoot && <RootCard me={me} />}
     {R.isRoot && <NewGroup me={me} />}
     {R.isRoot && unlinked.length > 0 && <Unlinked list={unlinked} groups={R.groups} me={me} />}
-    {R.groups.map(g => <GroupCard key={g.id} g={g} sps={sps.filter(s => s.gid === g.id)} me={me} canAll={R.isRoot} />)}
+    {gone && <GoneCard gone={gone} onClose={() => setGone(null)} />}
+    {R.groups.map(g => <GroupCard key={g.id} g={g} sps={sps.filter(s => s.gid === g.id)} me={me} canAll={R.isRoot} allSps={sps} groups={R.groups} onGone={setGone} />)}
     {!R.groups.length && R.isRoot && <div className="empty"><span>Nog geen groepen. Maak hierboven een groep aan en nodig de beheerder uit.</span></div>}
     <section className="card pad stack">
       <div className="row between"><h2>Openstaande uitnodigingen</h2><span className="hint">{plural(invites.length, 'uitnodiging', 'uitnodigingen')}</span></div>
@@ -167,7 +169,7 @@ function Unlinked({ list, groups, me }: { list: Speltak[]; groups: Groep[]; me: 
 const teamleiders = (sp: Speltak) => Object.entries(sp.members).filter(([u]) => isTeamleider(sp, u)).map(([, m]) => m.name).join(', ');
 
 /* ---------- een groep ---------- */
-function GroupCard({ g, sps, me, canAll }: { g: Groep; sps: Speltak[]; me: Me; canAll: boolean }) {
+function GroupCard({ g, sps, me, canAll, allSps, groups, onGone }: { g: Groep; sps: Speltak[]; me: Me; canAll: boolean; allSps: Speltak[]; groups: Groep[]; onGone: (x: Gone) => void }) {
   const [name, setName] = useState(g.name); useEffect(() => setName(g.name), [g.name]);
   const [newSp, setNewSp] = useState(''); const [pick, setPick] = useState('');
   // Standaard ingeklapt; per groep onthouden in deze browser.
@@ -230,7 +232,55 @@ function GroupCard({ g, sps, me, canAll }: { g: Groep; sps: Speltak[]; me: Me; c
     <div className="row"><input className="inp" value={newSp} onChange={e => setNewSp(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addSp(); }} placeholder="Naam nieuwe speltak, bijv. Welpen" list="speltaklist-b" style={{ flex: '1 1 220px' }} />
       <datalist id="speltaklist-b">{['Bevers', 'Welpen', 'Scouts', 'Explorers', 'Roverscouts', 'Stam'].map(x => <option key={x} value={x} />)}</datalist>
       <button className="btn" onClick={addSp}><Plus size={16} />Speltak aanmaken</button></div>
+    {canAll && <DeleteGroup g={g} sps={sps} me={me} allSps={allSps} groups={groups} onGone={onGone} />}
     </>}
+  </section>;
+}
+
+/* ---------- hele groep verwijderen (alleen Beheer totaal) ---------- */
+type Gone = { name: string; people: Person[] };
+function DeleteGroup({ g, sps, me, allSps, groups, onGone }: { g: Groep; sps: Speltak[]; me: Me; allSps: Speltak[]; groups: Groep[]; onGone: (x: Gone) => void }) {
+  const { root } = useRoles();
+  const [show, setShow] = useState(false); const [del, setDel] = useState(''); const [busy, setBusy] = useState(false);
+  const [opk, setOpk] = useState<number | null>(null);
+  const word = g.name || 'verwijderen';
+  // Iedereen in deze groep: leiding van alle speltakken en de beheerders.
+  const people = new Map<string, Person>();
+  Object.entries(g.admins).forEach(([u, a]) => { if (g.adminIds.includes(u)) people.set(u, { uid: u, name: a.name, email: a.email }); });
+  sps.forEach(sp => Object.entries(sp.members).forEach(([u, m]) => people.set(u, { uid: u, name: m.name, email: m.email })));
+  useEffect(() => { if (show && opk === null) countOpkomsten(sps).then(setOpk).catch(() => setOpk(0)); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show]);
+  const remove = async () => {
+    setBusy(true);
+    // Wie hoort hierna nergens meer bij? (geen andere groep, speltak of Beheer totaal)
+    const elsewhere = (u: string) => u === me.uid || !!root?.ids.includes(u)
+      || groups.some(x => x.id !== g.id && x.adminIds.includes(u))
+      || allSps.some(sp => sp.gid !== g.id && sp.memberIds.includes(u));
+    const left = [...people.values()].filter(p => !elsewhere(p.uid)).sort((a, b) => a.name.localeCompare(b.name, 'nl'));
+    try {
+      await deleteGroep(g, sps);
+      sps.forEach(sp => { if (localStorage.getItem('opk.sid') === sp.id) localStorage.removeItem('opk.sid'); });
+      try { localStorage.removeItem('opk.groep.open.' + g.id); } catch { /* geen opslag */ }
+      toast(`${g.name || 'De groep'} is verwijderd`);
+      onGone({ name: g.name || 'De groep', people: left });
+    } catch (e) { err(e, 'Verwijderen mislukt. Probeer het opnieuw; wat al weg is, blijft weg.'); setBusy(false); }
+  };
+  if (!show) return <div className="row"><button className="btn sm ghost danger" onClick={() => setShow(true)}><Trash2 size={14} />Groep verwijderen</button></div>;
+  return <div className="dangerzone"><b>Groep verwijderen</b>
+    <span className="hint">Weg gaan: {plural(sps.length, 'speltak', 'speltakken')} met {opk === null ? '…' : plural(opk, 'opkomst', 'opkomsten')}, activiteiten en jaarplanning, de groepsbank, de namen, de openstaande uitnodigingen en de beheerders. {people.size > 0 && `${plural(people.size, 'persoon verliest', 'personen verliezen')} de toegang tot ${g.name || 'deze groep'}; hun inlogaccount blijft bestaan. `}Dit kan niet ongedaan worden.</span>
+    <div className="row"><input className="inp" value={del} onChange={e => setDel(e.target.value)} placeholder={`Typ ${word} om te bevestigen`} aria-label="Groepsnaam ter bevestiging" style={{ flex: '1 1 200px' }} />
+      <button className="btn danger" disabled={busy || del.trim().toLowerCase() !== word.toLowerCase()} onClick={remove}><Trash2 size={16} />{busy ? 'Bezig…' : 'Groep definitief verwijderen'}</button>
+      <button className="btn ghost" disabled={busy} onClick={() => { setShow(false); setDel(''); }}>Annuleren</button></div>
+  </div>;
+}
+/** Na het verwijderen: wie hoort nergens meer bij (hun inlogaccount kan alleen in de Firebase-console weg). */
+function GoneCard({ gone, onClose }: { gone: Gone; onClose: () => void }) {
+  return <section className="card pad stack gonecard">
+    <div className="row between"><h2>{gone.name} is verwijderd</h2><button className="btn sm ghost" onClick={onClose}>Sluiten</button></div>
+    {gone.people.length ? <>
+      <p className="hint">Deze mensen horen nu nergens meer bij. Ze kunnen nog inloggen, maar zien niets. Wil je hun account helemaal weg, verwijder het dan in de Firebase-console bij Authentication → Users.</p>
+      <ul className="gone-list">{gone.people.map(p => <li key={p.uid}><b>{p.name}</b>{p.email ? ` · ${p.email}` : ''}</li>)}</ul>
+    </> : <p className="hint">Iedereen uit deze groep hoort nog bij een andere groep of speltak.</p>}
   </section>;
 }
 

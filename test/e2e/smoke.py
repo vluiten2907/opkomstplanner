@@ -91,6 +91,17 @@ with sync_playwright() as p:
     check(btn.is_disabled(), 'speltak verwijderen vraagt eerst de naam')
     pg.fill('.groupcard .member:has-text("Opruimen") input[aria-label="Naam ter bevestiging"]', 'Opruimen'); btn.click(); w(900)
     check(pg.locator('.groupcard .member:has-text("Opruimen")').count() == 0, 'speltak volledig verwijderd')
+    # hele groep verwijderen (Beheer totaal)
+    pg.click('text=Nieuwe Scouting-groep'); w(); pg.fill('#ng-name', 'Weggroep'); pg.click('text=Groep aanmaken'); w(800)
+    wg = pg.locator('.groupcard:has-text("Weggroep")')
+    wg.locator('input[placeholder^="Naam nieuwe speltak"]').fill('Bevers'); wg.locator('text=Speltak aanmaken').click(); w(800)
+    wg.locator('button:has-text("Groep verwijderen")').click(); w(400)
+    gbtn = wg.locator('text=Groep definitief verwijderen')
+    check(gbtn.is_disabled() and wg.locator('.dangerzone:has-text("1 speltak")').count() == 1, 'groep verwijderen vraagt de naam en toont wat er weggaat')
+    wg.locator('input[aria-label="Groepsnaam ter bevestiging"]').fill('weggroep'); gbtn.click(); w(1200)
+    check(pg.locator('.groupcard:has-text("Weggroep")').count() == 0 and pg.locator('.gonecard:has-text("Weggroep is verwijderd")').count() == 1, 'hele groep verwijderd met overzicht')
+    check(pg.locator('.groupcard:has-text("Testgroep")').count() == 1, 'andere groep blijft staan')
+    pg.locator('.gonecard >> text=Sluiten').click(); w(200)
     shot('00-beheer')
 
     # --- teamleider maakt account via de uitnodiging

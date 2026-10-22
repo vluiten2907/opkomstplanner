@@ -126,11 +126,13 @@ service cloud.firestore {
 
       match /leden/{uid} {
         allow get: if signedIn() && uid == me();
+        // opruimen bij het verwijderen van de groep
+        allow list: if isAdminOf(gid);
         allow create, update: if signedIn() && uid == me()
           && request.resource.data.sid is string
           && me() in get(spPath(request.resource.data.sid)).data.memberIds
           && spGid(get(spPath(request.resource.data.sid)).data) == gid;
-        allow delete: if signedIn() && uid == me();
+        allow delete: if (signedIn() && uid == me()) || isAdminOf(gid);
       }
 
       match /gedeeld/{id} {

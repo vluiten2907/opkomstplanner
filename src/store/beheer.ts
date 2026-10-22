@@ -265,3 +265,32 @@ export async function syncNames(gid: string, people: Map<string, string>) {
 
 /** Rechten van een leiding aanpassen (teamleider of beheerder van de groep). Bekijken mag altijd. */
 export const setPerms = (sp: Speltak, uid: string, perms: Perms) => updateDoc(doc(db, 'speltakken', sp.id), { ['members.' + uid + '.perms']: normPerms(perms) });
+
+/* ---------- hele groep verwijderen (Beheer totaal) ---------- */
+/** Aantal opkomsten in deze speltakken (voor de bevestiging). */
+export async function countOpkomsten(sps: Speltak[]) {
+  const n = await Promise.all(sps.map(sp => getDocs(collection(db, 'speltakken', sp.id, 'opkomsten')).then(s => s.docs.length).catch(() => 0)));
+  return n.reduce((a, b) => a + b, 0);
+}
+async function wipe(path: [string, ...string[]]) {
+  const s = await getDocs(collection(db, ...path));
+  for (let i = 0; i < s.docs.length; i += 400) {
+    const b = writeBatch(db);
+    s.docs.slice(i, i + 400).forEach(d => b.delete(doc(db, ...path, d.id)));
+    await b.commit();
+  }
+}
+/**
+ * Scoutinggroep met alles eronder weggooien: speltakken (met opkomsten, activiteiten, jaarplanning),
+ * groepsbank, namen, groepsleden, open uitnodigingen en als laatste de groep zelf (zodat opnieuw proberen kan).
+ * Inlogaccounts blijven bestaan: die kan de website niet wissen. Niet terug te draaien.
+ */
+export async function deleteGroep(g: Groep, sps: Speltak[]) {
+  for (const sp of sps) await deleteSpeltak(sp);
+  await wipe(['groepen', g.id, 'gedeeld']);
+  await wipe(['groepen', g.id, 'namen']);
+  await wipe(['groepen', g.id, 'leden']);
+  const s = await getDocs(query(collection(db, 'invites'), where('gid', '==', g.id)));
+  await Promise.all(s.docs.map(d => deleteDoc(doc(db, 'invites', d.id))));
+  await deleteDoc(doc(db, 'groepen', g.id));
+}

@@ -214,6 +214,16 @@ await t('namen: lijst alleen beheerder', async () => { await assertFails(getDocs
 await t('namen: ander verwijdert niet', () => assertFails(deleteDoc(doc(as('y', 'y@t.nl'), 'groepen/g1/namen/akela'))));
 await t('namen: beheerder geeft vrij', () => assertSucceeds(deleteDoc(doc(as('ga', 'ga@t.nl'), 'groepen/g1/namen/akela'))));
 
+/* ---- groep verwijderen: groepsleden opruimen ---- */
+await seed();
+await setDoc(doc(as('tl', 'tl@t.nl'), 'groepen/g1/leden/tl'), { sid: 's1', since: 1 });
+await t('groep weg: lid ziet ledenlijst niet', () => assertFails(getDocs(collection(as('tl', 'tl@t.nl'), 'groepen/g1/leden'))));
+await t('groep weg: ander verwijdert groepslid niet', () => assertFails(deleteDoc(doc(as('z', 'z@t.nl'), 'groepen/g1/leden/tl'))));
+await t('groep weg: Beheer totaal leest ledenlijst', () => assertSucceeds(getDocs(collection(as('root', ROOT), 'groepen/g1/leden'))));
+await t('groep weg: Beheer totaal ruimt groepslid op', () => assertSucceeds(deleteDoc(doc(as('root', ROOT), 'groepen/g1/leden/tl'))));
+await t('groep weg: Beheer totaal verwijdert de groep', () => assertSucceeds(deleteDoc(doc(as('root', ROOT), 'groepen/g1'))));
+await t('groep weg: beheerder groep verwijdert de groep niet', async () => { await seed(); await assertFails(deleteDoc(doc(as('ga', 'ga@t.nl'), 'groepen/g1'))); });
+
 await env.cleanup();
 console.log(`\n${n - fails}/${n} geslaagd`);
 process.exit(fails ? 1 : 0);

@@ -935,3 +935,4 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
 .bwrap > .bcard .hint { padding-right: 36px; }
 .bwrap .carddel { position: absolute; z-index: 1; right: 8px; bottom: 8px; min-height: 30px; padding: 4px 8px; }
 .bwrap .carddel[data-armed] { background: color-mix(in srgb, var(--danger) 14%, var(--paper)); color: var(--danger); }
+.gone-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; overflow-wrap: anywhere; }
