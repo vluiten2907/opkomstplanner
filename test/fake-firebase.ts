@@ -77,7 +77,7 @@ const snap = (ref: Ref) => ref.kind === 'doc'
   ? { id: ref.path.split('/').pop(), exists: () => ref.path in store, data: () => clone(store[ref.path]) }
   : { docs: docsIn(ref) };
 // Testhaken: localStorage 'fake.failWrite' / 'fake.failListen' = foutcode laat schrijven of luisteren in een speltak mislukken
-// ('too-big' = document te groot). Alleen voor de rooktest.
+// ('too-big' = document te groot); 'fake.delayListen' = vertraging in ms. Alleen voor de rooktest.
 const failCode = (k: string, path: string) => { const c = localStorage.getItem(k); return c && path.startsWith('speltakken/') ? c : ''; };
 const failErr = (c: string) => c === 'too-big'
   ? Object.assign(new Error('Document cannot be written because its size (1,300,000 bytes) exceeds the maximum allowed size of 1,048,576 bytes.'), { code: 'invalid-argument' })
@@ -85,7 +85,11 @@ const failErr = (c: string) => c === 'too-big'
 export function onSnapshot(ref: Ref, cb: (s: any) => void, onErr?: (e: any) => void) {
   const f = failCode('fake.failListen', ref.path);
   if (f) { const t = setTimeout(() => onErr?.(failErr(f)), 0); return () => clearTimeout(t); }
-  const l = () => cb(snap(ref)); listeners.add(l); setTimeout(l, 0); return () => listeners.delete(l);
+  const l = () => cb(snap(ref));
+  // Testhaak 'fake.delayListen' = ms: lijsten in een speltak komen later binnen, zoals bij echte Firestore (los van het speltakdocument).
+  const d = ref.kind === 'coll' ? Number(failCode('fake.delayListen', ref.path)) || 0 : 0;
+  if (d) { const t = setTimeout(() => { listeners.add(l); l(); }, d); return () => { clearTimeout(t); listeners.delete(l); }; }
+  listeners.add(l); setTimeout(l, 0); return () => listeners.delete(l);
 }
 export async function getDoc(ref: Ref) { return snap(ref); }
 export async function getDocs(ref: Ref) { return snap(ref); }

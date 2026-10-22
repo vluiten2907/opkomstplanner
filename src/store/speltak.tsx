@@ -59,6 +59,9 @@ const C = createContext<Ctx>(null as any);
 
 const DEBOUNCE = 500;
 
+type Ready = Record<'sp' | 'opkomsten' | 'activiteiten' | 'planning', 'wait' | 'ok' | 'fail'>;
+const WAIT: Ready = { sp: 'wait', opkomsten: 'wait', activiteiten: 'wait', planning: 'wait' };
+
 /** Foutmelding bij opslaan, per oorzaak. Offline is geen fout: Firestore wacht dan tot er weer verbinding is. */
 export function saveErrorText(e: any) {
   if (e?.code === 'permission-denied') return 'Je hebt geen rechten om dit op te slaan.';
@@ -78,10 +81,13 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   const [opks, setOpks] = useState<Opk[]>([]);
   const [lib, setLib] = useState<Lib[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Per bron: nog bezig, binnen, of mislukt. Pagina's tonen pas iets als alle vier klaar zijn (bij echte Firestore komen ze los binnen).
+  const [ready, setReady] = useState<Ready>(WAIT);
+  const loading = Object.values(ready).includes('wait');
+  // opkomsten echt binnen (niet mislukt): pas dan de groepsbank bijwerken, anders zou alles daar verdwijnen
+  const opksReady = ready.opkomsten === 'ok';
   const [denied, setDenied] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const [opksReady, setOpksReady] = useState(false);
   // lokale, optimistische kopie: wijzigingen tonen direct, opslaan gebeurt met een korte vertraging
   const pending = useRef(new Map<string, { sid: string; kind: string; obj: any; t: any }>());
   const [, bump] = useState(0);
@@ -90,24 +96,27 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
 
   useEffect(() => {
     if (!user) return;
-    setLoading(true); setDenied(false); setLoadError(false); setOpksReady(false);
-    const err = (e: any) => { if (e?.code === 'permission-denied') setDenied(true); else setLoadError(true); setLoading(false); };
+    setReady(WAIT); setDenied(false); setLoadError(false);
+    const mark = (k: keyof Ready, v: 'ok' | 'fail') => setReady(r => r[k] === v ? r : { ...r, [k]: v });
+    // ook bij een fout klaar, anders blijft de pagina eeuwig laden
+    const err = (k: keyof Ready) => (e: any) => { if (e?.code === 'permission-denied') setDenied(true); else setLoadError(true); mark(k, 'fail'); };
     const u1 = onSnapshot(doc(db, 'speltakken', sid), s => {
-      if (!s.exists()) { setSp(null); setDenied(true); setLoading(false); return; }
+      if (!s.exists()) { setSp(null); setDenied(true); mark('sp', 'fail'); return; }
       const d = s.data();
       setSp({ id: s.id, name: d.name || '', groupName: d.groupName || '', createdAt: d.createdAt || 0, createdBy: d.createdBy || '',
         settings: normSettings({ ...d.settings, groupName: d.groupName, speltak: d.name }), members: d.members || {}, memberIds: d.memberIds || [],
         gid: d.gid || null, tlIds: Array.isArray(d.tlIds) ? d.tlIds : null });
-      setLoading(false);
-    }, err);
-    const sub = (name: string, norm: (x: any) => any, set: (v: any[]) => void) =>
+      mark('sp', 'ok');
+    }, err('sp'));
+    const sub = (name: 'opkomsten' | 'activiteiten' | 'planning', norm: (x: any) => any, set: (v: any[]) => void) =>
       onSnapshot(collection(db, 'speltakken', sid, name), s => {
         const map = new Map<string, any>();
         s.docs.forEach(d => map.set(d.id, norm({ ...d.data(), id: d.id })));
         pending.current.forEach(p => { if (p.sid === sid && p.kind === name) map.set(p.obj.id, p.obj); });
         set([...map.values()]);
-      }, err);
-    const u2 = sub('opkomsten', normOpk, (v: Opk[]) => { setOpks(v); setOpksReady(true); }), u3 = sub('activiteiten', normLib, setLib), u4 = sub('planning', normPlan, setPlans);
+        mark(name, 'ok');
+      }, err(name));
+    const u2 = sub('opkomsten', normOpk, setOpks), u3 = sub('activiteiten', normLib, setLib), u4 = sub('planning', normPlan, setPlans);
     return () => { u1(); u2(); u3(); u4(); };
   }, [sid, user]);
 

@@ -23,7 +23,8 @@ function Gate({ children }: { children: React.ReactNode }) {
 }
 function SpeltakRoutes() {
   const { sid } = useParams();
-  return <SpeltakProvider sid={sid!}><SpeltakPages /></SpeltakProvider>;
+  // key: een andere speltak (bijv. via de terugknop) begint met een schone staat, zonder gegevens van de vorige
+  return <SpeltakProvider key={sid} sid={sid!}><SpeltakPages /></SpeltakProvider>;
 }
 function Home() {
   const { ready, isAdmin } = useRoles();

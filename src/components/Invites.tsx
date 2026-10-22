@@ -63,7 +63,7 @@ export function InviteLink({ inv, fromName, onClose }: { inv: Invite; fromName: 
   const url = inviteUrl(inv.id);
   const what = `${KIND_LABELS[inv.kind]} voor ${where_(inv)}`;
   const mailto = `mailto:${inv.email}?subject=${encodeURIComponent('Uitnodiging Opkomstplanner: ' + what)}&body=${encodeURIComponent(`Hoi,\n\n${fromName || 'Ik'} nodigt je uit voor de Opkomstplanner als ${what}.\n\nOpen deze link en maak een account aan met dit e-mailadres (${inv.email}):\n${url}\n\nDe link is ${30} dagen geldig.\n\nGroet,\n${fromName}`)}`;
-  return <div className="banknote"><span>Uitnodiging als <b>{KIND_LABELS[inv.kind]}</b> voor <b>{inv.email}</b>. Verstuur de mail of stuur de link zelf door; hij werkt alleen voor dat e-mailadres en is 30 dagen geldig.</span>
+  return <div className="banknote"><span>Uitnodiging als <b>{KIND_LABELS[inv.kind]}</b>{inv.transfer ? ' (rol overdragen)' : ''} voor <b>{inv.email}</b>. Verstuur de mail of stuur de link zelf door; hij werkt alleen voor dat e-mailadres en is 30 dagen geldig.</span>
     <code className="mono-code">{url}</code>
     <div className="row"><button className="btn sm" onClick={async () => setCopied(await copyText(url))}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? 'Gekopieerd' : 'Kopiëren'}</button>{mail !== 'uit' && <button className="btn sm primary" disabled={mail === 'bezig' || mail === 'verstuurd'} onClick={async () => {
       setMail('bezig');

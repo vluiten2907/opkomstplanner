@@ -1,4 +1,4 @@
-import { useRef, useState, type InputHTMLAttributes } from 'react';
+import { useEffect, useRef, useState, type InputHTMLAttributes } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Download, Link2, Trash2, UserPlus } from 'lucide-react';
 import { useAuth } from '../store/auth';
@@ -10,7 +10,7 @@ import { download, slugify } from '../lib/export';
 import { fmtNL, fmtT, plural, todayISO, uid, DAYS, MONTHS } from '../lib/time';
 import { ACCENTS, normLib, normOpk, normPlan, normSettings, prepLabel, PREP_OPTS, SPELTAKKEN, SWATCHES, type Settings } from '../lib/model';
 import { ALL_PERMS, DEFAULT_LEIDING_PERMS, PERM_HELP, PERM_LABELS, isTeamleider, type Invite, type Member, type PermKey, type Perms } from '../lib/types';
-import { ensureTlIds, isEmail, removeGroupAdmin, setGroupAdmin, setTeamleider, stepDownTeamleider, transferTeamleider } from '../store/beheer';
+import { ensureTlIds, isEmail, removeGroupAdmin, setGroupAdmin, setTeamleider, stepDownTeamleider, transferJoiners, transferTeamleider } from '../store/beheer';
 import { useRoles } from '../store/roles';
 import { InviteLink, InviteList, useOpenInvites } from '../components/Invites';
 
@@ -183,6 +183,17 @@ function Team() {
   const [inv, setInv] = useState<Invite | null>(null); const [busy, setBusy] = useState(false);
   const open = useOpenInvites(manage && sp && !practice ? [{ sid: sp.id }] : []);
   const roles = useRoles();
+  // Wie kwam binnen via mijn "Mijn rol overdragen"? Bij die persoon staat dan de knop om de rol over te dragen.
+  const [heirs, setHeirs] = useState<string[]>([]);
+  const teamKey = sp ? sp.memberIds.join(',') : '';
+  useEffect(() => {
+    setHeirs([]);
+    if (!sp || !isTL || practice || !user) return;
+    let alive = true;
+    transferJoiners(sp.id, user.uid).then(u => { if (alive) setHeirs(u); }).catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sp?.id, isTL, practice, user?.uid, teamKey]);
   if (!sp) return null;
   // Beheerder van de groep aanzetten bij een bestaand lid (alleen voor beheerders, en alleen als de speltak in een groep zit)
   const grp = isAdmin && sp.gid ? roles.groups.find(x => x.id === sp.gid) || null : null;
@@ -202,8 +213,9 @@ function Team() {
     if (members.some(([, m]) => m.email === em)) { toast('Dit e-mailadres zit al in het team.'); return; }
     setBusy(true);
     try {
-      if (kind !== 'leiding') await ensureTlIds(sp).catch(() => {});
-      setInv(await createInvite(em, kind === 'leiding' ? 'leiding' : 'teamleider', kind === 'leiding' ? perms : ALL_PERMS, kind === 'transfer')); setEmail('');
+      if (kind === 'teamleider') await ensureTlIds(sp).catch(() => {});
+      // Rol overdragen: de ander komt binnen als leiding met alle rechten; daarna draag je zelf je rol over (knop bij die persoon).
+      setInv(await createInvite(em, kind === 'teamleider' ? 'teamleider' : 'leiding', kind === 'leiding' ? perms : ALL_PERMS, kind === 'transfer')); setEmail('');
     } catch { toast('Uitnodiging maken mislukt.'); }
     setBusy(false);
   };
@@ -211,6 +223,7 @@ function Team() {
     <div className="row between"><h2>Team</h2><span className="hint">{plural(members.length, 'lid', 'leden')} · {sp.name}</span></div>
     <div className="team">
       {members.map(([uidX, m]) => <MemberRow key={uidX} m={m} isTl={tl(uidX)} me={uidX === user?.uid} iAmTL={isTL} isAdmin={isAdmin} lastTL={tl(uidX) && tlCount < 2}
+        heir={isTL && !tl(uidX) && uidX !== user?.uid && heirs.includes(uidX)}
         onTeamleider={on => setTeamleider(sp, uidX, on).catch(fail)}
         onTransfer={() => transferTeamleider(sp, user!.uid, uidX).then(() => toast(`${m.name} is nu teamleider`)).catch(fail)}
         onStepDown={() => stepDownTeamleider(sp, uidX).then(() => toast('Je bent nu leiding')).catch(fail)}
@@ -228,7 +241,7 @@ function Team() {
           {isAdmin && <Chip on={kind === 'teamleider'} onClick={() => setKind('teamleider')}>Teamleider</Chip>}
           {isTL && <Chip on={kind === 'transfer'} onClick={() => setKind('transfer')}>Mijn rol overdragen</Chip>}</div></div>
       {kind === 'leiding' && <PermGrid perms={perms} onChange={(k, v) => setPerms({ ...perms, [k]: v })} />}
-      {kind === 'transfer' && <p className="hint">De ander wordt teamleider zodra hij de uitnodiging accepteert. Daarna tik je bij jezelf op Aftreden; je blijft dan leiding. Overdragen aan iemand die al in het team zit kan direct via Rechten bij die persoon.</p>}
+      {kind === 'transfer' && <p className="hint">De ander komt eerst in het team als leiding met alle rechten. Daarna staat bij die persoon de knop Rol overdragen: hij wordt teamleider, jij blijft leiding. Zit je opvolger al in het team? Draag dan direct over via Rechten bij die persoon.</p>}
       <div className="row"><button className="btn primary" disabled={busy} onClick={invite}><Link2 size={16} />Uitnodigingslink maken</button></div>
       {inv && <InviteLink inv={inv} fromName={myName} onClose={() => setInv(null)} />}
       <h3>Openstaande uitnodigingen</h3>
@@ -237,8 +250,10 @@ function Team() {
   </section>;
 }
 
-function MemberRow({ m, isTl, me, iAmTL, isAdmin, lastTL, groupAdmin, groupName, noGroup, onGroupAdmin, onTeamleider, onTransfer, onStepDown, onPerm, onRemove }: {
+function MemberRow({ m, isTl, me, iAmTL, isAdmin, lastTL, heir, groupAdmin, groupName, noGroup, onGroupAdmin, onTeamleider, onTransfer, onStepDown, onPerm, onRemove }: {
   m: Member; isTl: boolean; me: boolean; iAmTL: boolean; isAdmin: boolean; lastTL: boolean;
+  /** Kwam binnen via jouw "Mijn rol overdragen": knop direct in beeld. */
+  heir: boolean;
   groupAdmin: boolean | null; groupName: string; noGroup: boolean; onGroupAdmin: (on: boolean) => void;
   onTeamleider: (on: boolean) => void; onTransfer: () => void; onStepDown: () => void; onPerm: (k: PermKey, v: boolean) => void; onRemove: () => void }) {
   const [open, setOpen] = useState(false);
@@ -255,6 +270,8 @@ function MemberRow({ m, isTl, me, iAmTL, isAdmin, lastTL, groupAdmin, groupName,
         {canRemove && <ConfirmBtn className="iconbtn danger" label={<Trash2 size={15} />} confirm="Zeker?" title="Uit het team halen" onConfirm={onRemove} />}
       </div>}
     </div>
+    {heir && <div className="heir"><span className="hint">{m.name} kwam binnen via jouw overdracht.</span>
+      <ConfirmBtn className="btn sm primary" label={`Rol overdragen aan ${m.name}`} confirm="Klik nogmaals: overdragen (jij wordt leiding)" onConfirm={onTransfer} /></div>}
     {open && manage && <div className="stack" style={{ gap: 10, paddingTop: 10 }}>
       {groupAdmin !== null && <label className="toggle"><input type="checkbox" checked={groupAdmin} onChange={e => onGroupAdmin(e.target.checked)} /><span><b>Beheerder van {groupName}</b><br /><span className="hint">Ziet alle speltakken van de groep, stelt teamleiders aan en nodigt ze uit.</span></span></label>}
       {noGroup && <p className="hint">Deze speltak hangt nog niet onder een groep. Koppel hem eerst op de Beheer-pagina; daarna kun je hier beheerders aanzetten.</p>}

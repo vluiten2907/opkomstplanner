@@ -1,7 +1,7 @@
 // Tests voor firestore.rules (draai via test/rules/run.sh).
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, arrayUnion, deleteField } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, arrayUnion, arrayRemove, deleteField, writeBatch } from 'firebase/firestore';
 
 const env = await initializeTestEnvironment({ projectId: 'demo-opk', firestore: { rules: readFileSync('firestore.rules', 'utf8'), host: '127.0.0.1', port: 8085 } });
 const ROOT = 'vluiten2907@gmail.com';
@@ -13,6 +13,8 @@ const ALL = { plan: true, build: true, bank: true, settings: true }, NONE = { pl
 const far = Date.now() + 20 * 864e5;
 let fails = 0, n = 0;
 async function t(name, fn) { n++; try { await fn(); console.log('OK   ' + name); } catch (e) { fails++; console.log('FAIL ' + name + '\n     ' + (e?.message || e).toString().split('\n')[0]); } }
+// toetreden zoals de app het doet: in één batch met het markeren van de uitnodiging
+const joinB = (db, path, patch, inviteId, uid) => { const b = writeBatch(db); b.update(doc(db, path), patch); b.update(doc(db, 'invites/' + inviteId), { usedBy: uid }); return b.commit(); };
 const inv = (o) => ({ kind: 'leiding', email: 'x@t.nl', gid: 'g1', groupName: 'G1', sid: 's1', speltakName: 'Scouts', role: 'leiding', perms: NONE, invitedBy: 'tl', invitedByName: 'TL', createdAt: Date.now(), expiresAt: far, usedBy: null, transfer: false, ...o });
 
 async function seed() {
@@ -95,7 +97,8 @@ await t('teamleider: leiding uitnodigen', () => assertSucceeds(setDoc(doc(tl, 'i
 await t('teamleider: uitnodiging met te lange naam niet', () => assertFails(setDoc(doc(tl, 'invites/n7c'), inv({ invitedByName: 'x'.repeat(61) }))));
 await t('teamleider: leiding uitnodigen met verkeerde gid niet', () => assertFails(setDoc(doc(tl, 'invites/n7b'), inv({ gid: 'g2' }))));
 await t('teamleider: teamleider uitnodigen niet', () => assertFails(setDoc(doc(tl, 'invites/n8'), inv({ kind: 'teamleider', role: 'teamleider', perms: ALL }))));
-await t('teamleider: rol overdragen via uitnodiging', () => assertSucceeds(setDoc(doc(tl, 'invites/n9'), inv({ kind: 'teamleider', role: 'teamleider', perms: ALL, transfer: true }))));
+await t('teamleider: rol overdragen via teamleider-uitnodiging niet (extra teamleider aanstellen doet de beheerder)', () => assertFails(setDoc(doc(tl, 'invites/n9'), inv({ kind: 'teamleider', role: 'teamleider', perms: ALL, transfer: true }))));
+await t('teamleider: rol overdragen via uitnodiging als leiding met alle rechten', () => assertSucceeds(setDoc(doc(tl, 'invites/n9b'), inv({ perms: ALL, transfer: true }))));
 await t('teamleider: uitnodigingen speltak lijsten', () => assertSucceeds(getDocs(query(collection(tl, 'invites'), where('sid', '==', 's1')))));
 await t('teamleider: geen groep-uitnodiging', () => assertFails(setDoc(doc(tl, 'invites/n10'), inv({ kind: 'groep', role: null, sid: null }))));
 await t('teamleider: rechten leiding aanpassen', () => assertSucceeds(updateDoc(doc(tl, 'speltakken/s1'), { 'members.ld.perms': ALL })));
@@ -114,30 +117,80 @@ await t('leiding: niemand uitnodigen', () => assertFails(setDoc(doc(ld, 'invites
 await t('leiding: uitnodigingen niet lijsten', () => assertFails(getDocs(query(collection(ld, 'invites'), where('sid', '==', 's1')))));
 await t('leiding: zichzelf geen rechten geven', () => assertFails(updateDoc(doc(ld, 'speltakken/s1'), { 'members.ld.perms': ALL })));
 await t('leiding zonder recht Instellingen: instelling niet opslaan', () => assertFails(updateDoc(doc(ld, 'speltakken/s1'), { 'settings.accent': 'rood' })));
+await t('verlaten en anderen eruit: nee', () => assertFails(updateDoc(doc(ld, 'speltakken/s1'), { 'members.ld': deleteField(), memberIds: [] })));
+await t('verlaten en vreemde erbij: nee', () => assertFails(updateDoc(doc(ld, 'speltakken/s1'), { 'members.ld': deleteField(), memberIds: ['tl', 'evil'] })));
+await t('verlaten maar in de ledenlijst blijven: nee', () => assertFails(updateDoc(doc(ld, 'speltakken/s1'), { memberIds: ['tl'] })));
 await t('leiding: speltak verlaten', () => assertSucceeds(updateDoc(doc(ld, 'speltakken/s1'), { 'members.ld': deleteField(), memberIds: ['tl'] })));
+await seed();
+await t('leiding: speltak verlaten zoals de app (arrayRemove)', () => assertSucceeds(updateDoc(doc(ld, 'speltakken/s1'), { 'members.ld': deleteField(), memberIds: arrayRemove('ld') })));
+await t('na verlaten: teamleider leest de speltak nog', () => assertSucceeds(getDoc(doc(as('tl', 'tl@t.nl'), 'speltakken/s1'))));
+
+/* ---- teamleiders blijven in het team ---- */
+await seed();
+await t('enige teamleider haalt zichzelf niet uit memberIds', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { memberIds: ['ld'] })));
+await env.withSecurityRulesDisabled(c => updateDoc(doc(c.firestore(), 'speltakken/s1'), { tlIds: ['tl', 'tl2'], memberIds: ['tl', 'ld', 'tl2'], 'members.tl2': { name: 'TL2', email: 'tl2@t.nl', role: 'teamleider', perms: ALL, since: 1 } }));
+await t('teamleider haalt mede-teamleider niet uit team', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { 'members.tl2': deleteField(), memberIds: ['tl', 'ld'] })));
+await t('teamleider haalt zichzelf niet uit memberIds', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { memberIds: ['ld', 'tl2'] })));
+await t('teamleider: leiding uit het team halen', () => assertSucceeds(updateDoc(doc(tl, 'speltakken/s1'), { 'members.ld': deleteField(), memberIds: arrayRemove('ld') })));
+await t('teamleider: aftreden naast mede-teamleider', () => assertSucceeds(updateDoc(doc(tl, 'speltakken/s1'), { 'members.tl.role': 'leiding', tlIds: ['tl2'] })));
+await t('mede-teamleider leest de speltak nog', () => assertSucceeds(getDoc(doc(as('tl2', 'tl2@t.nl'), 'speltakken/s1'))));
+
+/* ---- rol overdragen: leiding met alle rechten, daarna draagt de teamleider zelf over ---- */
+await seed();
+await t('overdracht: teamleider nodigt opvolger uit als leiding', () => assertSucceeds(setDoc(doc(tl, 'invites/nTr'), inv({ email: 'opv@t.nl', perms: ALL, transfer: true }))));
+const opv = as('opv', 'opv@t.nl');
+await t('overdracht: opvolger treedt niet toe als teamleider', () => assertFails(joinB(opv, 'speltakken/s1', { 'members.opv': { name: 'O', email: 'opv@t.nl', role: 'teamleider', perms: ALL, inviteId: 'nTr', since: 1 }, memberIds: arrayUnion('opv'), tlIds: arrayUnion('opv') }, 'nTr', 'opv')));
+await t('overdracht: opvolger treedt toe als leiding', () => assertSucceeds(joinB(opv, 'speltakken/s1', { 'members.opv': { name: 'O', email: 'opv@t.nl', role: 'leiding', perms: ALL, inviteId: 'nTr', since: 1 }, memberIds: arrayUnion('opv') }, 'nTr', 'opv')));
+await t('overdracht: opvolger maakt zichzelf geen teamleider', () => assertFails(updateDoc(doc(opv, 'speltakken/s1'), { tlIds: arrayUnion('opv') })));
+await t('overdracht: teamleider draagt zijn rol over', () => assertSucceeds(updateDoc(doc(tl, 'speltakken/s1'), { 'members.opv.role': 'teamleider', 'members.tl.role': 'leiding', tlIds: ['opv'] })));
+await t('overdracht: oud-teamleider is geen teamleider meer', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { 'members.ld.perms': ALL })));
+
+/* ---- alleen recht Jaarplanning: planning wel, opkomsten niet (koppelen vraagt ook Opkomsten of Banken) ---- */
+await seed();
+await env.withSecurityRulesDisabled(c => updateDoc(doc(c.firestore(), 'speltakken/s1'), { 'members.ld.perms': { ...NONE, plan: true } }));
+await t('alleen jaarplanning: planning aanpassen', () => assertSucceeds(setDoc(doc(ld, 'speltakken/s1/planning/p1'), { date: '2026-11-07', opkId: null })));
+await t('alleen jaarplanning: opkomst aanpassen niet', () => assertFails(setDoc(doc(ld, 'speltakken/s1/opkomsten/o1'), { title: 'y', state: 'planned' })));
 
 /* ---- uitnodigingen accepteren ---- */
 await seed();
 const nw = as('nw', 'new@t.nl');
 const mem = (role, inviteId, perms) => ({ name: 'N', email: 'x', role, perms, inviteId, since: 1 });
-await t('accepteren leiding met ander e-mailadres niet', () => assertFails(updateDoc(doc(as('zz', 'zz@t.nl'), 'speltakken/s1'), { 'members.zz': mem('leiding', 'iLd', NONE), memberIds: arrayUnion('zz') })));
-await t('accepteren leiding met onbevestigd e-mailadres niet', () => assertFails(updateDoc(doc(unv('nw', 'new@t.nl'), 'speltakken/s1'), { 'members.nw': mem('leiding', 'iLd', NONE), memberIds: arrayUnion('nw') })));
-await t('accepteren leiding als teamleider niet', () => assertFails(updateDoc(doc(nw, 'speltakken/s1'), { 'members.nw': mem('teamleider', 'iLd', NONE), memberIds: arrayUnion('nw') })));
-await t('accepteren leiding', () => assertSucceeds(updateDoc(doc(nw, 'speltakken/s1'), { 'members.nw': mem('leiding', 'iLd', NONE), memberIds: arrayUnion('nw') })));
-await t('uitnodiging als gebruikt markeren', () => assertSucceeds(updateDoc(doc(nw, 'invites/iLd'), { usedBy: 'nw' })));
+const ldJoin = (who, role, id = 'iLd', perms = NONE) => ({ ['members.' + who]: mem(role, id, perms), memberIds: arrayUnion(who) });
+await t('accepteren leiding met ander e-mailadres niet', () => assertFails(joinB(as('zz', 'zz@t.nl'), 'speltakken/s1', ldJoin('zz', 'leiding'), 'iLd', 'zz')));
+await t('accepteren leiding met onbevestigd e-mailadres niet', () => assertFails(joinB(unv('nw', 'new@t.nl'), 'speltakken/s1', ldJoin('nw', 'leiding'), 'iLd', 'nw')));
+await t('accepteren leiding als teamleider niet', () => assertFails(joinB(nw, 'speltakken/s1', ldJoin('nw', 'teamleider'), 'iLd', 'nw')));
+await t('toetreden zonder de uitnodiging als gebruikt te markeren: nee', () => assertFails(updateDoc(doc(nw, 'speltakken/s1'), ldJoin('nw', 'leiding'))));
+await t('accepteren leiding', () => assertSucceeds(joinB(nw, 'speltakken/s1', ldJoin('nw', 'leiding'), 'iLd', 'nw')));
+await t('opnieuw toetreden met dezelfde uitnodiging: nee', async () => {
+  await assertSucceeds(updateDoc(doc(as('tl', 'tl@t.nl'), 'speltakken/s1'), { 'members.nw': deleteField(), memberIds: arrayRemove('nw') }));
+  await assertFails(joinB(nw, 'speltakken/s1', ldJoin('nw', 'leiding'), 'iLd', 'nw'));
+  await assertFails(updateDoc(doc(nw, 'speltakken/s1'), ldJoin('nw', 'leiding')));
+});
 const nt = as('nt', 'newtl@t.nl');
-await t('accepteren teamleider zonder tlIds niet', () => assertFails(updateDoc(doc(nt, 'speltakken/s1'), { 'members.nt': mem('teamleider', 'iTl', ALL), memberIds: arrayUnion('nt') })));
-await t('accepteren teamleider', () => assertSucceeds(updateDoc(doc(nt, 'speltakken/s1'), { 'members.nt': mem('teamleider', 'iTl', ALL), memberIds: arrayUnion('nt'), tlIds: arrayUnion('nt') })));
+await t('uitnodiging als gebruikt markeren met onbevestigd e-mailadres: nee', () => assertFails(updateDoc(doc(unv('nt', 'newtl@t.nl'), 'invites/iTl'), { usedBy: 'nt' })));
+await t('accepteren teamleider zonder tlIds niet', () => assertFails(joinB(nt, 'speltakken/s1', ldJoin('nt', 'teamleider', 'iTl', ALL), 'iTl', 'nt')));
+await t('accepteren teamleider', () => assertSucceeds(joinB(nt, 'speltakken/s1', { ...ldJoin('nt', 'teamleider', 'iTl', ALL), tlIds: arrayUnion('nt') }, 'iTl', 'nt')));
 const ol = as('ol', 'old@t.nl');
-await t('oude uitnodiging oude speltak: met tlIds niet', () => assertFails(updateDoc(doc(ol, 'speltakken/s0'), { 'members.ol': mem('teamleider', 'iOld', ALL), memberIds: arrayUnion('ol'), tlIds: arrayUnion('ol') })));
-await t('oude uitnodiging oude speltak: zonder tlIds', () => assertSucceeds(updateDoc(doc(ol, 'speltakken/s0'), { 'members.ol': mem('teamleider', 'iOld', ALL), memberIds: arrayUnion('ol') })));
-await t('verlopen uitnodiging niet', () => assertFails(updateDoc(doc(as('lt', 'late@t.nl'), 'speltakken/s1'), { 'members.lt': mem('leiding', 'iExp', NONE), memberIds: arrayUnion('lt') })));
+await t('oude uitnodiging oude speltak: met tlIds niet', () => assertFails(joinB(ol, 'speltakken/s0', { ...ldJoin('ol', 'teamleider', 'iOld', ALL), tlIds: arrayUnion('ol') }, 'iOld', 'ol')));
+await t('oude uitnodiging oude speltak: zonder tlIds', () => assertSucceeds(joinB(ol, 'speltakken/s0', ldJoin('ol', 'teamleider', 'iOld', ALL), 'iOld', 'ol')));
+await t('verlopen uitnodiging niet', () => assertFails(joinB(as('lt', 'late@t.nl'), 'speltakken/s1', ldJoin('lt', 'leiding', 'iExp'), 'iExp', 'lt')));
 const g2 = as('ga2', 'ga2@t.nl');
-await t('accepteren beheer groep', () => assertSucceeds(updateDoc(doc(g2, 'groepen/g1'), { 'admins.ga2': { name: 'G', email: 'ga2@t.nl', since: 1, inviteId: 'iGa' }, adminIds: arrayUnion('ga2') })));
-await t('beheer groep met leiding-uitnodiging niet', () => assertFails(updateDoc(doc(nw, 'groepen/g1'), { 'admins.nw': { name: 'G', email: 'x', since: 1, inviteId: 'iLd' }, adminIds: arrayUnion('nw') })));
+const gaJoin = { 'admins.ga2': { name: 'G', email: 'ga2@t.nl', since: 1, inviteId: 'iGa' }, adminIds: arrayUnion('ga2') };
+await t('beheer groep: toetreden zonder markeren niet', () => assertFails(updateDoc(doc(g2, 'groepen/g1'), gaJoin)));
+await t('accepteren beheer groep', () => assertSucceeds(joinB(g2, 'groepen/g1', gaJoin, 'iGa', 'ga2')));
+await t('beheer groep met leiding-uitnodiging niet', () => assertFails(joinB(nw, 'groepen/g1', { 'admins.nw': { name: 'G', email: 'x', since: 1, inviteId: 'iLd' }, adminIds: arrayUnion('nw') }, 'iLd', 'nw')));
 const r2 = as('r2', 'r2@t.nl');
-await t('accepteren beheer totaal', () => assertSucceeds(updateDoc(doc(r2, 'beheer/totaal'), { 'people.r2': { name: 'R', email: 'r2@t.nl', since: 1, inviteId: 'iRoot' }, ids: arrayUnion('r2') })));
+const rootJoin = { 'people.r2': { name: 'R', email: 'r2@t.nl', since: 1, inviteId: 'iRoot' }, ids: arrayUnion('r2') };
+await t('beheer totaal: toetreden zonder markeren niet', () => assertFails(updateDoc(doc(r2, 'beheer/totaal'), rootJoin)));
+await t('accepteren beheer totaal', () => assertSucceeds(joinB(r2, 'beheer/totaal', rootJoin, 'iRoot', 'r2')));
 await t('nieuwe beheer totaal leest alles', () => assertSucceeds(getDocs(collection(r2, 'speltakken'))));
+await seed();
+await t('uitnodiging als gebruikt markeren', () => assertSucceeds(updateDoc(doc(nw, 'invites/iLd'), { usedBy: 'nw' })));
+await t('beheer groep: opnieuw toetreden met dezelfde uitnodiging niet', async () => {
+  await assertSucceeds(joinB(g2, 'groepen/g1', gaJoin, 'iGa', 'ga2'));
+  await assertSucceeds(updateDoc(doc(ga, 'groepen/g1'), { 'admins.ga2': deleteField(), adminIds: ['ga'] }));
+  await assertFails(joinB(g2, 'groepen/g1', gaJoin, 'iGa', 'ga2'));
+});
 
 /* ---- oude speltak (nog niet gekoppeld) blijft werken ---- */
 await seed();

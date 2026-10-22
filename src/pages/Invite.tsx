@@ -32,6 +32,7 @@ export default function InvitePage() {
     <h2>{inv.invitedByName || 'Iemand'} nodigt je uit</h2>
     <p>Als <b>{KIND_LABELS[inv.kind]}</b> voor <b>{where}</b>.</p>
     {inv.kind === 'leiding' && <p className="hint">Rechten: {Object.entries(inv.perms).filter(([, v]) => v).map(([k]) => PERM_LABELS[k as keyof typeof PERM_LABELS]).join(', ') || 'alleen bekijken'}.</p>}
+    {inv.kind === 'leiding' && inv.transfer && <p className="hint">{inv.invitedByName || 'De teamleider'} wil de rol van teamleider aan je overdragen. Dat doet {inv.invitedByName || 'hij'} zodra je in het team zit.</p>}
   </>;
   const used = !!inv.usedBy, expired = inviteExpired(inv);
   if (used || expired) return box(<>{intro}<p className="hint" style={{ color: 'var(--danger)', fontWeight: 700 }}>{used ? 'Deze uitnodiging is al gebruikt.' : 'Deze uitnodiging is verlopen. Vraag om een nieuwe.'}</p><Link className="btn" to="/">Naar de start</Link></>);

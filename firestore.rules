@@ -33,6 +33,8 @@ service cloud.firestore {
     function inviteOk(i, kind) {
       return verified() && inviteKind(i) == kind && i.email == myEmail() && i.usedBy == null && i.get('expiresAt', 9999999999999) > nowMs();
     }
+    // in dezelfde schrijfactie (batch) als gebruikt gemarkeerd: dan kan dezelfde uitnodiging niet nog een keer
+    function usedNow(id) { return getAfter(/databases/$(database)/documents/invites/$(id)).data.usedBy == me(); }
 
     // ---- gebruikersprofiel: alleen van jezelf ----
     match /users/{uid} {
@@ -72,7 +74,8 @@ service cloud.firestore {
           && request.resource.data.ids.size() == resource.data.ids.size() + 1
           && me() in request.resource.data.ids
           && request.resource.data.people[me()].inviteId is string
-          && inviteOk(invite(request.resource.data.people[me()].inviteId), 'totaal'))
+          && inviteOk(invite(request.resource.data.people[me()].inviteId), 'totaal')
+          && usedNow(request.resource.data.people[me()].inviteId))
       );
       allow delete: if false;
     }
@@ -100,7 +103,8 @@ service cloud.firestore {
           && me() in request.resource.data.adminIds
           && request.resource.data.admins[me()].inviteId is string
           && inviteOk(invite(request.resource.data.admins[me()].inviteId), 'groep')
-          && invite(request.resource.data.admins[me()].inviteId).gid == gid)
+          && invite(request.resource.data.admins[me()].inviteId).gid == gid
+          && usedNow(request.resource.data.admins[me()].inviteId))
       );
       allow delete: if isRoot();
 
@@ -190,20 +194,20 @@ service cloud.firestore {
           // Beheer (groep) voor een bestaande groep: door Beheer (totaal) of een beheerder van die groep
           || (request.resource.data.kind == 'groep' && request.resource.data.gid is string
               && exists(groupPath(request.resource.data.gid)) && isAdminOf(request.resource.data.gid))
-          // teamleider: door de beheerder van de groep, of als overdracht door een teamleider van die speltak
+          // teamleider: alleen door de beheerder van de groep
           || (request.resource.data.kind == 'teamleider' && request.resource.data.role == 'teamleider'
               && request.resource.data.sid is string
               && request.resource.data.gid == spGid(get(spPath(request.resource.data.sid)).data)
-              && (isAdminOf(spGid(get(spPath(request.resource.data.sid)).data))
-                  || (request.resource.data.transfer == true && tlOf(get(spPath(request.resource.data.sid)).data))))
+              && isAdminOf(spGid(get(spPath(request.resource.data.sid)).data)))
           // leiding: door een teamleider van die speltak of de beheerder van de groep
+          // (rol overdragen = leiding met alle rechten; daarna draagt de teamleider zelf over)
           || (request.resource.data.kind == 'leiding' && request.resource.data.role == 'leiding'
               && request.resource.data.sid is string
               && request.resource.data.gid == spGid(get(spPath(request.resource.data.sid)).data)
               && (tlOf(get(spPath(request.resource.data.sid)).data) || isAdminOf(spGid(get(spPath(request.resource.data.sid)).data))))
         );
-      // de genodigde markeert hem als gebruikt
-      allow update: if signedIn()
+      // de genodigde markeert hem als gebruikt (met bevestigd e-mailadres, samen met het toetreden)
+      allow update: if verified()
         && resource.data.usedBy == null
         && resource.data.email == myEmail()
         && changed().hasOnly(['usedBy'])
@@ -248,7 +252,8 @@ service cloud.firestore {
         || (isAdmin()
             && changed().hasOnly(['members', 'memberIds', 'tlIds', 'name', 'groupName', 'gid'])
             && (request.resource.data.get('gid', null) == resource.data.get('gid', null) || isRoot()))
-        // teamleider: team en rechten; teamleiders erbij aanstellen niet, wel overdragen of aftreden
+        // teamleider: team en rechten; teamleiders erbij aanstellen niet, wel overdragen of aftreden.
+        // Teamleiders blijven in het team (een mede-teamleider eruit halen doet de beheerder).
         || (isTL()
             && changed().hasOnly(['members', 'memberIds', 'tlIds'])
             && (!hasTl(resource.data)
@@ -257,7 +262,8 @@ service cloud.firestore {
                     && request.resource.data.tlIds.size() >= 1
                     && request.resource.data.tlIds.size() <= resource.data.tlIds.size()
                     && request.resource.data.tlIds.hasAll(resource.data.tlIds.removeAll([me()]))
-                    && request.resource.data.memberIds.hasAll(request.resource.data.tlIds))))
+                    && request.resource.data.memberIds.hasAll(request.resource.data.tlIds)))
+            && (!hasTl(request.resource.data) || request.resource.data.memberIds.hasAll(request.resource.data.tlIds)))
         // jezelf toevoegen met een geldige uitnodiging voor jouw e-mailadres
         || (!isMember()
             && changed().hasOnly(['members', 'memberIds', 'tlIds'])
@@ -267,11 +273,12 @@ service cloud.firestore {
             && me() in request.resource.data.memberIds
             && request.resource.data.members[me()].inviteId is string
             && joinOk(invite(request.resource.data.members[me()].inviteId)))
-        // jezelf uit het team halen (niet als teamleider)
+        // jezelf uit het team halen (niet als teamleider); de rest van het team blijft precies zoals het was
         || (isMember() && !isTL()
             && changed().hasOnly(['members', 'memberIds'])
             && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([me()])
-            && !(me() in request.resource.data.memberIds))
+            && !(me() in request.resource.data.members)
+            && request.resource.data.memberIds.toSet() == resource.data.memberIds.toSet().difference([me()].toSet()))
       );
       // speltak helemaal weggooien: alleen de beheerder van de groep (of Beheer totaal)
       allow delete: if isAdminOf(spGid(resource.data));
@@ -279,6 +286,7 @@ service cloud.firestore {
       function joinOk(i) {
         return i.sid == sid
           && (inviteOk(i, 'teamleider') || inviteOk(i, 'leiding'))
+          && usedNow(request.resource.data.members[me()].inviteId)
           && request.resource.data.members[me()].role == inviteKind(i)
           && request.resource.data.members[me()].perms == i.perms
           && (inviteKind(i) == 'teamleider' && hasTl(resource.data)

@@ -25,7 +25,7 @@ export type Invite = {
   gid: string | null; groupName: string; sid: string | null; speltakName: string;
   role: Role | null; perms: Perms;
   invitedBy: string; invitedByName: string; createdAt: number; expiresAt: number; usedBy: string | null;
-  /** De uitnodiger wil zijn eigen rol overdragen: na acceptatie kan hij aftreden. */
+  /** De uitnodiger wil zijn eigen rol overdragen: na acceptatie draagt hij zijn rol over aan de genodigde. */
   transfer: boolean;
 };
 export const KIND_LABELS: Record<InviteKind, string> = { totaal: 'Beheer (totaal)', groep: 'Beheer (groep)', teamleider: 'Teamleider', leiding: 'Leiding' };

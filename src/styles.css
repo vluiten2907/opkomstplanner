@@ -821,6 +821,8 @@ aside .notice .ntext { flex: none; }
 .perm-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: start; }
 .team { display: grid; gap: 8px; }
 .member { background: var(--sunk); border-radius: 12px; padding: 10px 12px; }
+.member .heir { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin-top: 10px; padding-top: 10px; border-top: 2px dashed var(--edge); }
+.member .heir .btn { max-width: 100%; white-space: normal; text-align: left; }
 .invite { padding-top: 14px; border-top: 2px dashed var(--edge); }
 .three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 fieldset:disabled .btn, fieldset:disabled .acc, fieldset:disabled .sw { opacity: .55; cursor: not-allowed; }

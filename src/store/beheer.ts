@@ -64,25 +64,40 @@ export async function listInvites(by: { all?: boolean; gid?: string; sid?: strin
   return s.docs.map(d => normInvite(d.id, d.data())).filter(i => !i.usedBy).sort((a, b) => b.createdAt - a.createdAt);
 }
 
-/** Uitnodiging accepteren: je krijgt de rol uit de uitnodiging. */
+/** Wie trad toe met een "Mijn rol overdragen"-uitnodiging van `by` in deze speltak? uid's, gecontroleerd aan de uitnodiging zelf. */
+export async function transferJoiners(sid: string, by: string): Promise<string[]> {
+  const s = await getDocs(query(collection(db, 'invites'), where('sid', '==', sid)));
+  return s.docs.map(d => normInvite(d.id, d.data())).filter(i => i.transfer && i.invitedBy === by && !!i.usedBy).map(i => i.usedBy!);
+}
+
+/**
+ * Uitnodiging accepteren: je krijgt de rol uit de uitnodiging. Toetreden en de uitnodiging als gebruikt markeren
+ * gaan in één schrijfactie: lukt het een niet, dan het ander ook niet, en dezelfde link werkt daarna niet nog een keer.
+ */
 export async function acceptInvite(inv: Invite, me: Me) {
   const admin: Admin = { name: me.name, email: me.email.toLowerCase(), since: Date.now(), inviteId: inv.id };
+  const join = (ref: ReturnType<typeof doc>, patch: Record<string, unknown>) => {
+    const b = writeBatch(db);
+    b.update(ref, patch);
+    b.update(doc(db, 'invites', inv.id), { usedBy: me.uid });
+    return b.commit();
+  };
   if (inv.kind === 'totaal') {
-    await updateDoc(doc(db, 'beheer', 'totaal'), { ['people.' + me.uid]: admin, ids: arrayUnion(me.uid) });
+    await join(doc(db, 'beheer', 'totaal'), { ['people.' + me.uid]: admin, ids: arrayUnion(me.uid) });
   } else if (inv.kind === 'groep') {
-    await updateDoc(doc(db, 'groepen', inv.gid!), { ['admins.' + me.uid]: admin, adminIds: arrayUnion(me.uid) });
+    await join(doc(db, 'groepen', inv.gid!), { ['admins.' + me.uid]: admin, adminIds: arrayUnion(me.uid) });
   } else {
+    // Rol overdragen: je komt binnen als leiding met alle rechten; de teamleider draagt daarna zelf zijn rol aan je over.
     const member: Member = { name: me.name, email: me.email.toLowerCase(), role: inv.kind, perms: normPerms(inv.perms), inviteId: inv.id, since: Date.now() };
     const ref = doc(db, 'speltakken', inv.sid!);
     const base = { ['members.' + me.uid]: member, memberIds: arrayUnion(me.uid) };
     if (inv.kind === 'teamleider') {
       // Nieuwe speltakken houden teamleiders bij in tlIds; oude (nog niet gekoppelde) niet. De genodigde kan dat niet vooraf zien.
-      try { await updateDoc(ref, { ...base, tlIds: arrayUnion(me.uid) }); }
-      catch (e: any) { if (e?.code !== 'permission-denied') throw e; await updateDoc(ref, base); }
-    } else await updateDoc(ref, base);
+      try { await join(ref, { ...base, tlIds: arrayUnion(me.uid) }); }
+      catch (e: any) { if (e?.code !== 'permission-denied') throw e; await join(ref, base); }
+    } else await join(ref, base);
     await setDoc(doc(db, 'users', me.uid), { speltakIds: arrayUnion(inv.sid) }, { merge: true });
   }
-  await updateDoc(doc(db, 'invites', inv.id), { usedBy: me.uid });
 }
 
 /* ---------- Beheer (totaal) ---------- */
