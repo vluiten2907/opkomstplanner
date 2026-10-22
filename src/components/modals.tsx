@@ -6,7 +6,8 @@ import { toast } from '../store/toast';
 import { Modal, TimePicker, Field, Chip, ConfirmBtn } from './ui';
 import { PickOpk } from './shared';
 import { addDays, clone, fmtLong, fmtNL, fmtRange, parseNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, todayISO } from '../lib/time';
-import { analyze, blockFromLib, byTitle, catOf, dayTitle, entryTimes, fixedBlocks, isKamp, kampLength, lanesLayout, minNeed, newKamp, newOpk, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, setOpkTime, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
+import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, entryTimes, firstFree, fixedBlocks, isKamp, kampLength, lanesLayout, minNeed, newKamp, newOpk, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
+import { Ticks, PrepZones, blkGeom, lanesStyle } from './timeline';
 import { uid } from '../lib/time';
 import type { NameSpec } from '../store/modal';
 
@@ -176,31 +177,27 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
   const nav = useNavigate();
   const [, bump] = useState(0);
   const [libId, setLibId] = useState(''); const [libDay, setLibDay] = useState(0);
+  // alle hooks vóór het stoppen hieronder: de opkomst kan elders verwijderd worden terwijl dit venster open staat
+  const [selId, setSelId] = useState<string | null>(null);
   const o = getO(oid); if (!o) return null;
   const e = entryOfOpk(o), present = e ? presentForEntry(e, o) : [...leaders];
   const A = analyze(o, present, leaders), need = minNeed(o);
   const upd = (fn: (o: Opk) => void) => { fn(o); if (isKamp(o)) syncKamp(o); saveOpk({ ...o }); bump(x => x + 1); };
   const containers = isKamp(o) ? o.days.map((d, i) => ({ d, label: dayTitle(o, i, e ? addDays(e.date, i) : null), lo: d.start, hi: d.end })) : [{ d: o as unknown as Day, label: '', lo: o.start - (o.prep || 0), hi: o.end + (o.post || 0) }];
-  const [selId, setSelId] = useState<string | null>(null);
   const toggle = (b: Block, n: string) => upd(() => { b.names = b.names.includes(n) ? b.names.filter(x => x !== n) : [...b.names, n]; });
   /* Compacte tijdlijn: onderdelen die tegelijk zijn staan naast elkaar, net als in de bouwer. */
   const ROW = 20;
   const timeline = (C: typeof containers[0]) => {
-    const T0 = C.lo, T1 = C.hi, H = (T1 - T0) / 5 * ROW, pos = lanesLayout(C.d.blocks), long = T1 - T0 > 480;
-    const ticks: React.ReactNode[] = [];
-    for (let m = T0; m <= T1; m += 5) { if (m % (long ? 30 : 15) !== 0 && m !== T0 && m !== T1) continue; ticks.push(<span key={m} className={'tick' + (m % 60 === 0 ? ' hour' : '')} style={{ top: (m - T0) / 5 * ROW }}>{fmtT(m)}</span>); }
-    const off = ((T0 % 15) / 5) * ROW;
+    const T0 = C.lo, T1 = C.hi, pos = lanesLayout(C.d.blocks);
     return <div className="tl tk-tl">
-      <div className="ticks" style={{ height: H }}>{ticks}</div>
-      <div className="lanes" style={{ height: H, ['--row' as any]: ROW + 'px', backgroundPosition: `0 ${off ? -off : 0}px` }}>
-        {!isKamp(o) && o.prep ? <div className="zone" style={{ top: 0, height: o.prep / 5 * ROW }}><span>Voorbereiding leiding · {o.prep} min</span></div> : null}
-        {!isKamp(o) && o.post ? <div className="zone" style={{ top: (o.end - T0) / 5 * ROW, height: o.post / 5 * ROW }}><span>Nabespreking leiding · {o.post} min</span></div> : null}
+      <Ticks T0={T0} T1={T1} row={ROW} />
+      <div className="lanes" style={lanesStyle(T0, T1, ROW)}>
+        <PrepZones o={o} T0={T0} row={ROW} />
         {C.d.blocks.filter(b => b.start + b.dur > T0 && b.start < T1).map(b => {
-          const p = pos[b.id], top = (b.start - T0) / 5 * ROW, h = b.dur / 5 * ROW - 3, c = catOf(settings, b.cat);
+          const g = blkGeom(pos[b.id], b, T0, ROW, b.id === selId), c = catOf(settings, b.cat);
           const short = !!b.minLeaders && b.names.length < b.minLeaders, extra = b.names.filter(n => !leaders.includes(n));
-          const cls = ['blk', h < 46 ? 'short' : '', h < 24 ? 'tiny' : '', h < 92 ? 'mid' : '', b.id === selId ? 'sel' : '', p.n > 1 ? 'overlap' : ''].join(' ');
-          return <div key={b.id} className={cls} role="button" tabIndex={0} aria-label={`${b.title || 'Naamloos onderdeel'}, ${fmtT(b.start)} tot ${fmtT(b.start + b.dur)}`}
-            style={{ ['--c' as any]: c.color, top: top + 1.5, height: h, left: `calc(${p.lane / p.n * 100}% + 4px)`, width: `calc(${100 / p.n}% - 8px)` }}
+          return <div key={b.id} className={g.cls.join(' ')} role="button" tabIndex={0} aria-label={`${b.title || 'Naamloos onderdeel'}, ${fmtT(b.start)} tot ${fmtT(b.start + b.dur)}`}
+            style={{ ['--c' as any]: c.color, ...g.style }}
             onClick={() => setSelId(b.id === selId ? null : b.id)} onKeyDown={ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setSelId(b.id === selId ? null : b.id); } }}>
             <div className="cols3">
               <div className="c1"><div className="t">{b.title || 'Naamloos onderdeel'}</div>
@@ -235,11 +232,16 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
   };
   const addLib = () => {
     const l = lib.find(x => x.id === libId) || lib[0]; if (!l) return;
-    const C = containers[libDay] || containers[0], bl = [...C.d.blocks].sort((x, y) => x.start - y.start), dur = Math.min(l.dur, C.d.end - C.d.start);
-    let t = C.d.start, at: number | null = null;
-    for (const x of bl) { if (x.start - t >= dur) { at = t; break; } t = Math.max(t, x.start + x.dur); }
-    if (at == null) at = C.d.end - t >= dur ? t : C.d.start;
-    const nb = blockFromLib(l, at); nb.dur = dur; upd(() => { C.d.blocks.push(nb); }); toast(`${l.title || 'Activiteit'} toegevoegd om ${fmtT(at!)}`);
+    const C = containers[libDay] || containers[0], dur = Math.min(l.dur, C.d.end - C.d.start);
+    // eerste vrije moment; is er geen gat dat lang genoeg is, dan aan het begin
+    const at = firstFree(C.d, dur) ?? C.d.start;
+    const nb = blockFromLib(l, at); nb.dur = dur; upd(() => { C.d.blocks.push(nb); }); toast(`${l.title || 'Activiteit'} toegevoegd om ${fmtT(at)}`);
+  };
+  const setTime = (which: 'start' | 'end', v: number) => {
+    const r = changeOpkTime(o, which, v);
+    if (!r.opk) { toast(r.error); return; }
+    const c = r.opk; upd(() => { o.start = c.start; o.end = c.end; o.blocks = c.blocks; });
+    if (r.note) toast(r.note);
   };
   const togglePlanner = (n: string) => {
     if (!e) return; const on = plannersOf(e, o).includes(n);
@@ -251,8 +253,8 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
     <div className="tk-head">
       <Field label="Opkomst titel"><input value={o.title} onChange={ev => upd(() => { o.title = ev.target.value; if (e) savePlan({ ...e, topic: ev.target.value }); })} /></Field>
       {!isKamp(o) && <>
-        <Field label="Begintijd"><TimePicker value={o.start} onChange={v => upd(() => { const m = setOpkTime(o, 'start', v); if (m) toast(m); })} from={360} to={1430} /></Field>
-        <Field label="Eindtijd"><TimePicker value={o.end} onChange={v => { const m = setOpkTime(o, 'end', v); if (m && m.startsWith('De eindtijd')) { toast(m); return; } upd(() => {}); }} from={365} to={1435} /></Field>
+        <Field label="Begintijd"><TimePicker value={o.start} onChange={v => setTime('start', v)} from={360} to={1430} /></Field>
+        <Field label="Eindtijd"><TimePicker value={o.end} onChange={v => setTime('end', v)} from={365} to={1435} /></Field>
         <Field label="Voorbereiding"><select value={o.prep} onChange={ev => upd(() => { o.prep = +ev.target.value; })}>{PREP_OPTS.map(m => <option key={m} value={m}>{prepLabel(m)}</option>)}</select></Field>
         <Field label="Nabespreking"><select value={o.post} onChange={ev => upd(() => { o.post = +ev.target.value; })}>{PREP_OPTS.map(m => <option key={m} value={m}>{prepLabel(m)}</option>)}</select></Field>
       </>}

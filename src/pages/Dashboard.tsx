@@ -6,8 +6,8 @@ import { toast } from '../store/toast';
 import { openModal } from '../store/modal';
 import { Strip, StatusPill, CatTags, PeopleChips, usePdf, PageTitle } from '../components/shared';
 import { Dot, TimePicker } from '../components/ui';
-import { addDays, cap, clone, dayDiff, fmtLong, fmtRange, fmtShort, fmtT, fromISO, isoWeek, mon3, plural, todayISO, toISO, DAYS, MONTHS } from '../lib/time';
-import { catOf, dayTitle, entryStatus, entryTimes, isKamp, letterDue, minNeed, newKamp, newOpk, opkCatList, plannersOf, setOpkTime, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Opk, type Plan, type Row } from '../lib/model';
+import { addDays, cap, dayDiff, fmtLong, fmtRange, fmtShort, fmtT, fromISO, isoWeek, mon3, plural, todayISO, toISO, DAYS, MONTHS } from '../lib/time';
+import { catOf, dayTitle, entryStatus, entryTimes, isKamp, letterDue, minNeed, newKamp, newOpk, opkCatList, plannersOf, changeOpkTime, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Opk, type Plan, type Row } from '../lib/model';
 
 export default function Dashboard() {
   const S = useSpeltak();
@@ -123,7 +123,7 @@ function Hero({ r, today }: { r: Row; today: string }) {
   };
   const saveShort = (v: string) => { if (o) saveOpk({ ...o, short: v }); else savePlan({ ...entry(), note: v }); };
   const setTime = (which: 'start' | 'end', v: number) => {
-    if (o) { const c = clone(o), m = setOpkTime(c, which, v); if (m) toast(m); if (m && m.startsWith('De eindtijd')) return; saveOpk(c); return; }
+    if (o) { const r = changeOpkTime(o, which, v); if (!r.opk) { toast(r.error); return; } if (r.note) toast(r.note); saveOpk(r.opk); return; }
     const x = entry(), s0 = x.start ?? settings.defStart, e0 = x.end ?? settings.defEnd;
     if (which === 'end' && v <= s0) { toast('De eindtijd moet na de begintijd liggen.'); return; }
     if (which === 'start') savePlan({ ...x, start: v, end: e0 <= v ? v + 60 : e0 }); else savePlan({ ...x, start: s0, end: v });

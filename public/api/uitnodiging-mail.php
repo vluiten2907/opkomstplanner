@@ -69,9 +69,11 @@ if (($teller[$dag] ?? 0) >= 20) { flock($fh, LOCK_UN); antwoord(429, ['fout' => 
 
 // 4. Mail opbouwen
 // Vrije tekst in de mail: kort houden en geen links, zodat niemand de mail voor spam of phishing kan gebruiken.
+// Geen link = geen http(s)://, www. en ook geen domeinnaam: een punt tussen een letter/cijfer en minstens twee letters
+// ("evil.de", "bit.ly/x", "login-scouting.app"), en geen IP-adres. Namen als "St. Jan" of "J.P. Coen" blijven gewoon staan.
 function schoon(?string $s): string {
   $s = trim(preg_replace('/[\x00-\x1F\x7F]+/u', ' ', (string)$s) ?? '');
-  if (preg_match('#(https?:|www\.|://|[a-z0-9-]+\.(nl|com|net|org|be|eu|io|info|ru|xyz)\b)#i', $s)) return '';
+  if (preg_match('#(https?:|www\.|://|[\p{L}\p{N}-][.\x{3002}\x{FF0E}\x{FF61}]\p{L}{2,}|\d{1,3}(\.\d{1,3}){3})#iu', $s)) return '';
   return mb_substr($s, 0, 60);
 }
 $wie = schoon($veld('invitedByName')) ?: 'Een teamleider';

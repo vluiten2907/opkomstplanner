@@ -8,13 +8,13 @@ import { openModal, withFreeName } from '../store/modal';
 import { BankCard, Strip, CatTags, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field } from '../components/ui';
 import { clone, fmtDur, fmtT, plural } from '../lib/time';
-import { allBlocks, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, newOpk, opkCatList, opkCatOf, type Cat, type Opk } from '../lib/model';
+import { allBlocks, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, newOpk, opkCatList, opkCatOf, toBank, type Cat, type Opk } from '../lib/model';
 import type { Gedeeld } from '../store/groepsbank';
 
 type Tab = 'own' | 'group';
 
 export default function Opkomstenbank() {
-  const { settings, opks, saveOpk, deleteOpk, entryOfOpk, savePlan, sid, can, sp, shared, importShared } = useSpeltak();
+  const { settings, opks, saveOpk, removeOpk, sid, can, sp, shared, importShared } = useSpeltak();
   const nav = useNavigate();
   const [tab, setTab] = useState<Tab>('own');
   const [q, setQ] = useState(''); const [cat, setCat] = useState(''); const [from, setFrom] = useState('');
@@ -33,8 +33,7 @@ export default function Opkomstenbank() {
   const own = opks.filter(o => o.state === 'bank');
   const total = own.length;
   const T = !g && sel ? opks.find(o => o.id === sel && o.state === 'bank') : undefined;
-  const remove = (o: Opk) => { const e = entryOfOpk(o); if (e) savePlan({ ...e, opkId: null }); deleteOpk(o.id); if (sel === o.id) setSelRaw(null);
-    toast(o.state === 'draft' ? 'Concept verwijderd' : `"${o.title || 'Opkomst'}" uit de bank verwijderd${uses[o.id] ? '. Ingeplande opkomsten blijven staan' : ''}`); };
+  const remove = (o: Opk) => { if (sel === o.id) setSelRaw(null); removeOpk(o); };
 
   // groepsbank (zonder je eigen gedeelde opkomsten)
   const others = (shared || []).filter(x => x.sid !== sid);
@@ -56,7 +55,7 @@ export default function Opkomstenbank() {
   const draftToBank = (o: Opk) => withFreeName(o.title, {
     title: 'Andere naam kiezen', sub: o.title.trim() ? `"${o.title.trim()}" staat al in de opkomstenbank. Kies een andere naam.` : 'Geef de opkomst een titel voor de bank.', label: 'Opkomst titel', okLabel: 'In bank zetten',
     suggest: o.title.trim() ? freeName(own, o.title) : '', taken: n => taken(n, o.id),
-    ok: name => { allBlocks(o).forEach(b => b.names = []); saveOpk({ ...o, title: name, state: 'bank', lead: '', shared: true }); toast(groupOn ? 'In de opkomstenbank gezet en gedeeld met de groep' : 'In de opkomstenbank gezet'); },
+    ok: name => { saveOpk(toBank(o, name)); toast(groupOn ? 'In de opkomstenbank gezet en gedeeld met de groep' : 'In de opkomstenbank gezet'); },
   });
 
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>

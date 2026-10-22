@@ -299,14 +299,21 @@ service cloud.firestore {
       }
 
       // ---- gegevens van de speltak: lezen mag elk lid en de beheerder ----
+      function oldState() { return resource.data.get('state', ''); }
+      function newState() { return request.resource.data.get('state', ''); }
       match /opkomsten/{id} {
         allow read: if isMember() || isAdmin();
-        allow write: if can('build') || can('bank');
-        allow delete: if isAdmin();
+        // Opkomsten: alles. Banken + Jaarplanning: ook koppelen en inplannen (dat schrijft de opkomst mee).
+        // Alleen Banken: alleen de opkomstenbank (ook een concept in de bank zetten), niets wat ingepland is.
+        allow create: if can('build') || (can('bank') && can('plan')) || (can('bank') && newState() == 'bank');
+        allow update: if can('build') || (can('bank') && can('plan'))
+          || (can('bank') && newState() == 'bank' && oldState() != 'planned');
+        allow delete: if can('build') || (can('bank') && oldState() == 'bank') || isAdmin();
       }
       match /activiteiten/{id} {
         allow read: if isMember() || isAdmin();
-        allow write: if can('bank') || can('build');
+        // de activiteitenbank: alleen met het recht Banken
+        allow write: if can('bank');
         allow delete: if isAdmin();
       }
       match /planning/{id} {

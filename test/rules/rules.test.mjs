@@ -151,6 +151,39 @@ await env.withSecurityRulesDisabled(c => updateDoc(doc(c.firestore(), 'speltakke
 await t('alleen jaarplanning: planning aanpassen', () => assertSucceeds(setDoc(doc(ld, 'speltakken/s1/planning/p1'), { date: '2026-11-07', opkId: null })));
 await t('alleen jaarplanning: opkomst aanpassen niet', () => assertFails(setDoc(doc(ld, 'speltakken/s1/opkomsten/o1'), { title: 'y', state: 'planned' })));
 
+/* ---- Banken en Opkomsten apart: de regels volgen de knoppen in de app ---- */
+const asPerms = (perms) => env.withSecurityRulesDisabled(c => updateDoc(doc(c.firestore(), 'speltakken/s1'), { 'members.ld.perms': { ...NONE, ...perms } }));
+const opk = (id) => doc(ld, 'speltakken/s1/opkomsten/' + id);
+await seed();
+await env.withSecurityRulesDisabled(async c => {
+  const db = c.firestore();
+  for (const [id, state] of [['oP', 'planned'], ['oD', 'draft'], ['oD2', 'draft'], ['oB', 'bank'], ['oB2', 'bank']]) await setDoc(doc(db, 'speltakken/s1/opkomsten/' + id), { title: id, state });
+  await setDoc(doc(db, 'speltakken/s1/activiteiten/a1'), { title: 'Spel' });
+});
+await asPerms({ bank: true });
+await t('alleen banken: bank-opkomst bewerken', () => assertSucceeds(setDoc(opk('oB'), { title: 'Bank 2', state: 'bank' })));
+await t('alleen banken: nieuwe opkomst in de bank', () => assertSucceeds(setDoc(opk('oN'), { title: 'Nieuw', state: 'bank' })));
+await t('alleen banken: concept in de bank zetten', () => assertSucceeds(setDoc(opk('oD'), { title: 'oD', state: 'bank' })));
+await t('alleen banken: ingeplande opkomst wijzigen niet', () => assertFails(setDoc(opk('oP'), { title: 'Hack', state: 'planned' })));
+await t('alleen banken: ingeplande opkomst in de bank zetten niet', () => assertFails(setDoc(opk('oP'), { title: 'oP', state: 'bank' })));
+await t('alleen banken: ingeplande opkomst verwijderen niet', () => assertFails(deleteDoc(opk('oP'))));
+await t('alleen banken: concept aanpassen niet', () => assertFails(setDoc(opk('oD2'), { title: 'Hack', state: 'draft' })));
+await t('alleen banken: concept aanmaken niet', () => assertFails(setDoc(opk('oN2'), { title: 'Nieuw', state: 'draft' })));
+await t('alleen banken: bank-opkomst inplannen niet (vraagt ook Jaarplanning)', () => assertFails(setDoc(opk('oN3'), { title: 'Kopie', state: 'planned' })));
+await t('alleen banken: concept verwijderen niet', () => assertFails(deleteDoc(opk('oD2'))));
+await t('alleen banken: bank-opkomst verwijderen', () => assertSucceeds(deleteDoc(opk('oB2'))));
+await t('alleen banken: activiteit bewaren', () => assertSucceeds(setDoc(doc(ld, 'speltakken/s1/activiteiten/a1'), { title: 'Spel 2' })));
+await asPerms({ bank: true, plan: true });
+await t('banken + jaarplanning: kopie uit de bank inplannen', () => assertSucceeds(setDoc(opk('oK'), { title: 'Kopie', state: 'planned' })));
+await t('banken + jaarplanning: ingeplande opkomst ontkoppelen', () => assertSucceeds(setDoc(opk('oP'), { title: 'oP', state: 'draft' })));
+await asPerms({ build: true });
+await t('alleen opkomsten: ingeplande opkomst wijzigen', () => assertSucceeds(setDoc(opk('oK'), { title: 'Kopie 2', state: 'planned' })));
+await t('alleen opkomsten: concept verwijderen', () => assertSucceeds(deleteDoc(opk('oD2'))));
+await t('alleen opkomsten: activiteit bewaren niet', () => assertFails(setDoc(doc(ld, 'speltakken/s1/activiteiten/a1'), { title: 'Hack' })));
+await t('alleen opkomsten: nieuwe activiteit niet', () => assertFails(setDoc(doc(ld, 'speltakken/s1/activiteiten/a2'), { title: 'Nieuw' })));
+await t('alleen opkomsten: activiteit verwijderen niet', () => assertFails(deleteDoc(doc(ld, 'speltakken/s1/activiteiten/a1'))));
+await t('beheerder groep: activiteit verwijderen', () => assertSucceeds(deleteDoc(doc(as('ga', 'ga@t.nl'), 'speltakken/s1/activiteiten/a1'))));
+
 /* ---- uitnodigingen accepteren ---- */
 await seed();
 const nw = as('nw', 'new@t.nl');

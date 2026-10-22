@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Navigate, Route, Routes, useParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './store/auth';
 import { RolesProvider, useRoles } from './store/roles';
 import { SpeltakProvider } from './store/speltak';
@@ -7,6 +7,7 @@ import { Toast } from './components/ui';
 import SpeltakPages, { Loading } from './SpeltakPages';
 import { configured } from './lib/firebase';
 import { LeaveGuard } from './store/unsaved';
+import ErrorBoundary from './components/ErrorBoundary';
 // Pagina's worden per stuk geladen, zodat de eerste bundel klein blijft.
 const AuthPage = lazy(() => import('./pages/Auth'));
 const InvitePage = lazy(() => import('./pages/Invite'));
@@ -34,9 +35,10 @@ function Home() {
   return <Navigate to={isAdmin ? '/beheer' : '/speltakken'} replace />;
 }
 export default function App() {
+  const { pathname } = useLocation();
   if (!configured) return <div className="auth-wrap"><div className="card pad stack auth-card"><h2>Firebase nog niet ingesteld</h2><p className="hint">Kopieer <code>.env.example</code> naar <code>.env</code>, vul de gegevens van je Firebase-webapp in en start opnieuw.</p></div></div>;
   return <AuthProvider><RolesProvider>
-    <Suspense fallback={<Loading />}><Routes>
+    <ErrorBoundary resetKey={pathname}><Suspense fallback={<Loading />}><Routes>
       <Route path="/inloggen" element={<AuthPage mode="login" />} />
       <Route path="/registreren" element={<Navigate to="/inloggen" replace />} />
       <Route path="/wachtwoord" element={<AuthPage mode="reset" />} />
@@ -49,7 +51,7 @@ export default function App() {
       <Route path="/s/:sid/*" element={<Gate><SpeltakRoutes /></Gate>} />
       <Route path="/" element={<Gate><Home /></Gate>} />
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes></Suspense>
+    </Routes></Suspense></ErrorBoundary>
     <Toast />
     <LeaveGuard />
   </RolesProvider></AuthProvider>;

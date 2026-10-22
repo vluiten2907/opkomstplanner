@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Bookmark, CalendarDays, Copy, Download, Plus, Tent, Trash2, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
@@ -7,14 +7,14 @@ import { openModal, withFreeName } from '../store/modal';
 import { guardLeave, setUnsaved, useDirty } from '../store/unsaved';
 import { Strip, PickOpk, usePdf, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, TimePicker } from '../components/ui';
+import { Ticks, PrepZones, blkGeom, lanesStyle } from '../components/timeline';
 import { cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, uid, DAYS } from '../lib/time';
-import { addDaysSafe, allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, copyOpk, freeName, nameTaken, dayTitle, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, setOpkTime, syncKamp, LIB_FIELDS, PREP_OPTS, SWATCHES, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+import { addDaysSafe, allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, LIB_FIELDS, PREP_OPTS, SWATCHES, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /* ============ Startscherm ============ */
 export default function Bouwer() {
   const { oid } = useParams();
-  const { opks, settings, saveOpk, sid, can, getO } = useSpeltak();
-  const delDraft = useDeleteDraft();
+  const { opks, settings, saveOpk, sid, can, getO, removeOpk } = useSpeltak();
   const nav = useNavigate();
   const o = oid ? getO(oid) : undefined;
   if (oid && o) return <Builder key={o.id} o={o} />;
@@ -25,16 +25,10 @@ export default function Bouwer() {
     {oid && !o && <div className="ctx">Deze opkomst bestaat niet (meer).</div>}
     {can('build') && <div className="row"><button className="btn primary" onClick={() => create(false)}><Plus size={16} />Nieuwe opkomst</button><button className="btn" onClick={() => create(true)}><Tent size={16} />Weekendkamp</button></div>}
     {drafts.length > 0 && <><h2>Concepten</h2><div className="picklist">{drafts.map(x => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
-      extra={can('build') ? <ConfirmBtn className="btn sm ghost" label={<><Trash2 size={14} />Verwijderen</>} confirm="Klik nogmaals" title="Concept verwijderen" onConfirm={() => delDraft(x)} /> : undefined} />)}</div></>}
+      extra={can('build') ? <ConfirmBtn className="btn sm ghost" label={<><Trash2 size={14} />Verwijderen</>} confirm="Klik nogmaals" title="Concept verwijderen" onConfirm={() => removeOpk(x)} /> : undefined} />)}</div></>}
     {bank.length > 0 && <><h2>Uit de opkomstenbank</h2><div className="picklist">{bank.map(x => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
-      extra={can('bank') ? <ConfirmBtn className="btn sm ghost" label={<><Trash2 size={14} />Verwijderen</>} confirm="Klik nogmaals" title="Uit de opkomstenbank verwijderen" onConfirm={() => delDraft(x)} /> : undefined} />)}</div></>}
+      extra={can('bank') ? <ConfirmBtn className="btn sm ghost" label={<><Trash2 size={14} />Verwijderen</>} confirm="Klik nogmaals" title="Uit de opkomstenbank verwijderen" onConfirm={() => removeOpk(x)} /> : undefined} />)}</div></>}
   </div>;
-}
-
-/** Concept verwijderen; een eventuele koppeling in de jaarplanning gaat eerst los. */
-function useDeleteDraft() {
-  const { deleteOpk, entryOfOpk, savePlan } = useSpeltak();
-  return (o: Opk) => { const e = entryOfOpk(o); if (e) savePlan({ ...e, opkId: null }); deleteOpk(o.id); toast(o.state === 'bank' ? `"${o.title || 'Opkomst'}" uit de bank verwijderd. Ingeplande opkomsten blijven staan` : 'Concept verwijderd'); };
 }
 
 /* ============ Bouwer ============ */
@@ -51,8 +45,8 @@ type Ctx = { o: Opk; D: { start: number; end: number; blocks: Block[]; label?: s
 
 function Builder({ o: stored }: { o: Opk }) {
   const S = useSpeltak();
-  const { settings, leaders, lib, opks, saveOpk, savePlan, saveLib, entryOfOpk, presentFor, getO, sid, can, canLink, dropAbsent } = S;
-  const nav = useNavigate(); const pdf = usePdf(); const delDraft = useDeleteDraft();
+  const { settings, leaders, lib, opks, saveOpk, savePlan, saveLib, entryOfOpk, presentFor, getO, sid, can, canLink, dropAbsent, removeOpk } = S;
+  const nav = useNavigate(); const pdf = usePdf();
   const [, bump] = useState(0);
   // Een opkomst uit de bank bewerk je als kladversie: pas bij Opslaan (of Opslaan als kopie) gaat hij naar de bank.
   const bankEdit = stored.state === 'bank';
@@ -100,7 +94,6 @@ function Builder({ o: stored }: { o: Opk }) {
     upd(() => {});
     toast(`"${b.title || 'Naamloos onderdeel'}" verwijderd`, { label: 'Ongedaan maken', fn: () => upd(() => { list.splice(Math.min(i, list.length), 0, b); }) });
   };
-  const firstFree = (dur: number) => { const bl = [...D.blocks].sort((a, b) => a.start - b.start); let t = D.start; for (const b of bl) { if (b.start - t >= dur) return t; t = Math.max(t, b.start + b.dur); } return D.end - t >= dur ? t : null; };
   const insertLib = (l: Lib, start: number) => {
     const dur = Math.min(l.dur, T1 - T0), s = Math.max(T0, Math.min(T1 - dur, start));
     const b = blockFromLib(l, s); b.dur = dur; upd(() => { D.blocks.push(b); }); setSelId(null); return b;
@@ -120,28 +113,35 @@ function Builder({ o: stored }: { o: Opk }) {
     };
     document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h);
   });
+  const setTime = (which: 'start' | 'end', v: number) => {
+    if (readOnly) return;
+    const r = changeOpkTime(o, which, v);
+    if (!r.opk) { toast(r.error); return; }
+    const c = r.opk; upd(() => { o.start = c.start; o.end = c.end; o.blocks = c.blocks; });
+    if (r.note) toast(r.note);
+  };
   const pill = o.state === 'bank' ? <span className="pill good">In opkomstenbank</span> : o.state === 'planned' ? <span className="pill acc">Ingepland</span> : <span className="pill neutral">Concept</span>;
-  const toBank = () => {
+  const putInBank = () => {
     if (!allBlocks(o).length && !o.title) { toast('Geef de opkomst eerst een titel of een onderdeel.'); return; }
     const ask = { title: 'Andere naam kiezen', sub: o.title.trim() ? `"${o.title.trim()}" staat al in de opkomstenbank. Kies een andere naam.` : 'Geef de opkomst een titel voor de bank.', label: 'Opkomst titel', okLabel: 'In bank zetten', suggest: o.title.trim() ? freeName(bankOpks, o.title) : '' };
-    if (o.state === 'draft') return withFreeName(o.title, { ...ask, taken: n => nameTaken(bankOpks, n, o.id), ok: name => { upd(() => { o.title = name; o.state = 'bank'; o.lead = ''; o.shared = true; allBlocks(o).forEach(b => b.names = []); }); toast(S.sp?.gid ? 'In de opkomstenbank gezet en gedeeld met de groep, zonder namen' : 'Opgeslagen in de opkomstenbank, zonder namen van leiding'); } });
+    // concept: gaat zelf de bank in; ingepland: er komt een kopie in de bank (allebei zonder namen)
+    if (o.state === 'draft') return withFreeName(o.title, { ...ask, taken: n => nameTaken(bankOpks, n, o.id), ok: name => { if (readOnly) return; saveOpk(toBank(o, name)); toast(S.sp?.gid ? 'In de opkomstenbank gezet en gedeeld met de groep, zonder namen' : 'Opgeslagen in de opkomstenbank, zonder namen van leiding'); } });
     withFreeName(o.title, { ...ask, taken: n => nameTaken(bankOpks, n), ok: name => {
-      const b = copyOpk(o); b.title = name; b.state = 'bank'; b.srcId = null; b.lead = ''; b.shared = true; b.fromShared = null; allBlocks(b).forEach(x => x.names = []);
-      saveOpk(b); upd(() => { o.srcId = b.id; }); toast('Kopie opgeslagen in de opkomstenbank, zonder leiding');
+      const b = toBank(o, name); saveOpk(b); upd(() => { o.srcId = b.id; }); toast('Kopie opgeslagen in de opkomstenbank, zonder leiding');
     } });
   };
   const dup = () => guardLeave(() => { const c = copyOpk(o); c.state = 'draft'; c.srcId = null; c.title = (o.title || 'Opkomst') + ' (kopie)'; saveOpk(c); nav(`/s/${sid}/bouwer/${c.id}`); toast('Kopie gemaakt'); });
   const updBank = () => {
     if (!src) return;
     if (nameTaken(bankOpks, o.title, src.id)) { toast(`"${o.title.trim()}" bestaat al in de opkomstenbank. Geef deze opkomst eerst een andere titel.`); return; }
-    const fresh = normOpk(clone(o)); allBlocks(fresh).forEach(b => b.names = []);
-    saveOpk({ ...src, cats: [...o.cats], kind: fresh.kind, title: o.title, short: o.short, group: o.group, location: o.location, start: o.start, end: o.end, prep: o.prep, post: o.post, blocks: fresh.blocks, days: fresh.days });
+    const f = toBank(o, o.title, false);
+    saveOpk({ ...src, cats: f.cats, kind: f.kind, title: f.title, short: f.short, group: f.group, location: f.location, start: f.start, end: f.end, prep: f.prep, post: f.post, blocks: f.blocks, days: f.days });
     toast('Opkomstenbank bijgewerkt');
   };
   const pdfBtn = <button className="btn primary" onClick={() => pdf(o)}><Download size={16} />PDF maken</button>;
-  const actions = readOnly ? pdfBtn : o.state === 'draft' ? <><button className="btn" onClick={toBank}><Bookmark size={16} />In bank</button>{canLink && <button className="btn" onClick={() => openModal({ kind: 'toplan', oid: o.id })}><CalendarDays size={16} />Inplannen</button>}{pdfBtn}{can('build') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Concept verwijderen" onConfirm={() => { nav(`/s/${sid}/bouwer`); delDraft(o); }} />}</>
-    : o.state === 'bank' ? <><button className="btn" onClick={dup}><Copy size={16} />Kopie</button>{canLink && <button className="btn" onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: o.id }))}><CalendarDays size={16} />Inplannen</button>}{pdfBtn}{can('bank') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Uit de opkomstenbank verwijderen" onConfirm={() => { setUnsaved(false); nav(`/s/${sid}/bouwer`); delDraft(o); }} />}</>
-      : <><button className="btn" onClick={toBank}><Bookmark size={16} />In bank</button><button className="btn" onClick={() => go(`/s/${sid}/jaarplanning?focus=${e ? e.id : ''}`)}><CalendarDays size={16} />Jaarplanning</button>{pdfBtn}</>;
+  const actions = readOnly ? pdfBtn : o.state === 'draft' ? <><button className="btn" onClick={putInBank}><Bookmark size={16} />In bank</button>{canLink && <button className="btn" onClick={() => openModal({ kind: 'toplan', oid: o.id })}><CalendarDays size={16} />Inplannen</button>}{pdfBtn}{can('build') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Concept verwijderen" onConfirm={() => { nav(`/s/${sid}/bouwer`); removeOpk(o); }} />}</>
+    : o.state === 'bank' ? <>{can('build') && <button className="btn" onClick={dup} title="Kopie als concept"><Copy size={16} />Kopie</button>}{canLink && <button className="btn" onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: o.id }))}><CalendarDays size={16} />Inplannen</button>}{pdfBtn}{can('bank') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Uit de opkomstenbank verwijderen" onConfirm={() => { setUnsaved(false); nav(`/s/${sid}/bouwer`); removeOpk(o); }} />}</>
+      : <><button className="btn" onClick={putInBank}><Bookmark size={16} />In bank</button><button className="btn" onClick={() => go(`/s/${sid}/jaarplanning?focus=${e ? e.id : ''}`)}><CalendarDays size={16} />Jaarplanning</button>{pdfBtn}</>;
   const w = whole.warn;
   return <div className="stack pt-5 md:pt-7" style={{ gap: 16 }}>
     <section className="plan-head">
@@ -162,8 +162,8 @@ function Builder({ o: stored }: { o: Opk }) {
           <Field label="Speltak / groep" htmlFor="om-group"><input id="om-group" value={o.group} readOnly={readOnly} onChange={ev => upd(() => { o.group = ev.target.value; })} placeholder="bijv. Scouts" /></Field>
           <Field label="Locatie" htmlFor="om-loc"><input id="om-loc" value={o.location} readOnly={readOnly} onChange={ev => upd(() => { o.location = ev.target.value; })} placeholder="bijv. Clubhuis" /></Field>
           {!kamp && <>
-            <Field label="Begintijd" className="timefield"><TimePicker value={o.start} from={360} to={1430} onChange={v => upd(() => { const m = setOpkTime(o, 'start', v); if (m) toast(m); })} /></Field>
-            <Field label="Eindtijd" className="timefield"><TimePicker value={o.end} from={365} to={1435} onChange={v => { const m = setOpkTime(o, 'end', v); if (m) { toast(m); return; } upd(() => {}); }} /></Field>
+            <Field label="Begintijd" className="timefield"><TimePicker value={o.start} from={360} to={1430} disabled={readOnly} onChange={v => setTime('start', v)} /></Field>
+            <Field label="Eindtijd" className="timefield"><TimePicker value={o.end} from={365} to={1435} disabled={readOnly} onChange={v => setTime('end', v)} /></Field>
             <Field label="Voorbereiding" hint={o.prep ? 'Leiding om ' + fmtT(o.start - o.prep) : 'Geen tijd vooraf'}><select value={o.prep} disabled={readOnly} onChange={ev => upd(() => { o.prep = +ev.target.value; })}>{PREP_OPTS.map(m => <option key={m} value={m}>{prepLabel(m)}{m ? ' vooraf' : ''}</option>)}</select></Field>
             <Field label="Nabespreking" hint={o.post ? 'Klaar om ' + fmtT(o.end + o.post) : 'Geen tijd achteraf'}><select value={o.post} disabled={readOnly} onChange={ev => upd(() => { o.post = +ev.target.value; })}>{PREP_OPTS.map(m => <option key={m} value={m}>{prepLabel(m)}{m ? ' achteraf' : ''}</option>)}</select></Field>
           </>}
@@ -194,7 +194,7 @@ function Builder({ o: stored }: { o: Opk }) {
           upd(() => { D.blocks.push(c); }); select(c.id); toast(fits ? 'Kopie direct erna gezet' : 'Kopie op dezelfde tijd gezet');
         }} saveLib={saveLib} />
           : <SidePanel tab={sideTab} setTab={t => { setSideTab(t); if (window.matchMedia('(max-width: 900px)').matches) sideRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} ctx={ctx} A={whole} lanesRef={lanesRef} onSelect={select}
-            onPlan={l => { const f = firstFree(Math.min(l.dur, D.end - D.start)); const b = insertLib(l, f == null ? D.start : f); toast(f == null ? 'Geen vrij moment lang genoeg; gezet op ' + fmtT(b.start) : 'Ingepland om ' + fmtT(b.start)); }}
+            onPlan={l => { const f = firstFree(D, Math.min(l.dur, D.end - D.start)); const b = insertLib(l, f == null ? D.start : f); toast(f == null ? 'Geen vrij moment lang genoeg; gezet op ' + fmtT(b.start) : 'Ingepland om ' + fmtT(b.start)); }}
             onDrop={(l, m) => { const b = insertLib(l, m); toast('Ingepland om ' + fmtT(b.start)); }} />}
       </aside>
       <div className={'scrim' + (sel ? ' on' : '')} onClick={() => setSelId(null)} />
@@ -244,7 +244,6 @@ function Timeline({ ctx, A, selId, lanesRef, onSelect, onDelete, onAdd, onChange
   const [ghost, setGhost] = useState<number | null>(null);
   const drag = useRef<{ b: Block; mode: 'move' | 'resize'; y0: number; s0: number; d0: number; moved: boolean } | null>(null);
   const suppress = useRef(false);
-  const H = (T1 - T0) / 5 * row, long = T1 - T0 > 480;
   const minuteAt = (clientY: number, dur = 5) => { const rect = lanesRef.current!.getBoundingClientRect(); const m = T0 + Math.floor((clientY - rect.top) / row) * 5; return Math.max(T0, Math.min(T1 - dur, m)); };
   useEffect(() => {
     const move = (ev: PointerEvent) => {
@@ -258,9 +257,7 @@ function Timeline({ ctx, A, selId, lanesRef, onSelect, onDelete, onAdd, onChange
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
   }, [T0, T1, row, onChange]);
-  const ticks: ReactNode[] = [];
-  for (let m = T0; m <= T1; m += 5) { if (m % (long ? 30 : 15) !== 0 && m !== T0 && m !== T1) continue; ticks.push(<span key={m} className={'tick' + (m % 60 === 0 ? ' hour' : '')} style={{ top: (m - T0) / 5 * row }}>{fmtT(m)}</span>); }
-  const off = ((T0 % 15) / 5) * row, pos = lanesLayout(D.blocks);
+  const pos = lanesLayout(D.blocks);
   const startDrag = (ev: React.PointerEvent, b: Block, mode: 'move' | 'resize', handle: boolean) => {
     if (readOnly || ev.button) return;
     if (ev.pointerType !== 'mouse' && !handle) return;
@@ -269,19 +266,18 @@ function Timeline({ ctx, A, selId, lanesRef, onSelect, onDelete, onAdd, onChange
     if (handle) ev.preventDefault();
   };
   return <div className="tl">
-    <div className="ticks" style={{ height: H }}>{ticks}</div>
-    <div ref={lanesRef} className="lanes" style={{ height: H, ['--row' as any]: row + 'px', backgroundPosition: `0 ${off ? -off : 0}px` }}
+    <Ticks T0={T0} T1={T1} row={row} />
+    <div ref={lanesRef} className="lanes" style={lanesStyle(T0, T1, row)}
       onPointerMove={ev => { if (ev.target === ev.currentTarget && ev.pointerType === 'mouse' && !readOnly) setGhost(minuteAt(ev.clientY)); else if (ghost != null) setGhost(null); }}
       onPointerLeave={() => setGhost(null)}
       onClick={ev => { if (suppress.current || readOnly) return; const t = ev.target as HTMLElement; if (t === ev.currentTarget || t.classList.contains('slotghost')) onAdd(minuteAt(ev.clientY)); }}>
-      {!isKamp(o) && o.prep ? <div className="zone" style={{ top: 0, height: o.prep / 5 * row }}><span>Voorbereiding leiding · {o.prep} min</span></div> : null}
-      {!isKamp(o) && o.post ? <div className="zone" style={{ top: (o.end - T0) / 5 * row, height: o.post / 5 * row }}><span>Nabespreking leiding · {o.post} min</span></div> : null}
+      <PrepZones o={o} T0={T0} row={row} />
       {D.blocks.filter(b => b.start + b.dur > T0 && b.start < T1).map(b => {
-        const p = pos[b.id], top = (b.start - T0) / 5 * row, h = b.dur / 5 * row - 3, c = catOf(settings, b.cat);
-        const cls = ['blk', h < 46 ? 'short' : '', h < 24 ? 'tiny' : '', h < 92 ? 'mid' : '', b.id === selId ? 'sel' : '', p.n > 1 ? 'overlap' : '', drag.current?.b === b && drag.current.moved ? 'dragging' : ''].join(' ');
+        const g = blkGeom(pos[b.id], b, T0, row, b.id === selId), c = catOf(settings, b.cat);
+        const cls = [...g.cls, drag.current?.b === b && drag.current.moved ? 'dragging' : ''].join(' ');
         const under = b.minLeaders && b.names.length < b.minLeaders, mats = splitLines(b.materials).length;
         return <div key={b.id} className={cls} tabIndex={0} role="button" aria-label={`${b.title || 'Naamloos onderdeel'}, ${fmtT(b.start)} tot ${fmtT(b.start + b.dur)}`}
-          style={{ ['--c' as any]: c.color, top: top + 1.5, height: h, left: `calc(${p.lane / p.n * 100}% + 4px)`, width: `calc(${100 / p.n}% - 8px)` }}
+          style={{ ['--c' as any]: c.color, ...g.style }}
           onPointerDown={ev => { const t = ev.target as HTMLElement; if (t.closest('.bdel')) return; const rs = !!t.closest('.rs'), grip = !!t.closest('.grip'); startDrag(ev, b, rs ? 'resize' : 'move', rs || grip); }}
           onClick={ev => { ev.stopPropagation(); if (suppress.current) return; onSelect(b.id); }}
           onKeyDown={ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onSelect(b.id); } }}>
@@ -424,7 +420,7 @@ function Editor({ b, ctx, upd, onClose, onDelete, onDup, saveLib }: { b: Block; 
       <div className="row" style={{ gap: 2, flexWrap: 'nowrap' }}>{!ro && <button className="iconbtn danger" onClick={onDelete} title="Onderdeel verwijderen" aria-label="Onderdeel verwijderen"><Trash2 size={16} /></button>}<button className="closex" onClick={onClose} aria-label="Sluiten"><X size={18} /></button></div></div>
     <Field label="Programma-onderdeel" htmlFor="bf-title"><input id="bf-title" value={b.title} readOnly={ro} onChange={e => upd(() => { b.title = e.target.value; })} placeholder="bijv. Kompasposten" /></Field>
     <div className="two">
-      <Field label="Begin" className="timefield"><TimePicker value={b.start} from={T0} to={T1 - 5} extra onChange={v => upd(() => { b.start = v; b.dur = Math.max(5, Math.min(b.dur, T1 - b.start)); })} /></Field>
+      <Field label="Begin" className="timefield"><TimePicker value={b.start} from={T0} to={T1 - 5} extra disabled={ro} onChange={v => upd(() => { b.start = v; b.dur = Math.max(5, Math.min(b.dur, T1 - b.start)); })} /></Field>
       <Field label="Duur" htmlFor="bf-dur"><select id="bf-dur" value={b.dur} disabled={ro} onChange={e => upd(() => { b.dur = +e.target.value; })}>{durs.map(d => <option key={d} value={d}>{fmtDur(d)}</option>)}</select></Field>
     </div>
     <div className="two">{isFixed(b) ? <div className="field"><span className="lbl">Soort</span><span className="pill neutral" style={{ justifySelf: 'start' }}>{catOf(settings, b.cat).label}</span></div> : <CatSelect prefix="bf" value={b.cat} onChange={id => upd(() => { b.cat = id; })} />}

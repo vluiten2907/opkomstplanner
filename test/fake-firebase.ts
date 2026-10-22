@@ -104,3 +104,6 @@ export function writeBatch() {
   const ops: (() => Promise<void>)[] = [];
   return { set: (r: Ref, d: any, o?: any) => ops.push(() => setDoc(r, d, o)), update: (r: Ref, p: any) => ops.push(() => updateDoc(r, p)), delete: (r: Ref) => ops.push(() => deleteDoc(r)), commit: async () => { for (const op of ops) await op(); } };
 }
+
+// Testhaak: een ander apparaat wijzigt of verwijdert een document (data null = verwijderen). Alleen voor de rooktest.
+(globalThis as any).__fakeRemote = (path: string, data: any) => { if (data === null) delete store[path]; else store[path] = clone(data); persist(); };

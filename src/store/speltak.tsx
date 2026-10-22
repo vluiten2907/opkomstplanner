@@ -2,11 +2,11 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import * as F from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './auth';
-import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, isKamp, addDaysSafe, presentNames, relabelDays, planTimesDiffer, applyPlanTimes } from '../lib/model';
+import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, copyOpk, isKamp, addDaysSafe, presentNames, relabelDays, planTimesDiffer, applyPlanTimes } from '../lib/model';
 import { isTeamleider, normPerms, type Member, type PermKey, type Speltak, type Invite, type Perms } from '../lib/types';
 import { useRoles } from './roles';
 import { createInvite as mkInvite } from './beheer';
-import { uid as mkId, clone, fmtT } from '../lib/time';
+import { clone, fmtT } from '../lib/time';
 import { toast } from './toast';
 import { hasUnsaved, markQueued, settle, track } from './saving';
 import { ensureLid, normGedeeld, snapshotOf, writeShared, removeShared, sharedId, copyFromShared, countCopy, type Gedeeld } from './groepsbank';
@@ -22,6 +22,8 @@ type Ctx = {
   /** Lid van deze speltak (beheerders hoeven dat niet te zijn). */
   isMember: boolean;
   saveOpk: (o: Opk) => void; deleteOpk: (id: string) => Promise<void>;
+  /** Concept of bank-opkomst verwijderen: een koppeling in de jaarplanning gaat eerst los, met een melding. */
+  removeOpk: (o: Opk) => Promise<void>;
   saveLib: (l: Lib) => void; deleteLib: (id: string) => Promise<void>;
   savePlan: (p: Plan) => void; deletePlan: (id: string) => Promise<void>;
   /** Slaat alleen de gegeven velden op. Lijsten (categorieën, namen) via een functie op de nieuwste instellingen. Geeft false bij een fout. */
@@ -174,6 +176,12 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   const deleteOpk = async (id: string) => { setOpks(a => a.filter(x => x.id !== id)); await del('opkomsten', id); };
   const deleteLib = async (id: string) => { setLib(a => a.filter(x => x.id !== id)); await del('activiteiten', id); };
   const deletePlan = async (id: string) => { setPlans(a => a.filter(x => x.id !== id)); await del('planning', id); };
+  const removeOpk = async (o: Opk) => {
+    const e = plans.find(p => p.opkId === o.id); if (e) savePlan({ ...e, opkId: null });
+    const used = opks.some(x => x.state === 'planned' && x.srcId === o.id);
+    toast(o.state === 'bank' ? `"${o.title || 'Opkomst'}" uit de bank verwijderd${used ? '. Ingeplande opkomsten blijven staan' : ''}` : 'Concept verwijderd');
+    await deleteOpk(o.id);
+  };
   // Alleen de gewijzigde velden wegschrijven ('settings.accent', 'groupName', 'name'): twee wijzigingen vlak na elkaar,
   // of door twee mensen tegelijk, overschrijven elkaar dan niet, en het logo gaat niet bij elke klik mee.
   const saveSettings = async (p: Partial<Settings> | ((s: Settings) => Partial<Settings>)) => {
@@ -240,7 +248,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   const linkOpk = (src: Opk, e: Plan, copy: boolean, keepNames: boolean) => {
     let o = src;
     if (copy) {
-      o = normOpk(clone(src), settings); o.id = mkId(); allBlocks(o).forEach(b => b.id = mkId()); o.days.forEach(d => d.id = mkId()); o.createdAt = Date.now();
+      o = copyOpk(src, settings);
       o.srcId = src.state === 'bank' ? src.id : src.srcId;
       if (src.state === 'bank') { o.lead = ''; if (!isKamp(o)) { o.prep = settings.prepMin; o.post = settings.postMin; } }
     }
@@ -319,7 +327,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   };
 
   const value: Ctx = { sid, sp, loading, denied, loadError, flushAll, canLink, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
-    saveOpk, deleteOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
+    saveOpk, deleteOpk, removeOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
     getO, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null };
   return <C.Provider value={value}>{children}</C.Provider>;
 }

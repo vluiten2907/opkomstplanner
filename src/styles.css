@@ -945,3 +945,6 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
 .savestate.ok { color: var(--good); }
 .savestate.off, .savestate.fail { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .offnote { margin-top: 12px; background: color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+
+/* Foutmelding als een pagina niet getoond kan worden */
+.crash { margin: 40px auto 0; }

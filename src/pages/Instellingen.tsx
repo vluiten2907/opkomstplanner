@@ -138,7 +138,7 @@ function AddRow({ placeholder, onAdd }: { placeholder: string; onAdd: (v: string
 
 /* ---------- Back-up terugzetten (ook uit de losse versie) ---------- */
 function Restore() {
-  const { settings, saveSettings, saveLib, saveOpk, savePlan, lib, opks, plans } = useSpeltak();
+  const { settings, saveSettings, saveLib, saveOpk, savePlan, lib, opks, plans, can } = useSpeltak();
   const ref = useRef<HTMLInputElement>(null);
   const restore = (f: File | undefined) => {
     if (!f) return; const rd = new FileReader();
@@ -156,10 +156,12 @@ function Restore() {
           if (fresh && s.logo) Object.assign(merged, { logo: s.logo, logoW: s.logoW, logoH: s.logoH });
           return merged;
         });
-        (d.lib || []).forEach((x: any) => saveLib(normLib(x)));
+        // de activiteitenbank alleen met het recht Banken (zo staat het ook in de regels)
+        const libs: any[] = Array.isArray(d.lib) ? d.lib : [], skipLib = libs.length > 0 && !can('bank');
+        if (!skipLib) libs.forEach((x: any) => saveLib(normLib(x)));
         d.opks.forEach((x: any) => saveOpk(normOpk(x, settings)));
         d.plans.forEach((x: any) => { const p = normPlan(x); if (!plans.some(q => q.id !== p.id && (q.slot && q.slot === p.slot))) savePlan(p); });
-        toast(`Back-up teruggezet: ${(d.lib || []).length + d.opks.length + d.plans.length} items toegevoegd.`);
+        toast(`Back-up teruggezet: ${(skipLib ? 0 : libs.length) + d.opks.length + d.plans.length} items toegevoegd.` + (skipLib ? ' Activiteiten overgeslagen: daarvoor heb je het recht Banken nodig.' : ''));
         void lib;
       } catch { toast('Dit bestand kan niet worden gelezen.'); }
     };

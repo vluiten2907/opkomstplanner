@@ -191,19 +191,45 @@ export function relabelDays(o: Opk, firstISO: string) {
 export function blockFromLib(l: Lib, start: number): Block {
   const b = normBlock({}); LIB_FIELDS.forEach(k => { (b as any)[k] = (l as any)[k]; }); b.libId = l.id; b.start = start; return b;
 }
-export function copyOpk(src: Opk): Opk {
-  const o = normOpk(clone(src)); o.id = uid(); allBlocks(o).forEach(b => b.id = uid()); o.days.forEach(d => d.id = uid()); o.createdAt = Date.now(); return o;
+/** Kopie met nieuwe ids (opkomst, dagen en onderdelen). Met `s` krijgen ontbrekende voorbereiding/nabespreking de standaard. */
+export function copyOpk(src: Opk, s?: Settings): Opk {
+  const o = normOpk(clone(src), s); o.id = uid(); allBlocks(o).forEach(b => b.id = uid()); o.days.forEach(d => d.id = uid()); o.createdAt = Date.now(); return o;
 }
-export function setOpkTime(o: Opk, which: 'start' | 'end', v: number): string | null {
-  const os = o.start, oe = o.end; let msg: string | null = null;
-  if (which === 'start') { o.start = v; if (o.end <= v) { o.end = v + 60; msg = 'Eindtijd verschoven naar ' + fmtT(o.end); } }
-  else { if (v <= o.start) return 'De eindtijd moet na de begintijd liggen.'; o.end = v; }
-  o.blocks.forEach(b => {
-    if (b.cat === '__open' && b.start === os) b.start = o.start;
-    if (b.cat === '__close' && b.start + b.dur === oe) b.start = o.end - b.dur;
-    if (b.cat === '__ranja') { const mid = Math.round(((os + oe) / 2 - b.dur / 2) / 5) * 5; if (b.start === mid) b.start = Math.round(((o.start + o.end) / 2 - b.dur / 2) / 5) * 5; }
+/**
+ * Versie voor de opkomstenbank: zonder namen van leiding, gedeeld met de groep, los van een bron of de groepsbank.
+ * Een concept gaat zelf de bank in (zelfde id); van een ingeplande opkomst komt een kopie met nieuwe ids (`copy`).
+ * libId blijft staan: de koppeling met de eigen activiteitenbank klopt nog.
+ */
+export function toBank(o: Opk, title: string, copy = o.state === 'planned'): Opk {
+  const b = copy ? copyOpk(o) : normOpk(clone(o));
+  b.title = title; b.state = 'bank'; b.lead = ''; b.shared = true; b.srcId = null; b.fromShared = null;
+  allBlocks(b).forEach(x => { x.names = []; });
+  return b;
+}
+/** Eerste moment (vanaf het begin) waarop `dur` minuten vrij zijn, of null als er geen gat is dat lang genoeg is. */
+export function firstFree(day: { start: number; end: number; blocks: Block[] }, dur: number): number | null {
+  const bl = [...day.blocks].sort((a, b) => a.start - b.start);
+  let t = day.start;
+  for (const b of bl) { if (b.start - t >= dur) return t; t = Math.max(t, b.start + b.dur); }
+  return day.end - t >= dur ? t : null;
+}
+/** Vaste blokken schuiven mee met begin en eind (alleen als ze nog op hun eigen plek stonden). */
+function moveFixed(blocks: Block[], os: number, oe: number, ns: number, ne: number) {
+  blocks.forEach(b => {
+    if (b.cat === '__open' && b.start === os) b.start = ns;
+    if (b.cat === '__close' && b.start + b.dur === oe) b.start = ne - b.dur;
+    if (b.cat === '__ranja') { const mid = Math.round(((os + oe) / 2 - b.dur / 2) / 5) * 5; if (b.start === mid) b.start = Math.round(((ns + ne) / 2 - b.dur / 2) / 5) * 5; }
   });
-  return msg === 'De eindtijd moet na de begintijd liggen.' ? msg : msg;
+}
+export type TimeChange = { opk: Opk; note?: string; error?: undefined } | { opk?: undefined; note?: undefined; error: string };
+/** Begin- of eindtijd van een gewone opkomst aanpassen. Geeft een aangepaste kopie (het origineel blijft zoals het is), of een fout. */
+export function changeOpkTime(o: Opk, which: 'start' | 'end', v: number): TimeChange {
+  if (which === 'end' && v <= o.start) return { error: 'De eindtijd moet na de begintijd liggen.' };
+  const c = clone(o); let note: string | undefined;
+  if (which === 'start') { c.start = v; if (c.end <= v) { c.end = v + 60; note = 'Eindtijd verschoven naar ' + fmtT(c.end); } }
+  else c.end = v;
+  moveFixed(c.blocks, o.start, o.end, c.start, c.end);
+  return { opk: c, note };
 }
 /** Tijden uit de jaarplanning die bewust afwijken (niet de standaardtijden) van een gewone opkomst. */
 export function planTimesDiffer(s: Settings, e: Plan, o: Opk) {
@@ -216,7 +242,7 @@ export function applyPlanTimes(o: Opk, st: number, en: number) {
   if (isKamp(o) || en <= st) return;
   const delta = st - o.start;
   o.start += delta; o.end += delta; o.blocks.forEach(b => { b.start += delta; });
-  if (o.end !== en) setOpkTime(o, 'end', en);
+  if (o.end !== en) { const oe = o.end; o.end = en; moveFixed(o.blocks, o.start, oe, o.start, en); }
 }
 export const minNeed = (o: Opk) => allBlocks(o).filter(b => !isFixed(b)).reduce((m, b) => Math.max(m, b.minLeaders || 0), 0);
 export const catOf = (s: Settings, id: string): Cat => s.categories.find(c => c.id === id) || (FIXED_CATS.find(c => c.id === id) as Cat) || { id: '', label: 'Zonder categorie', color: '#7E837A' };

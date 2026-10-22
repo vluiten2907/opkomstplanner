@@ -33,7 +33,7 @@ export function Modal({ title, sub, onClose, wide, children }: { title: string; 
 }
 
 /** Tijdkiezer: uren en minuten (per 5) als losse menu's. Waarden in minuten vanaf middernacht; >1440 = na middernacht (+1). */
-export function TimePicker({ value, onChange, from = 0, to = 1435, id, extra }: { value: number; onChange: (v: number) => void; from?: number; to?: number; id?: string; extra?: boolean }) {
+export function TimePicker({ value, onChange, from = 0, to = 1435, id, extra, disabled }: { value: number; onChange: (v: number) => void; from?: number; to?: number; id?: string; extra?: boolean; disabled?: boolean }) {
   const vals: number[] = []; for (let m = from; m <= to; m += 5) vals.push(m);
   if (extra && !vals.includes(value)) vals.push(value);
   const hours = [...new Set(vals.map(x => Math.floor(x / 60)))].sort((a, b) => a - b);
@@ -44,9 +44,9 @@ export function TimePicker({ value, onChange, from = 0, to = 1435, id, extra }: 
     onChange(inHour.includes(want) ? want : inHour.reduce((a, x) => Math.abs(x - want) < Math.abs(a - want) ? x : a, inHour[0]));
   };
   return <span className="tpick">
-    <select id={id} className="tp-h" aria-label="Uur" value={h} onChange={e => pick(+e.target.value, value % 60)}>{hours.map(x => <option key={x} value={x}>{pad2(x % 24)}{x >= 24 ? ' (+1)' : ''}</option>)}</select>
+    <select id={id} className="tp-h" aria-label="Uur" value={h} disabled={disabled} onChange={e => pick(+e.target.value, value % 60)}>{hours.map(x => <option key={x} value={x}>{pad2(x % 24)}{x >= 24 ? ' (+1)' : ''}</option>)}</select>
     <span className="tp-sep">:</span>
-    <select className="tp-m" aria-label="Minuten" value={value % 60} onChange={e => pick(h, +e.target.value)}>{mins.map(x => <option key={x} value={x}>{pad2(x)}</option>)}</select>
+    <select className="tp-m" aria-label="Minuten" value={value % 60} disabled={disabled} onChange={e => pick(h, +e.target.value)}>{mins.map(x => <option key={x} value={x}>{pad2(x)}</option>)}</select>
   </span>;
 }
 

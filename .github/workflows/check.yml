@@ -13,5 +13,6 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npx tsc -p tsconfig.app.json --noEmit
+      - run: node test/unit/model.test.mjs
       - run: npm run build
         env: { VITE_BASE: /opkomst/ }

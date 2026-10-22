@@ -4,7 +4,7 @@ Start via:  bash test/e2e/run.sh
 Faalt (exit 1) bij een mislukte controle of een fout in de console.
 Screenshots komen in test/e2e/out/ (niet in git).
 """
-import base64, os, re, sys
+import base64, json, os, re, sys
 os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 from playwright.sync_api import sync_playwright
 
@@ -353,8 +353,21 @@ with sync_playwright() as p:
     pg.click('.bcard:has-text("Bouwerweg")'); w(300); pg.click('.side >> text=Bewerken'); w(700)
     pg.click('.plan-head >> button:has-text("Verwijderen")'); w(200); pg.click('.plan-head >> text=Klik nogmaals om te verwijderen'); w(700)
     check(pg.url.rstrip('/').endswith('/bouwer') and pg.locator('.pick:has-text("Bouwerweg")').count() == 0, 'bank-opkomst verwijderd vanuit de bouwer')
+    check(pg.locator('.toast').inner_text().strip() == '"Bouwerweg" uit de bank verwijderd', 'melding bij verwijderen uit de bank (nergens ingepland: geen extra zin)')
     pg.reload(); w(1000); pg.click('nav >> text=Opkomstenbank'); w(500)
     check(pg.locator('.bcard:has-text("Bankweg"), .bcard:has-text("Bouwerweg")').count() == 0 and pg.locator('.bcard:has-text("Sluipspel")').count() == 1, 'verwijderde bank-opkomsten blijven weg, andere blijven staan')
+
+    # --- de opkomst wordt elders verwijderd (ander apparaat) terwijl "Leiding indelen" open staat: geen wit scherm
+    pg.click('nav >> text=Opkomstbouwer'); w(300); pg.click('text=Nieuwe opkomst'); w(700); pg.fill('#om-title', 'Verdwijnt'); w(300)
+    pg.click('.plan-head >> text=Inplannen'); w(300); pg.fill('.modal input[placeholder^="Andere datum"]', '02-03-2030'); pg.click('.modal >> text=Op deze datum'); w(500)
+    pg.click('.ctx >> text=Leiding indelen'); w(1300)
+    check(pg.locator('.modal h2:has-text("Leiding indelen")').count() == 1, 'ingepland en Leiding indelen geopend')
+    n_err = len(errors)
+    pg.evaluate("""() => { const [, sid, , oid] = location.pathname.match(/\\/s\\/([^/]+)\\/(bouwer)\\/([^/]+)/); const s = JSON.parse(localStorage.getItem('fake.firestore'));
+      const pl = Object.keys(s).find(k => k.startsWith('speltakken/' + sid + '/planning/') && s[k].opkId === oid);
+      window.__fakeRemote('speltakken/' + sid + '/opkomsten/' + oid, null); if (pl) window.__fakeRemote(pl, null); }"""); w(800)
+    check(len(errors) == n_err and pg.locator('.modal').count() == 0 and pg.locator('header.bar nav a').count() == 6 and pg.locator('text=Deze opkomst bestaat niet (meer)').count() == 1,
+          'opkomst elders verwijderd terwijl Leiding indelen open staat: venster dicht, app werkt door')
 
     # --- dashboard, banken, kamp
     pg.click('nav >> text=Dashboard'); w(700); check(pg.locator('.hero').count() == 1, 'dashboard toont komende opkomst'); shot('05-dashboard')
@@ -543,6 +556,23 @@ with sync_playwright() as p:
     pg.click('a:has-text("Oefenen")'); w(1200)
     check('/s/oefen/dashboard' in pg.url and pg.locator('.watermark.on').count() == 1 and pg.locator('.oefenbar').count() == 1, 'oefenomgeving: watermerk en melding')
     check(pg.locator('text=Junglejacht en stratego').count() >= 1, 'oefenomgeving: voorbeelddata op het dashboard')
+    # pagina die niet te laden is (bijv. een tabblad dat openstond tijdens een update van de site): melding, geen wit scherm
+    pg.goto(BASE + '/s/oefen/dashboard'); w(1000)
+    chunk = re.compile(r'/assets/Instellingen-[^/]*\.js'); n_err = len(errors)
+    pg.route(chunk, lambda r: r.abort())
+    pg.click('header nav a[href$="/instellingen"]'); w(800)
+    check(pg.locator('.crash h2:has-text("Er ging iets mis")').count() == 1 and pg.locator('.crash button:has-text("Opnieuw laden")').count() == 1 and pg.locator('header.bar nav a').count() == 6,
+          'pagina niet te laden: melding met Opnieuw laden, kopbalk blijft staan'); shot('21-pagina-fout', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('21b-pagina-fout-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'melding pagina-fout mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    pg.click('header nav a[href$="/dashboard"]'); w(800)
+    check(pg.locator('.crash').count() == 0 and pg.locator('.hero').count() == 1, 'andere pagina kiezen: melding weg, dashboard werkt')
+    pg.unroute(chunk); pg.click('header nav a[href$="/instellingen"]'); w(600)
+    if pg.locator('.crash').count(): pg.click('.crash >> text=Opnieuw laden'); w(1500)
+    check(pg.locator('#gs-name').count() == 1, 'opnieuw laden: pagina werkt weer')
+    # verwachte meldingen van het mislukte laden niet als fout tellen
+    errors[n_err:] = [e for e in errors[n_err:] if 'dynamically imported module' not in e and 'Instellingen-' not in e]
     pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(900)
     pg.fill('#om-title', 'Mijn oefenopkomst'); w(900)
     pg.reload(); w(1200)
@@ -617,9 +647,34 @@ with sync_playwright() as p:
     check(oefen_get("s['speltakken/oefen/planning/pl-1'].absent.includes('Bagheera') && JSON.stringify(s['speltakken/oefen/opkomsten/opk-vuur'].blocks).includes('Bagheera')"), 'alleen recht Jaarplanning: afwezigheid opgeslagen, opkomst niet aangeraakt')
     pg.goto(BASE + '/s/oefen/opkomsten'); w(1000); pg.click('.bcard:has-text("Rond de wereld")'); w(300)
     check(pg.locator('.side button:has-text("Inplannen")').count() == 0, 'alleen recht Jaarplanning: geen Inplannen vanuit de bank')
+    pg.goto(BASE + '/s/oefen/bouwer/opk-vuur'); w(1000)
+    tsel = pg.locator('.meta .timefield select')
+    check(pg.locator('.pill:has-text("Alleen lezen")').count() == 1 and tsel.count() == 4 and all(tsel.nth(k).is_disabled() for k in range(4)), 'alleen lezen: begin- en eindtijd van de opkomst niet aan te passen')
+    pg.locator('.blk').nth(1).click(); w(300)
+    check(pg.locator('.side .timefield .tp-h').is_disabled() and pg.locator('#bf-dur').is_disabled(), 'alleen lezen: begintijd van een onderdeel niet aan te passen')
+    oefen_set("s['speltakken/oefen'].members['oefen-jij'].perms = { plan: false, build: false, bank: true, settings: false }")
+    pg.goto(BASE + '/s/oefen/opkomsten'); w(1000); pg.click('.bcard:has-text("Rond de wereld")'); w(300); pg.click('.side >> text=Bewerken'); w(800)
+    check(pg.locator('.plan-head button:has-text("Kopie")').count() == 0 and pg.locator('.plan-head button:has-text("Verwijderen")').count() == 1,
+          'alleen recht Banken: bank-opkomst wel verwijderen, geen kopie als concept (dat hoort bij Opkomsten)')
+    oefen_set("s['speltakken/oefen'].members['oefen-jij'].perms = { plan: false, build: true, bank: false, settings: true }")
+    pg.goto(BASE + '/s/oefen/instellingen'); w(1000)
+    backup = json.dumps({'version': 4, 'opks': [], 'plans': [], 'lib': [{'id': 'lib-backup', 'title': 'Uit de back-up'}], 'settings': {}}).encode()
+    pg.set_input_files('input[type=file][accept=".json,application/json"]', files=[{'name': 'backup.json', 'mimeType': 'application/json', 'buffer': backup}]); w(900)
+    check('Activiteiten overgeslagen' in pg.locator('.toast').inner_text() and oefen_get("!s['speltakken/oefen/activiteiten/lib-backup']"), 'back-up terugzetten zonder recht Banken: activiteiten overgeslagen')
     oefen_set("const sp = s['speltakken/oefen']; sp.tlIds = ['oefen-jij']; sp.members['oefen-jij'].role = 'teamleider'; sp.members['oefen-jij'].perms = { plan: true, build: true, bank: true, settings: true }")
     pg.goto(BASE + '/s/oefen/bouwer/opk-vuur'); w(1500)
     check(not oefen_get("JSON.stringify(s['speltakken/oefen/opkomsten/opk-vuur'].blocks).includes('Bagheera')"), 'opkomst openen met recht Opkomsten: afwezige leiding stil uit de indeling')
+    pg.click('.ctx >> text=Leiding indelen'); w(500)
+    nb = pg.locator('.modal .tk-tl .blk').count()
+    pg.click('.modal >> text=Activiteit toevoegen'); w(400)
+    check(pg.locator('.modal .tk-tl .blk').count() == nb + 1 and 'toegevoegd om' in pg.locator('.toast').inner_text(), 'leiding indelen: activiteit toevoegen op het eerste vrije moment')
+    pg.click('.modal >> text=Klaar'); w(300)
+    tf = lambda k: pg.locator('.meta .timefield').nth(k).locator('.tp-h')
+    tf(0).select_option('18'); w(300)
+    check(tf(1).input_value() == '19' and 'Eindtijd verschoven naar 19:' in pg.locator('.toast').inner_text(), 'bouwer: begintijd na de eindtijd schuift de eindtijd mee')
+    tf(1).select_option('17'); w(300)
+    check(tf(1).input_value() == '19' and 'moet na de begintijd' in pg.locator('.toast').inner_text(), 'bouwer: eindtijd vóór de begintijd wordt geweigerd')
+    w(700); check(oefen_get("s['speltakken/oefen/opkomsten/opk-vuur'].end") // 60 == 19, 'bouwer: nieuwe tijden opgeslagen')
     pg.click('.oefenbar >> text=Opnieuw beginnen'); w(1800)
     pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(900)
     check(pg.input_value('#om-title') == 'Junglejacht en stratego', 'oefenomgeving: opnieuw beginnen zet voorbeelddata terug')
