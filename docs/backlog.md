@@ -4,7 +4,7 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 
 ## Bezig
 
-- **Jaarplanning standaard 3 maanden** — de jaarplanning opent op *Komende 3 maanden* (vandaag + 13 weken) i.p.v. het hele seizoen; een andere keuze blijft staan zolang het tabblad open is.
+_(niets)_
 
 
 ## Open
@@ -12,6 +12,7 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 - **Live controle met echt account** — registreren, speltak aanmaken en uitnodiging accepteren op conqueston.nl/opkomst door Vincent (bevestigt e-mail/wachtwoord-login en de gepubliceerde regels).
 
 ## Klaar
+- 2026-10-22 — Jaarplanning opent standaard op *Komende 3 maanden* (vandaag + 13 weken) i.p.v. het hele seizoen; een andere keuze blijft staan zolang het tabblad open is.
 - 2026-10-21 — Verwijderen uit de banken: prullenbakje (twee keer klikken) op elke kaart in de opkomstenbank en de activiteitenbank, ook voor afgeronde opkomsten en activiteiten, en *Verwijderen* in de opkomstbouwer bij een bank-opkomst (bovenaan en op de startpagina). Ingeplande opkomsten en opkomsten die een activiteit gebruiken blijven staan; een gedeelde opkomst verdwijnt ook uit *Groep* (kopieën van andere speltakken blijven). Recht: banken. Geen nieuwe regels.
 - 2026-10-21 — Wachtwoord vergeten: de resetmail gaat in het Nederlands, na het resetten een knop terug naar inloggen (als conqueston.nl bij Authorized domains staat), en de bevestiging noemt de spammap. Eigen afzender (noreply@conqueston.nl) bewust overgeslagen.
 - 2026-10-21 — Bewerken uit de bank bevestigen: opkomsten (bouwer en zijpaneel) en activiteiten uit de eigen bank worden niet meer automatisch opgeslagen. Onderaan *Annuleren*, *Opslaan* en *Opslaan als kopie* (met eigen naam). Namen zijn uniek per bank (hoofdletters/spaties tellen niet), ook bij *In bank*, *Bewaren in activiteitenbank* en kopiëren uit de groep. Weggaan met niet-opgeslagen wijzigingen vraagt eerst.
