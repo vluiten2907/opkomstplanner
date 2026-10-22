@@ -10,12 +10,15 @@ import { analyze, blockFromLib, byTitle, catOf, dayTitle, entryTimes, fixedBlock
 import { uid } from '../lib/time';
 import type { NameSpec } from '../store/modal';
 
+const NO_UNLINK = 'Hier hangt een opkomst aan. Ontkoppelen kan alleen met het recht Opkomsten of Banken.';
+
 /* ---------- Datum en soort ---------- */
 export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose: () => void; onSaved?: (e: Plan) => void }) {
   const { settings, peekEntry, entryFor, unlinkEntry, savePlan, deletePlan, getO, saveOpk, can } = useSpeltak();
   const e = peekEntry(keyId), slot = keyId.startsWith('s:') ? keyId.slice(2) : (e && e.slot);
   const d0 = e ? e.date : slot!, linked = e && e.opkId ? getO(e.opkId) : null;
   const [st0, en0] = entryTimes(settings, e, linked || null);
+  const canOpk = can('build') || can('bank');
   const [type, setType] = useState<Plan['type']>(e ? e.type : 'opkomst');
   const [date, setDate] = useState(fmtNL(d0)); const [end, setEnd] = useState(e ? fmtNL(e.endDate) : '');
   const [st, setSt] = useState(st0); const [en, setEn] = useState(en0); const [note, setNote] = useState(e ? e.note : '');
@@ -30,12 +33,15 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
     const en2 = { ...entryFor(keyId) };
     if (!linked) { en2.start = st; en2.end = en; }
     en2.type = type; en2.date = iso; en2.endDate = endIso && endIso !== iso ? endIso : ''; en2.note = note.trim();
-    if (en2.type === 'geen' && en2.opkId) { unlinkEntry(en2); en2.opkId = null; toast('De gekoppelde opkomst staat nu bij de concepten.'); }
+    if (en2.type === 'geen' && en2.opkId) {
+      if (!canOpk) { toast(NO_UNLINK); return; }
+      unlinkEntry(en2); en2.opkId = null; toast('De gekoppelde opkomst staat nu bij de concepten.');
+    }
     // verzet kamp: dagen die een weekdag heten volgen de nieuwe datum
     if (linked && en2.opkId && isKamp(linked) && can('build')) { const c = clone(linked); if (relabelDays(c, iso)) saveOpk(c); }
     savePlan(en2); onSaved?.(en2); onClose();
   };
-  const clear = () => { if (!e) { onClose(); return; } if (e.opkId) unlinkEntry(e); deletePlan(e.id); onClose(); toast('Rij leeggemaakt'); };
+  const clear = () => { if (!e) { onClose(); return; } if (e.opkId && !canOpk) { toast(NO_UNLINK); return; } if (e.opkId) unlinkEntry(e); deletePlan(e.id); onClose(); toast('Rij leeggemaakt'); };
   return <Modal title="Datum en soort" sub={slot ? 'Vaste ' + DAYS[settings.opkDay] + ': ' + fmtLong(slot) : 'Extra datum'} onClose={onClose}>
     <Field label="Soort"><div className="seg">{([['opkomst', 'Opkomst'], ['kamp', 'Kamp / weekend'], ['geen', 'Geen opkomst']] as const).map(([v, l]) => <Chip key={v} on={type === v} onClick={() => setType(v)}>{l}</Chip>)}</div></Field>
     <div className="two"><Field label="Datum" htmlFor="md-date"><input id="md-date" value={date} onChange={e => setDate(e.target.value)} placeholder="dd-mm-jjjj" inputMode="numeric" /></Field>

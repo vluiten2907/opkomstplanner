@@ -76,14 +76,25 @@ const docsIn = (ref: Ref) => Object.keys(store).filter(p => p.startsWith(ref.pat
 const snap = (ref: Ref) => ref.kind === 'doc'
   ? { id: ref.path.split('/').pop(), exists: () => ref.path in store, data: () => clone(store[ref.path]) }
   : { docs: docsIn(ref) };
-export function onSnapshot(ref: Ref, cb: (s: any) => void, _err?: any) { const l = () => cb(snap(ref)); listeners.add(l); setTimeout(l, 0); return () => listeners.delete(l); }
+// Testhaken: localStorage 'fake.failWrite' / 'fake.failListen' = foutcode laat schrijven of luisteren in een speltak mislukken
+// ('too-big' = document te groot). Alleen voor de rooktest.
+const failCode = (k: string, path: string) => { const c = localStorage.getItem(k); return c && path.startsWith('speltakken/') ? c : ''; };
+const failErr = (c: string) => c === 'too-big'
+  ? Object.assign(new Error('Document cannot be written because its size (1,300,000 bytes) exceeds the maximum allowed size of 1,048,576 bytes.'), { code: 'invalid-argument' })
+  : err(c);
+export function onSnapshot(ref: Ref, cb: (s: any) => void, onErr?: (e: any) => void) {
+  const f = failCode('fake.failListen', ref.path);
+  if (f) { const t = setTimeout(() => onErr?.(failErr(f)), 0); return () => clearTimeout(t); }
+  const l = () => cb(snap(ref)); listeners.add(l); setTimeout(l, 0); return () => listeners.delete(l);
+}
 export async function getDoc(ref: Ref) { return snap(ref); }
 export async function getDocs(ref: Ref) { return snap(ref); }
 export async function setDoc(ref: Ref, data: any, opts?: { merge?: boolean }) {
+  const f = failCode('fake.failWrite', ref.path); if (f) throw failErr(f);
   const cur = opts?.merge && store[ref.path] ? store[ref.path] : {};
   const next = clone(cur); Object.entries(data).forEach(([k, v]) => applyKey(next, k, v)); store[ref.path] = next; persist();
 }
-export async function updateDoc(ref: Ref, patch: any) { if (!(ref.path in store)) throw err('not-found'); const next = clone(store[ref.path]); Object.entries(patch).forEach(([k, v]) => applyKey(next, k, v)); store[ref.path] = next; persist(); }
+export async function updateDoc(ref: Ref, patch: any) { const f = failCode('fake.failWrite', ref.path); if (f) throw failErr(f); if (!(ref.path in store)) throw err('not-found'); const next = clone(store[ref.path]); Object.entries(patch).forEach(([k, v]) => applyKey(next, k, v)); store[ref.path] = next; persist(); }
 export async function deleteDoc(ref: Ref) { delete store[ref.path]; persist(); }
 export function writeBatch() {
   const ops: (() => Promise<void>)[] = [];

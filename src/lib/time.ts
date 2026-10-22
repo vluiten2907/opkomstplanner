@@ -11,7 +11,9 @@ export const addDays = (iso: string, n: number) => { const d = fromISO(iso); d.s
 export const dayDiff = (a: string, b: string) => Math.round((fromISO(b).getTime() - fromISO(a).getTime()) / 864e5);
 export const fmtNL = (iso: string) => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}-${m}-${y}`; };
 export const wd2 = (iso: string) => DAYS[fromISO(iso).getDay()].slice(0, 2);
-export const mon3 = (iso: string) => MONTHS[fromISO(iso).getMonth()].slice(0, 3);
+/** Vaste Nederlandse afkortingen (maart = mrt, niet 'maa'). */
+export const MON3 = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+export const mon3 = (iso: string) => MON3[fromISO(iso).getMonth()];
 export const fmtShort = (iso: string) => `${wd2(iso)} ${fromISO(iso).getDate()} ${mon3(iso)}`;
 export const fmtLong = (iso: string) => { const d = fromISO(iso); return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
 export const cap = (x: string) => x ? x[0].toUpperCase() + x.slice(1) : x;

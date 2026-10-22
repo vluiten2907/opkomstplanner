@@ -9,7 +9,10 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
   const W = 210, H = 297, M = 15, CW = W - 2 * M, BOTTOM = H - 20;
   const INK = [28, 42, 33], MUTED = [104, 114, 106], LINE = [210, 216, 205], ACC = O.accentRgb || [45, 106, 76], SOFT = [240, 243, 236];
   const keep = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
-  const clean = s => Array.from(String(s == null ? '' : s).replace(/\t/g, ' ')).filter(ch => ch.charCodeAt(0) <= 255 || keep.includes(ch)).join('');
+  // Tekens buiten Latin-1 kent het standaardfont niet: terugvallen op de basisletter (Ş → S, ğ → g), anders weglaten (emoji).
+  const ALT = { 'Ł': 'L', 'ł': 'l', 'ı': 'i', 'İ': 'I', 'Đ': 'D', 'đ': 'd', '→': '->', '←': '<-', '✓': 'v', '✔': 'v' };
+  const base = ch => { if (ALT[ch]) return ALT[ch]; const b = ch.normalize('NFD')[0]; return b && b.charCodeAt(0) <= 255 ? b : ''; };
+  const clean = s => Array.from(String(s == null ? '' : s).replace(/\t/g, ' ')).map(ch => ch.charCodeAt(0) <= 255 || keep.includes(ch) ? ch : base(ch)).join('');
   const lh = pt => pt * 0.3528 * 1.28;
   const font = (style, size, rgb) => { doc.setFont('helvetica', style); doc.setFontSize(size); doc.setTextColor(...(rgb || INK)); };
   const wrap = (text, width, max) => {

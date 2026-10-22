@@ -4,7 +4,7 @@ Start via:  bash test/e2e/run.sh
 Faalt (exit 1) bij een mislukte controle of een fout in de console.
 Screenshots komen in test/e2e/out/ (niet in git).
 """
-import os, re, sys
+import base64, os, re, sys
 os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 from playwright.sync_api import sync_playwright
 
@@ -149,6 +149,23 @@ with sync_playwright() as p:
     for n in ['Bram', 'Carla']:
         pg.fill('input[placeholder="Naam"]', n); pg.locator('input[placeholder="Naam"]').press('Enter'); w(300)
     shot('02-instellingen')
+    # opslaan mislukt (hier: te groot): duidelijke melding, en daarna geen "Logo opgeslagen"
+    PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+    logo_file = [{'name': 'logo.png', 'mimeType': 'image/png', 'buffer': PNG}]
+    pg.evaluate("localStorage.setItem('fake.failWrite','too-big')")
+    pg.set_input_files('.logobox input[type=file]', files=logo_file); w(700)
+    t = pg.locator('.toast').inner_text()
+    check('te groot' in t and 'opgeslagen' not in t and 'verbinding' not in t, f'logo te groot: melding per oorzaak, geen "Logo opgeslagen" ({t})')
+    check(pg.locator('.logoprev img').count() == 0 and pg.locator('.savestate.fail').count() == 1, 'mislukt logo wordt teruggezet, kopbalk meldt Niet opgeslagen')
+    pg.evaluate("localStorage.removeItem('fake.failWrite')")
+    pg.set_input_files('.logobox input[type=file]', files=logo_file); w(700)
+    check('Logo opgeslagen' in pg.locator('.toast').inner_text() and pg.locator('.logoprev img').count() == 1 and pg.locator('.savestate.ok').count() == 1, 'logo opgeslagen, kopbalk meldt Opgeslagen')
+    pg.click('.logobox >> text=Verwijderen'); w(500)
+    # speltak laden mislukt (bijv. daglimiet): uitleg en een knop, niet eeuwig "laden"
+    pg.evaluate("localStorage.setItem('fake.failListen','resource-exhausted')"); pg.reload(); w(1000)
+    check(pg.locator('h2:has-text("Laden mislukt")').count() == 1 and pg.locator('button:has-text("Opnieuw laden")').count() == 1, 'laden mislukt: uitleg en knop Opnieuw laden'); shot('02b-laden-mislukt', False)
+    pg.evaluate("localStorage.removeItem('fake.failListen')"); pg.click('button:has-text("Opnieuw laden")'); w(1500)
+    check(pg.locator('nav >> text=Team & instellingen').count() == 1 and pg.locator('h2:has-text("Laden mislukt")').count() == 0, 'opnieuw laden: speltak staat er weer')
 
     # --- jaarplanning
     pg.click('nav >> text=Jaarplanning'); w(600)
@@ -472,6 +489,76 @@ with sync_playwright() as p:
     check(pg.evaluate("Object.keys(JSON.parse(localStorage.getItem('fake.firestore')||'{}')).every(k => !k.startsWith('speltakken/oefen'))"), 'oefenomgeving schrijft niet naar de database')
     with pg.expect_download() as dl: pg.click('button:has-text("PDF maken")')
     check(dl.value.suggested_filename.endswith('.pdf'), 'oefenomgeving: pdf met watermerk')
+    # pdf: letters buiten Latin-1 vallen terug op de basisletter in plaats van te verdwijnen
+    pg.fill('#om-title', 'Łukasz en Şükrü → ✔ spel'); w(700)
+    with pg.expect_download() as dl: pg.click('button:has-text("PDF maken")')
+    dl.value.save_as(f'{OUT}/tekens.pdf')
+    check(any('Lukasz en Sükrü -> v spel' in t for _, _, t in pdf_texts(f'{OUT}/tekens.pdf')), 'pdf: Ł, Ş, → en ✔ blijven leesbaar (Lukasz en Sükrü -> v spel)')
+    pg.fill('#om-title', 'Mijn oefenopkomst'); w(700)
+    oefen_set = lambda js: pg.evaluate("(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)); " + js + "; localStorage.setItem(k, JSON.stringify(s)); })()")
+    oefen_get = lambda js: pg.evaluate("(() => { const s = JSON.parse(localStorage.getItem('opk.oefen.v1')); return " + js + "; })()")
+    # dashboard 'Daarna': planning door telt de oude eindverantwoordelijke mee (plannersOf)
+    oefen_set("s['speltakken/oefen/planning/pl-1'].planners = []")
+    pg.goto(BASE + '/s/oefen/dashboard'); w(1200)
+    it = pg.locator('.nextlist li:has-text("Vuur en kompas")')
+    check(it.count() == 1 and 'planning: Kaa' in it.inner_text() and 'Nog geen planner' not in it.inner_text(), 'dashboard Daarna: oude eindverantwoordelijke telt als planner')
+    # instellingen: snel na elkaar aanpassen, niets springt terug of gaat verloren
+    pg.goto(BASE + '/s/oefen/instellingen'); w(1000)
+    pg.fill('#gs-name', 'Voorbeeldgroep'); pg.click('.accents .acc:has-text("Blauw")'); w(1200)
+    check(pg.input_value('#gs-name') == 'Voorbeeldgroep' and pg.locator('.accents .acc:has-text("Blauw")').get_attribute('aria-pressed') == 'true', 'instellingen: naam typen en direct een kleur kiezen, allebei bewaard')
+    cats = pg.locator('.catrow input[aria-label="Naam categorie"]')
+    cats.nth(0).fill('Spel buiten'); cats.nth(1).fill('Pionieren'); w(1200)
+    check(cats.nth(0).input_value() == 'Spel buiten' and cats.nth(1).input_value() == 'Pionieren', 'instellingen: twee categorieën snel na elkaar hernoemd, geen van beide springt terug')
+    cats.nth(2).fill('Toneel'); pg.evaluate("document.querySelector('header nav a[href$=\"/dashboard\"]').click()"); w(500)
+    check('/dashboard' in pg.url, 'instellingen: meteen naar Dashboard')
+    pg.reload(); w(1200)
+    st = oefen_get("s['speltakken/oefen']")
+    check(st['groupName'] == 'Voorbeeldgroep' and st['settings']['accent'] == 'blauw' and [c['label'] for c in st['settings']['categories'][:3]] == ['Spel buiten', 'Pionieren', 'Toneel'],
+          'instellingen: alles opgeslagen, ook een categorie die je net typte voor je wegging')
+    # opslagstatus, direct wegschrijven als het tabblad naar de achtergrond gaat, waarschuwing bij sluiten
+    pg.goto(BASE + '/s/oefen/jaarplanning'); w(1000); pg.click('.presets >> text=Komende 3 maanden'); w(400)
+    tin = pg.locator('.ptopic').nth(pg.evaluate("[...document.querySelectorAll('.ptopic')].findIndex(i => i.value === 'Pannenkoekenopkomst')"))
+    tin.fill('Pannenkoeken bakken')
+    check(pg.locator('.savestate.busy').count() == 1, 'kopbalk: Opslaan… zolang er iets wacht')
+    hidden_now = pg.evaluate("""(() => { Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange')); delete document.visibilityState;
+      return JSON.parse(localStorage.getItem('opk.oefen.v1'))['speltakken/oefen/planning/pl-6'].topic; })()""")
+    check(hidden_now == 'Pannenkoeken bakken', 'tabblad naar de achtergrond: wijziging direct opgeslagen')
+    unload = "(() => { const e = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; })()"
+    tin.fill('Pannenkoeken'); w(50)
+    check(pg.evaluate(unload), 'tabblad sluiten terwijl er nog iets wacht: browser waarschuwt')
+    w(900)
+    check(not pg.evaluate(unload) and pg.locator('.savestate.ok').count() == 1, 'alles opgeslagen: geen waarschuwing, kopbalk meldt Opgeslagen')
+    check(oefen_get("s['speltakken/oefen/planning/pl-6'].topic") == 'Pannenkoeken', 'onderwerp opgeslagen')
+    ctx.set_offline(True); w(300)
+    check(pg.locator('.offnote:has-text("Geen verbinding")').count() == 1 and pg.locator('.savestate.off').count() == 1, 'zonder verbinding: melding en status Niet verbonden')
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('18-offline-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'melding zonder verbinding mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); shot('18b-offline', False)
+    ctx.set_offline(False); w(300)
+    check(pg.locator('.offnote').count() == 0, 'weer verbonden: melding weg')
+    # terugknop (of veeg-terug) met niet-opgeslagen wijzigingen in een bank-opkomst
+    pg.goto(BASE + '/s/oefen/opkomsten'); w(1000)
+    pg.click('.bcard:has-text("Knopen en pionieren")'); w(300); pg.click('.side >> text=Bewerken'); w(800)
+    pg.fill('#om-title', 'Knopen en pionieren XL'); w(300)
+    pg.evaluate('history.back()'); w(800)
+    check('/bouwer/' in pg.url and pg.input_value('#om-title') == 'Knopen en pionieren XL' and pg.locator('.toast >> text=Weggooien').count() == 1, 'terugknop met niet-opgeslagen wijzigingen: blijft staan en vraagt eerst')
+    shot('19-terug-vraagt', False)
+    pg.click('.toast >> text=Weggooien'); w(800)
+    check(pg.url.rstrip('/').endswith('/opkomsten') and pg.locator('.bcard:has-text("Knopen en pionieren XL")').count() == 0, 'weggooien: alsnog terug, bank ongewijzigd')
+    # alleen recht Jaarplanning: wel onderwerp en afwezigheid, niet koppelen (dat schrijft ook de opkomst)
+    oefen_set("const sp = s['speltakken/oefen']; sp.tlIds = []; sp.members['oefen-jij'].role = 'leiding'; sp.members['oefen-jij'].perms = { plan: true, build: false, bank: false, settings: false }")
+    pg.goto(BASE + '/s/oefen/jaarplanning'); w(1200); pg.click('.presets >> text=Komende 3 maanden'); w(400)
+    vr = pg.locator('.prow:has(.plink:has-text("Vuur en kompas"))')
+    check(pg.locator('.prow .btn:has-text("Koppelen")').count() == 0 and pg.locator('.prow [aria-label="Opkomst ontkoppelen"]').count() == 0, 'alleen recht Jaarplanning: geen Koppelen of Ontkoppelen')
+    check(vr.locator('.ptopic').is_disabled() and pg.locator('.prow:not(:has(.plink)):not(.geen) .ptopic:enabled').count() > 0, 'alleen recht Jaarplanning: onderwerp van een gekoppelde opkomst vast, andere aan te passen')
+    vr.locator('[aria-label="Afwezigheid aanpassen"]').click(); w(300); pg.click('.modal .chip:text-is("Bagheera")'); pg.click('.modal >> text=Klaar'); w(900)
+    check(oefen_get("s['speltakken/oefen/planning/pl-1'].absent.includes('Bagheera') && JSON.stringify(s['speltakken/oefen/opkomsten/opk-vuur'].blocks).includes('Bagheera')"), 'alleen recht Jaarplanning: afwezigheid opgeslagen, opkomst niet aangeraakt')
+    pg.goto(BASE + '/s/oefen/opkomsten'); w(1000); pg.click('.bcard:has-text("Rond de wereld")'); w(300)
+    check(pg.locator('.side button:has-text("Inplannen")').count() == 0, 'alleen recht Jaarplanning: geen Inplannen vanuit de bank')
+    oefen_set("const sp = s['speltakken/oefen']; sp.tlIds = ['oefen-jij']; sp.members['oefen-jij'].role = 'teamleider'; sp.members['oefen-jij'].perms = { plan: true, build: true, bank: true, settings: true }")
+    pg.goto(BASE + '/s/oefen/bouwer/opk-vuur'); w(1500)
+    check(not oefen_get("JSON.stringify(s['speltakken/oefen/opkomsten/opk-vuur'].blocks).includes('Bagheera')"), 'opkomst openen met recht Opkomsten: afwezige leiding stil uit de indeling')
     pg.click('.oefenbar >> text=Opnieuw beginnen'); w(1800)
     pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(900)
     check(pg.input_value('#om-title') == 'Junglejacht en stratego', 'oefenomgeving: opnieuw beginnen zet voorbeelddata terug')
@@ -495,6 +582,10 @@ with sync_playwright() as p:
     for day, want in (('2026-07-31', '2025–2026'), ('2026-08-01', '2026–2027'), ('2026-09-01', '2026–2027')):
         c, q = at_time(day); q.goto(BASE + '/s/oefen/dashboard'); q.wait_for_timeout(1200)
         check(q.locator(f'h3:text-is("Seizoen {want}")').count() == 1, f'dashboard op {day}: seizoen {want}')
+        if day == '2026-09-01':
+            q.goto(BASE + '/s/oefen/jaarplanning'); q.wait_for_timeout(800); q.click('.presets >> text=Dit seizoen'); q.wait_for_timeout(300)
+            ds = q.locator('.pdate b').all_inner_texts()
+            check(any(' mrt' in x for x in ds) and not any(' maa' in x for x in ds), 'maart afgekort als mrt, niet maa')
         if day == '2026-08-01':
             q.goto(BASE + '/s/oefen/jaarplanning'); q.wait_for_timeout(800); q.click('.presets >> text=Dit seizoen'); q.wait_for_timeout(300)
             check(q.locator('h1:has-text("Seizoen 2026–2027")').count() == 1, 'jaarplanning in augustus: Dit seizoen is het komende seizoen')

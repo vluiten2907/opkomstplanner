@@ -936,3 +936,10 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
 .bwrap .carddel { position: absolute; z-index: 1; right: 8px; bottom: 8px; min-height: 30px; padding: 4px 8px; }
 .bwrap .carddel[data-armed] { background: color-mix(in srgb, var(--danger) 14%, var(--paper)); color: var(--danger); }
 .gone-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; overflow-wrap: anywhere; }
+
+/* Opslagstatus in de kopbalk (naast het account) en melding zonder verbinding */
+.acct { display: flex; align-items: center; gap: 6px; }
+.savestate { display: inline-grid; place-items: center; width: 26px; height: 26px; flex: none; border-radius: 50%; color: var(--muted); }
+.savestate.ok { color: var(--good); }
+.savestate.off, .savestate.fail { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.offnote { margin-top: 12px; background: color-mix(in srgb, var(--danger) 10%, var(--surface)); }

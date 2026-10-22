@@ -4,7 +4,7 @@ import { Bookmark, CalendarDays, Copy, Download, Plus, Tent, Trash2, X } from 'l
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal, withFreeName } from '../store/modal';
-import { guardLeave, useDirty } from '../store/unsaved';
+import { guardLeave, setUnsaved, useDirty } from '../store/unsaved';
 import { Strip, PickOpk, usePdf, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, TimePicker } from '../components/ui';
 import { cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, uid, DAYS } from '../lib/time';
@@ -51,7 +51,7 @@ type Ctx = { o: Opk; D: { start: number; end: number; blocks: Block[]; label?: s
 
 function Builder({ o: stored }: { o: Opk }) {
   const S = useSpeltak();
-  const { settings, leaders, lib, opks, saveOpk, savePlan, saveLib, entryOfOpk, presentFor, getO, sid, can, dropAbsent } = S;
+  const { settings, leaders, lib, opks, saveOpk, savePlan, saveLib, entryOfOpk, presentFor, getO, sid, can, canLink, dropAbsent } = S;
   const nav = useNavigate(); const pdf = usePdf(); const delDraft = useDeleteDraft();
   const [, bump] = useState(0);
   // Een opkomst uit de bank bewerk je als kladversie: pas bij Opslaan (of Opslaan als kopie) gaat hij naar de bank.
@@ -74,6 +74,8 @@ function Builder({ o: stored }: { o: Opk }) {
   const D = kamp ? o.days[di] : o;
   const T0 = kamp ? D.start : o.start - (o.prep || 0), T1 = kamp ? D.end : o.end + (o.post || 0);
   const e = o.state === 'planned' ? entryOfOpk(o) : null, src = o.srcId ? getO(o.srcId) : undefined;
+  // afwezig gemeld door iemand zonder recht op opkomsten: bij openen stil uit de indeling halen
+  useEffect(() => { if (e && can('build')) dropAbsent(e, true); }, [e?.id, e?.absent.join('|')]);
   const nn = o.state === 'bank', present = presentFor(o);
   const ctx: Ctx = { o, D, T0, T1, row, nn, present, readOnly };
   const upd = (fn: () => void) => { if (readOnly) return; fn(); if (kamp) syncKamp(o); if (o === draft) setDirty(true); else saveOpk({ ...o }); bump(x => x + 1); };
@@ -81,7 +83,7 @@ function Builder({ o: stored }: { o: Opk }) {
   const cancelBank = () => { setDraft(normOpk(clone(stored))); setDirty(false); setSelId(null); };
   const copyBank = (name: string) => {
     const c = copyOpk(o); c.title = name; c.srcId = null; c.fromShared = null; c.state = 'bank';
-    saveOpk(c); setDirty(false); nav(`/s/${sid}/bouwer/${c.id}`); toast(`Kopie "${name}" opgeslagen in de bank`);
+    saveOpk(c); setDirty(false); setUnsaved(false); nav(`/s/${sid}/bouwer/${c.id}`); toast(`Kopie "${name}" opgeslagen in de bank`);
   };
   const A = kamp ? analyzeOne(D as Day, present, leaders, nn) : analyze(o, present, leaders);
   const whole = kamp ? analyze(o, present, leaders) : A;
@@ -137,8 +139,8 @@ function Builder({ o: stored }: { o: Opk }) {
     toast('Opkomstenbank bijgewerkt');
   };
   const pdfBtn = <button className="btn primary" onClick={() => pdf(o)}><Download size={16} />PDF maken</button>;
-  const actions = readOnly ? pdfBtn : o.state === 'draft' ? <><button className="btn" onClick={toBank}><Bookmark size={16} />In bank</button><button className="btn" onClick={() => openModal({ kind: 'toplan', oid: o.id })}><CalendarDays size={16} />Inplannen</button>{pdfBtn}{can('build') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Concept verwijderen" onConfirm={() => { nav(`/s/${sid}/bouwer`); delDraft(o); }} />}</>
-    : o.state === 'bank' ? <><button className="btn" onClick={dup}><Copy size={16} />Kopie</button><button className="btn" onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: o.id }))}><CalendarDays size={16} />Inplannen</button>{pdfBtn}{can('bank') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Uit de opkomstenbank verwijderen" onConfirm={() => { nav(`/s/${sid}/bouwer`); delDraft(o); }} />}</>
+  const actions = readOnly ? pdfBtn : o.state === 'draft' ? <><button className="btn" onClick={toBank}><Bookmark size={16} />In bank</button>{canLink && <button className="btn" onClick={() => openModal({ kind: 'toplan', oid: o.id })}><CalendarDays size={16} />Inplannen</button>}{pdfBtn}{can('build') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Concept verwijderen" onConfirm={() => { nav(`/s/${sid}/bouwer`); delDraft(o); }} />}</>
+    : o.state === 'bank' ? <><button className="btn" onClick={dup}><Copy size={16} />Kopie</button>{canLink && <button className="btn" onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: o.id }))}><CalendarDays size={16} />Inplannen</button>}{pdfBtn}{can('bank') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Uit de opkomstenbank verwijderen" onConfirm={() => { setUnsaved(false); nav(`/s/${sid}/bouwer`); delDraft(o); }} />}</>
       : <><button className="btn" onClick={toBank}><Bookmark size={16} />In bank</button><button className="btn" onClick={() => go(`/s/${sid}/jaarplanning?focus=${e ? e.id : ''}`)}><CalendarDays size={16} />Jaarplanning</button>{pdfBtn}</>;
   const w = whole.warn;
   return <div className="stack pt-5 md:pt-7" style={{ gap: 16 }}>
@@ -371,7 +373,7 @@ export function CatSelect({ value, onChange, prefix }: { value: string; onChange
   const add = () => {
     const v = name.trim(); if (!v) return;
     const c = { id: uid(), label: v, color: SWATCHES[settings.categories.length % SWATCHES.length] };
-    saveSettings({ categories: [...settings.categories, c] }); onChange(c.id); setNewOpen(false); setName(''); toast('Categorie toegevoegd');
+    saveSettings(cur => ({ categories: [...cur.categories, c] })); onChange(c.id); setNewOpen(false); setName(''); toast('Categorie toegevoegd');
   };
   return <Field label="Categorie" htmlFor={prefix + '-cat'}>
     <select id={prefix + '-cat'} value={newOpen ? '__new' : value} onChange={ev => { if (ev.target.value === '__new') { setNewOpen(true); return; } setNewOpen(false); onChange(ev.target.value); }}>

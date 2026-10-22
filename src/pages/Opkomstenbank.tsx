@@ -125,7 +125,7 @@ function BlockList({ o, cats }: { o: Opk; cats?: Cat[] }) {
 }
 
 function TplEditor({ t, own, groupOn, onClose, onDelete, onCopied }: { t: Opk; own: Opk[]; groupOn: boolean; onClose: () => void; onDelete: () => void; onCopied: (id: string) => void }) {
-  const { saveOpk, sid, can, sp, shared } = useSpeltak();
+  const { saveOpk, sid, can, canLink, sp, shared } = useSpeltak();
   const nav = useNavigate();
   const ro = !can('bank');
   // titel, beschrijving en delen eerst in een kladversie; pas bij Opslaan naar de bank
@@ -144,7 +144,7 @@ function TplEditor({ t, own, groupOn, onClose, onDelete, onCopied }: { t: Opk; o
     {groupOn && <label className="toggle"><input id="tf-share" type="checkbox" checked={d.shared} disabled={ro} onChange={e => upd({ shared: e.target.checked })} />
       <span><b>Delen met de groep</b><br /><span className="hint">{d.shared ? `Andere speltakken van ${sp?.groupName || 'de groep'} zien deze opkomst (zonder namen) en kunnen hem kopiëren.` : 'Alleen jullie speltak ziet deze opkomst.'}</span></span></label>}
     {t.fromShared && <p className="hint">Gekopieerd uit de groepsbank{src ? `, van ${src.speltakName}` : ''}.</p>}
-    <div className="row">{can('plan') && <button className="btn primary" onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: t.id }))}><CalendarDays size={16} />Inplannen</button>}<button className="btn" onClick={() => guardLeave(() => nav(`/s/${sid}/bouwer/${t.id}`))}><ExternalLink size={16} />{ro ? 'Bekijken' : 'Bewerken'}</button></div>
+    <div className="row">{canLink && <button className="btn primary" onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: t.id }))}><CalendarDays size={16} />Inplannen</button>}<button className="btn" onClick={() => guardLeave(() => nav(`/s/${sid}/bouwer/${t.id}`))}><ExternalLink size={16} />{ro ? 'Bekijken' : 'Bewerken'}</button></div>
     <BlockList o={t} />
     {!ro && <div className="stack" style={{ gap: 4 }}><div className="row"><ConfirmBtn label="Uit de bank verwijderen" confirm="Klik nogmaals om te verwijderen" onConfirm={onDelete} /></div>
       <p className="hint">Ingeplande opkomsten blijven staan.{groupOn && t.shared ? ' Hij verdwijnt ook uit de groepsbank; kopieën van andere speltakken blijven.' : ''}</p></div>}

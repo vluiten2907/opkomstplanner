@@ -15,17 +15,20 @@ import { useRoles } from '../store/roles';
 import { InviteLink, InviteList, useOpenInvites } from '../components/Invites';
 
 /** Tekstveld dat pas na een korte pauze opslaat (voorkomt een schrijfactie per toetsaanslag). */
-function DebText({ value, onCommit, ...rest }: { value: string; onCommit: (v: string) => void } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
-  const [v, setV] = useDebouncedInput(value, onCommit, 600);
-  return <input {...rest} value={v} onChange={e => setV(e.target.value)} />;
+function DebText({ value, onCommit, onBlur, ...rest }: { value: string; onCommit: (v: string) => void } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
+  const [v, setV, flush] = useDebouncedInput(value, onCommit, 600);
+  return <input {...rest} value={v} onChange={e => setV(e.target.value)} onBlur={e => { flush(); onBlur?.(e); }} />;
 }
+type Patch = Partial<Settings> | ((s: Settings) => Partial<Settings>);
 
 export default function Instellingen() {
   const S = useSpeltak();
   const { settings, isTL, can, saveSettings, opks, lib, plans } = S;
   const team = isTL || S.isAdmin;
   const edit = can('settings');
-  const set = (patch: Partial<Settings>) => saveSettings(patch);
+  // lijsten altijd vanuit de nieuwste instellingen aanpassen, en categorieën op id (niet op plek)
+  const set = (patch: Patch) => saveSettings(patch);
+  const setCat = (id: string, p: Partial<Settings['categories'][0]>) => set(s => ({ categories: s.categories.map(x => x.id === id ? { ...x, ...p } : x) }));
   const monthOpts = MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>);
   const dayOpts = (list: number[]) => list.map(n => <option key={n} value={n}>{n} dagen</option>);
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
@@ -68,20 +71,20 @@ export default function Instellingen() {
       <fieldset className="card pad stack" disabled={!edit} style={{ border: 0, margin: 0, minWidth: 0 }}>
         <h2>Extra leiding</h2>
         <p className="hint">Leden van het team staan hierboven en zijn automatisch in te delen. Hier zet je namen van leiding of hulpouders zonder account.</p>
-        <NameList items={settings.leaders} placeholder="Naam" label="Naam leiding" onChange={leaders => set({ leaders })} dedupe />
+        <NameList items={settings.leaders} placeholder="Naam" label="Naam leiding" onChange={fn => set(s => ({ leaders: fn(s.leaders) }))} dedupe />
       </fieldset>
       <fieldset className="card pad stack" disabled={!edit} style={{ border: 0, margin: 0, minWidth: 0 }}>
         <h2>Categorieën</h2>
-        <div className="stack" style={{ gap: 8 }}>{settings.categories.map((c, i) => <div key={c.id} className="catrow">
-          <div className="row"><Dot color={c.color} style={{ width: 14, height: 14 }} /><DebText className="inp" value={c.label} aria-label="Naam categorie" style={{ flex: 1 }} onCommit={v => { const cats = settings.categories.map((x, j) => j === i ? { ...x, label: v } : x); set({ categories: cats }); }} />
-            <ConfirmBtn className="btn sm ghost" label="Verwijderen" confirm="Zeker?" onConfirm={() => set({ categories: settings.categories.filter((_, j) => j !== i) })} /></div>
-          <div className="swatches">{SWATCHES.map(s => <button key={s} className="sw" style={{ ['--c' as any]: s }} aria-pressed={s === c.color} aria-label={'Kleur ' + s} onClick={() => set({ categories: settings.categories.map((x, j) => j === i ? { ...x, color: s } : x) })} />)}</div>
+        <div className="stack" style={{ gap: 8 }}>{settings.categories.map(c => <div key={c.id} className="catrow">
+          <div className="row"><Dot color={c.color} style={{ width: 14, height: 14 }} /><DebText className="inp" value={c.label} aria-label="Naam categorie" style={{ flex: 1 }} onCommit={v => setCat(c.id, { label: v })} />
+            <ConfirmBtn className="btn sm ghost" label="Verwijderen" confirm="Zeker?" onConfirm={() => set(s => ({ categories: s.categories.filter(x => x.id !== c.id) }))} /></div>
+          <div className="swatches">{SWATCHES.map(sw => <button key={sw} className="sw" style={{ ['--c' as any]: sw }} aria-pressed={sw === c.color} aria-label={'Kleur ' + sw} onClick={() => setCat(c.id, { color: sw })} />)}</div>
         </div>)}</div>
-        <AddRow placeholder="Nieuwe categorie" onAdd={v => set({ categories: [...settings.categories, { id: uid(), label: v, color: SWATCHES[settings.categories.length % SWATCHES.length] }] })} />
+        <AddRow placeholder="Nieuwe categorie" onAdd={v => set(s => ({ categories: [...s.categories, { id: uid(), label: v, color: SWATCHES[s.categories.length % SWATCHES.length] }] }))} />
       </fieldset>
       <fieldset className="card pad stack" disabled={!edit} style={{ border: 0, margin: 0, minWidth: 0 }}>
         <h2>Locaties</h2>
-        <NameList items={settings.locations} placeholder="bijv. Speelveld" label="Locatie" onChange={locations => set({ locations })} />
+        <NameList items={settings.locations} placeholder="bijv. Speelveld" label="Locatie" onChange={fn => set(s => ({ locations: fn(s.locations) }))} />
       </fieldset>
       <section className="card pad stack">
         <h2>Back-up</h2>
@@ -107,7 +110,7 @@ function Logo() {
       const max = 256, k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
       const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
       const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d')!.drawImage(img, 0, 0, w, h); URL.revokeObjectURL(url);
-      saveSettings({ logo: c.toDataURL('image/png'), logoW: w, logoH: h }).then(() => toast('Logo opgeslagen'));
+      saveSettings({ logo: c.toDataURL('image/png'), logoW: w, logoH: h }).then(ok => { if (ok) toast('Logo opgeslagen'); });
     };
     img.onerror = () => { URL.revokeObjectURL(url); toast('Deze afbeelding kan niet worden gelezen.'); };
     img.src = url;
@@ -119,10 +122,12 @@ function Logo() {
   </div></div>;
 }
 
-function NameList({ items, placeholder, label, onChange, dedupe }: { items: string[]; placeholder: string; label: string; onChange: (v: string[]) => void; dedupe?: boolean }) {
+/** Lijst met namen. `onChange` krijgt een functie die de nieuwste lijst aanpast (niet de lijst van deze weergave). */
+function NameList({ items, placeholder, label, onChange, dedupe }: { items: string[]; placeholder: string; label: string; onChange: (fn: (cur: string[]) => string[]) => void; dedupe?: boolean }) {
   return <>
-    <ul className="setlist">{items.map((n, i) => <li key={i}><DebText className="inp" value={n} aria-label={label} onCommit={v => onChange(items.map((x, j) => j === i ? v : x))} /><ConfirmBtn className="btn sm ghost" label="Verwijderen" confirm="Zeker?" onConfirm={() => onChange(items.filter((_, j) => j !== i))} /></li>)}</ul>
-    <AddRow placeholder={placeholder} onAdd={v => { if (dedupe && items.includes(v)) { toast(v + ' staat er al in.'); return; } onChange([...items, v]); }} />
+    {/* plek bestaat niet meer (intussen verwijderd): niets doen */}
+    <ul className="setlist">{items.map((n, i) => <li key={i}><DebText className="inp" value={n} aria-label={label} onCommit={v => onChange(cur => i < cur.length ? cur.map((x, j) => j === i ? v : x) : cur)} /><ConfirmBtn className="btn sm ghost" label="Verwijderen" confirm="Zeker?" onConfirm={() => onChange(cur => cur[i] === n ? cur.filter((_, j) => j !== i) : cur.filter(x => x !== n))} /></li>)}</ul>
+    <AddRow placeholder={placeholder} onAdd={v => { if (dedupe && items.includes(v)) { toast(v + ' staat er al in.'); return; } onChange(cur => [...cur, v]); }} />
   </>;
 }
 function AddRow({ placeholder, onAdd }: { placeholder: string; onAdd: (v: string) => void }) {
@@ -141,13 +146,16 @@ function Restore() {
       try {
         const d = JSON.parse(String(rd.result));
         if (!(d && d.version === 4 && Array.isArray(d.opks) && Array.isArray(d.plans))) { toast('Dit is geen back-up van de Opkomstplanner.'); return; }
-        const s = normSettings(d.settings || {});
-        const merged: Partial<Settings> = {
-          categories: [...settings.categories, ...s.categories.filter(c => !settings.categories.some(x => x.id === c.id))],
-          leaders: [...new Set([...settings.leaders, ...s.leaders])], locations: [...new Set([...settings.locations, ...s.locations])],
-        };
-        if (!opks.length && !plans.length) Object.assign(merged, { defStart: s.defStart, defEnd: s.defEnd, opkDay: s.opkDay, prepMin: s.prepMin, postMin: s.postMin, seasonStartMonth: s.seasonStartMonth, seasonEndMonth: s.seasonEndMonth, letterDays: s.letterDays, letterNotice: s.letterNotice, fixedOn: s.fixedOn, fixedOpen: s.fixedOpen, fixedRanja: s.fixedRanja, fixedClose: s.fixedClose, logo: s.logo || settings.logo, logoW: s.logoW || settings.logoW, logoH: s.logoH || settings.logoH });
-        saveSettings(merged);
+        const s = normSettings(d.settings || {}), fresh = !opks.length && !plans.length;
+        saveSettings(cur => {
+          const merged: Partial<Settings> = {
+            categories: [...cur.categories, ...s.categories.filter(c => !cur.categories.some(x => x.id === c.id))],
+            leaders: [...new Set([...cur.leaders, ...s.leaders])], locations: [...new Set([...cur.locations, ...s.locations])],
+          };
+          if (fresh) Object.assign(merged, { defStart: s.defStart, defEnd: s.defEnd, opkDay: s.opkDay, prepMin: s.prepMin, postMin: s.postMin, seasonStartMonth: s.seasonStartMonth, seasonEndMonth: s.seasonEndMonth, letterDays: s.letterDays, letterNotice: s.letterNotice, fixedOn: s.fixedOn, fixedOpen: s.fixedOpen, fixedRanja: s.fixedRanja, fixedClose: s.fixedClose });
+          if (fresh && s.logo) Object.assign(merged, { logo: s.logo, logoW: s.logoW, logoH: s.logoH });
+          return merged;
+        });
         (d.lib || []).forEach((x: any) => saveLib(normLib(x)));
         d.opks.forEach((x: any) => saveOpk(normOpk(x, settings)));
         d.plans.forEach((x: any) => { const p = normPlan(x); if (!plans.some(q => q.id !== p.id && (q.slot && q.slot === p.slot))) savePlan(p); });

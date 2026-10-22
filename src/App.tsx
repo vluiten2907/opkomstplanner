@@ -6,6 +6,7 @@ import { SpeltakProvider } from './store/speltak';
 import { Toast } from './components/ui';
 import SpeltakPages, { Loading } from './SpeltakPages';
 import { configured } from './lib/firebase';
+import { LeaveGuard } from './store/unsaved';
 // Pagina's worden per stuk geladen, zodat de eerste bundel klein blijft.
 const AuthPage = lazy(() => import('./pages/Auth'));
 const InvitePage = lazy(() => import('./pages/Invite'));
@@ -49,5 +50,6 @@ export default function App() {
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes></Suspense>
     <Toast />
+    <LeaveGuard />
   </RolesProvider></AuthProvider>;
 }

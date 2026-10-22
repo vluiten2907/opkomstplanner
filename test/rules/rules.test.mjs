@@ -99,6 +99,7 @@ await t('teamleider: rol overdragen via uitnodiging', () => assertSucceeds(setDo
 await t('teamleider: uitnodigingen speltak lijsten', () => assertSucceeds(getDocs(query(collection(tl, 'invites'), where('sid', '==', 's1')))));
 await t('teamleider: geen groep-uitnodiging', () => assertFails(setDoc(doc(tl, 'invites/n10'), inv({ kind: 'groep', role: null, sid: null }))));
 await t('teamleider: rechten leiding aanpassen', () => assertSucceeds(updateDoc(doc(tl, 'speltakken/s1'), { 'members.ld.perms': ALL })));
+await t('teamleider: losse instelling opslaan (punt-pad)', () => assertSucceeds(updateDoc(doc(tl, 'speltakken/s1'), { 'settings.accent': 'blauw', groupName: 'G1 nieuw' })));
 await t('teamleider: extra teamleider aanstellen niet', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { 'members.ld.role': 'teamleider', tlIds: ['tl', 'ld'] })));
 await t('teamleider: niet als laatste aftreden', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { 'members.tl.role': 'leiding', tlIds: [] })));
 await t('teamleider: overdragen aan leiding', () => assertSucceeds(updateDoc(doc(tl, 'speltakken/s1'), { 'members.ld.role': 'teamleider', 'members.tl.role': 'leiding', tlIds: ['ld'] })));
@@ -112,6 +113,7 @@ await t('leiding: speltak lezen', () => assertSucceeds(getDoc(doc(ld, 'speltakke
 await t('leiding: niemand uitnodigen', () => assertFails(setDoc(doc(ld, 'invites/n11'), inv({ invitedBy: 'ld' }))));
 await t('leiding: uitnodigingen niet lijsten', () => assertFails(getDocs(query(collection(ld, 'invites'), where('sid', '==', 's1')))));
 await t('leiding: zichzelf geen rechten geven', () => assertFails(updateDoc(doc(ld, 'speltakken/s1'), { 'members.ld.perms': ALL })));
+await t('leiding zonder recht Instellingen: instelling niet opslaan', () => assertFails(updateDoc(doc(ld, 'speltakken/s1'), { 'settings.accent': 'rood' })));
 await t('leiding: speltak verlaten', () => assertSucceeds(updateDoc(doc(ld, 'speltakken/s1'), { 'members.ld': deleteField(), memberIds: ['tl'] })));
 
 /* ---- uitnodigingen accepteren ---- */

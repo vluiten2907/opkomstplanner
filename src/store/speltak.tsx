@@ -8,10 +8,13 @@ import { useRoles } from './roles';
 import { createInvite as mkInvite } from './beheer';
 import { uid as mkId, clone, fmtT } from '../lib/time';
 import { toast } from './toast';
+import { hasUnsaved, markQueued, settle, track } from './saving';
 import { ensureLid, normGedeeld, snapshotOf, writeShared, removeShared, sharedId, copyFromShared, countCopy, type Gedeeld } from './groepsbank';
 
 type Ctx = {
   sid: string; sp: Speltak | null; loading: boolean; denied: boolean;
+  /** Laden mislukt om een andere reden dan rechten (bijv. de daglimiet van de database). */
+  loadError: boolean;
   settings: Settings; opks: Opk[]; lib: Lib[]; plans: Plan[];
   leaders: string[]; myName: string; isTL: boolean; can: (p: PermKey) => boolean;
   /** Beheerder van de groep (of Beheer totaal); mag het team beheren. */
@@ -21,7 +24,12 @@ type Ctx = {
   saveOpk: (o: Opk) => void; deleteOpk: (id: string) => Promise<void>;
   saveLib: (l: Lib) => void; deleteLib: (id: string) => Promise<void>;
   savePlan: (p: Plan) => void; deletePlan: (id: string) => Promise<void>;
-  saveSettings: (patch: Partial<Settings>) => Promise<void>;
+  /** Slaat alleen de gegeven velden op. Lijsten (categorieën, namen) via een functie op de nieuwste instellingen. Geeft false bij een fout. */
+  saveSettings: (patch: Partial<Settings> | ((s: Settings) => Partial<Settings>)) => Promise<boolean>;
+  /** Alles wat nog wacht nu wegschrijven en (max. 3 s) wachten op de server; bijv. voor uitloggen. */
+  flushAll: () => Promise<void>;
+  /** Mag opkomsten koppelen, ontkoppelen en inplannen: schrijft zowel de jaarplanning als de opkomst. */
+  canLink: boolean;
   setMember: (uid: string, patch: Partial<Member>) => Promise<void>;
   removeMember: (uid: string) => Promise<void>;
   createInvite: (email: string, kind: 'teamleider' | 'leiding', perms: Perms, transfer?: boolean) => Promise<Invite>;
@@ -51,6 +59,13 @@ const C = createContext<Ctx>(null as any);
 
 const DEBOUNCE = 500;
 
+/** Foutmelding bij opslaan, per oorzaak. Offline is geen fout: Firestore wacht dan tot er weer verbinding is. */
+export function saveErrorText(e: any) {
+  if (e?.code === 'permission-denied') return 'Je hebt geen rechten om dit op te slaan.';
+  if (e?.code === 'invalid-argument' && /size|bytes|longer than|too large/i.test(String(e?.message || ''))) return 'Opslaan mislukt: dit is te groot. Maak het kleiner en probeer het opnieuw.';
+  return 'Opslaan mislukt. Probeer het opnieuw.';
+}
+
 /** Waar de speltak opgeslagen wordt: Firestore, of (oefenomgeving) een lokale nabootsing met dezelfde functies. */
 export type Backend = { db: any; collection: typeof F.collection; doc: typeof F.doc; onSnapshot: typeof F.onSnapshot; setDoc: typeof F.setDoc;
   deleteDoc: typeof F.deleteDoc; updateDoc: typeof F.updateDoc; arrayRemove: typeof F.arrayRemove; deleteField: typeof F.deleteField };
@@ -65,17 +80,18 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [opksReady, setOpksReady] = useState(false);
   // lokale, optimistische kopie: wijzigingen tonen direct, opslaan gebeurt met een korte vertraging
-  const pending = useRef(new Map<string, { kind: string; obj: any; t: any }>());
+  const pending = useRef(new Map<string, { sid: string; kind: string; obj: any; t: any }>());
   const [, bump] = useState(0);
   // nieuwste opkomsten, voor acties die later (vanuit een melding) worden uitgevoerd
   const opksRef = useRef<Opk[]>([]);
 
   useEffect(() => {
     if (!user) return;
-    setLoading(true); setDenied(false); setOpksReady(false);
-    const err = (e: any) => { if (e?.code === 'permission-denied') setDenied(true); setLoading(false); };
+    setLoading(true); setDenied(false); setLoadError(false); setOpksReady(false);
+    const err = (e: any) => { if (e?.code === 'permission-denied') setDenied(true); else setLoadError(true); setLoading(false); };
     const u1 = onSnapshot(doc(db, 'speltakken', sid), s => {
       if (!s.exists()) { setSp(null); setDenied(true); setLoading(false); return; }
       const d = s.data();
@@ -88,7 +104,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
       onSnapshot(collection(db, 'speltakken', sid, name), s => {
         const map = new Map<string, any>();
         s.docs.forEach(d => map.set(d.id, norm({ ...d.data(), id: d.id })));
-        pending.current.forEach((p, key) => { if (key.startsWith(name + ':')) map.set(p.obj.id, p.obj); });
+        pending.current.forEach(p => { if (p.sid === sid && p.kind === name) map.set(p.obj.id, p.obj); });
         set([...map.values()]);
       }, err);
     const u2 = sub('opkomsten', normOpk, (v: Opk[]) => { setOpks(v); setOpksReady(true); }), u3 = sub('activiteiten', normLib, setLib), u4 = sub('planning', normPlan, setPlans);
@@ -96,6 +112,9 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   }, [sid, user]);
 
   const settings = sp ? sp.settings : normSettings(null);
+  // nieuwste instellingen, ook vlak na een eigen wijziging (voor lijsten die je snel na elkaar aanpast)
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   useEffect(() => { opksRef.current = opks; }, [opks]);
   const me = user && sp ? sp.members[user.uid] : null;
   const myName = me?.name || user?.displayName || '';
@@ -103,6 +122,8 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   const isTL = isTeamleider(sp, user?.uid);
   const isAdmin = !practice && !!sp && roles.isGroupAdmin(sp.gid);
   const can = (p: PermKey) => !!me && (isTL || !!me.perms?.[p]);
+  // Koppelen schrijft de jaarplanning (plan of build) én de opkomst (build of bank); zo dwingen de regels het ook af.
+  const canLink = (can('plan') || can('build')) && (can('build') || can('bank'));
   const leaders = useMemo(() => {
     const names = sp ? Object.values(sp.members).map(m => m.name).filter(Boolean) : [];
     settings.leaders.forEach(n => { if (!names.includes(n)) names.push(n); });
@@ -110,36 +131,59 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   }, [sp, settings.leaders]);
 
   const queue = (coll: string, obj: any, delay = DEBOUNCE) => {
-    const key = coll + ':' + obj.id;
+    const key = sid + '/' + coll + ':' + obj.id;
     const p = pending.current.get(key); if (p) clearTimeout(p.t);
     obj.updatedAt = Date.now();
-    pending.current.set(key, { kind: coll, obj, t: setTimeout(() => flush(key), delay) });
+    pending.current.set(key, { sid, kind: coll, obj, t: setTimeout(() => flush(key), delay) });
+    markQueued(key, true);
     bump(x => x + 1);
   };
-  const flush = async (key: string) => {
-    const p = pending.current.get(key); if (!p) return;
-    pending.current.delete(key);
-    try { await setDoc(doc(db, 'speltakken', sid, p.kind, p.obj.id), clone(p.obj)); }
-    catch (e: any) { toast(e?.code === 'permission-denied' ? 'Je hebt geen rechten om dit op te slaan.' : 'Opslaan mislukt. Controleer je verbinding.'); }
+  // Gebruikt alleen vaste dingen (backend, ref), dus werkt ook nog na het sluiten van de speltak.
+  const flush = (key: string) => {
+    const p = pending.current.get(key); if (!p) return Promise.resolve();
+    clearTimeout(p.t); pending.current.delete(key); markQueued(key, false);
+    return track(setDoc(doc(db, 'speltakken', p.sid, p.kind, p.obj.id), clone(p.obj))).then(() => {}, (e: any) => { toast(saveErrorText(e)); });
   };
-  useEffect(() => { const h = () => pending.current.forEach((_, k) => flush(k)); window.addEventListener('pagehide', h); return () => window.removeEventListener('pagehide', h); }, []);
+  const flushNow = () => { [...pending.current.keys()].forEach(k => { flush(k); }); };
+  const flushAll = () => { flushNow(); return settle(); };
+  // Tabblad naar de achtergrond (telefoon: andere app), sluiten of herladen: direct wegschrijven, niet op de vertraging wachten.
+  // Is er dan nog iets onderweg, dan vraagt de browser of je echt weg wilt.
+  useEffect(() => {
+    const vis = () => { if (document.visibilityState === 'hidden') flushNow(); };
+    const before = (ev: BeforeUnloadEvent) => { flushNow(); if (hasUnsaved()) { ev.preventDefault(); ev.returnValue = ''; } };
+    window.addEventListener('pagehide', flushNow); document.addEventListener('visibilitychange', vis); window.addEventListener('beforeunload', before);
+    return () => { window.removeEventListener('pagehide', flushNow); document.removeEventListener('visibilitychange', vis); window.removeEventListener('beforeunload', before); };
+  }, []);
 
   const saveOpk = (o: Opk) => { setOpks(a => a.some(x => x.id === o.id) ? a.map(x => x.id === o.id ? o : x) : [...a, o]); queue('opkomsten', o); };
   const saveLib = (l: Lib) => { setLib(a => a.some(x => x.id === l.id) ? a.map(x => x.id === l.id ? l : x) : [...a, l]); queue('activiteiten', l); };
   const savePlan = (p: Plan) => { setPlans(a => a.some(x => x.id === p.id) ? a.map(x => x.id === p.id ? p : x) : [...a, p]); queue('planning', p); };
   const del = (coll: string, id: string) => {
-    const key = coll + ':' + id; const p = pending.current.get(key); if (p) { clearTimeout(p.t); pending.current.delete(key); }
-    return deleteDoc(doc(db, 'speltakken', sid, coll, id)).catch(() => toast('Verwijderen mislukt.'));
+    const key = sid + '/' + coll + ':' + id; const p = pending.current.get(key); if (p) { clearTimeout(p.t); pending.current.delete(key); markQueued(key, false); }
+    return track(deleteDoc(doc(db, 'speltakken', sid, coll, id))).catch((e: any) => toast(e?.code === 'permission-denied' ? 'Je hebt geen rechten om dit te verwijderen.' : 'Verwijderen mislukt. Probeer het opnieuw.'));
   };
   const deleteOpk = async (id: string) => { setOpks(a => a.filter(x => x.id !== id)); await del('opkomsten', id); };
   const deleteLib = async (id: string) => { setLib(a => a.filter(x => x.id !== id)); await del('activiteiten', id); };
   const deletePlan = async (id: string) => { setPlans(a => a.filter(x => x.id !== id)); await del('planning', id); };
-  const saveSettings = async (patch: Partial<Settings>) => {
-    const next = { ...settings, ...patch };
-    const { groupName, speltak, ...rest } = next;
-    setSp(s => s ? { ...s, settings: next, groupName, name: speltak } : s);
-    try { await updateDoc(doc(db, 'speltakken', sid), { settings: rest, groupName, name: speltak }); }
-    catch (e: any) { toast(e?.code === 'permission-denied' ? 'Alleen de teamleider kan dit aanpassen.' : 'Opslaan mislukt.'); }
+  // Alleen de gewijzigde velden wegschrijven ('settings.accent', 'groupName', 'name'): twee wijzigingen vlak na elkaar,
+  // of door twee mensen tegelijk, overschrijven elkaar dan niet, en het logo gaat niet bij elke klik mee.
+  const saveSettings = async (p: Partial<Settings> | ((s: Settings) => Partial<Settings>)) => {
+    const cur = settingsRef.current, patch = typeof p === 'function' ? p(cur) : p;
+    const keys = (Object.keys(patch) as (keyof Settings)[]).filter(k => patch[k] !== undefined);
+    if (!keys.length) return true;
+    const upd: Record<string, unknown> = {}, prev: Partial<Settings> = {};
+    keys.forEach(k => { upd[k === 'groupName' ? 'groupName' : k === 'speltak' ? 'name' : 'settings.' + k] = patch[k]; (prev as any)[k] = cur[k]; });
+    const apply = (x: Partial<Settings>) => {
+      settingsRef.current = { ...settingsRef.current, ...x };
+      setSp(s => s && { ...s, settings: { ...s.settings, ...x }, ...(x.groupName !== undefined ? { groupName: x.groupName } : {}), ...(x.speltak !== undefined ? { name: x.speltak } : {}) });
+    };
+    apply(patch);
+    try { await track(updateDoc(doc(db, 'speltakken', sid), upd)); return true; }
+    catch (e: any) {
+      // terugzetten, behalve wat intussen alweer is aangepast
+      const back: Partial<Settings> = {}; keys.forEach(k => { if (settingsRef.current[k] === patch[k]) (back as any)[k] = prev[k]; });
+      apply(back); toast(saveErrorText(e)); return false;
+    }
   };
   const setMember = async (uidX: string, patch: Partial<Member>) => {
     const cur = sp?.members[uidX]; if (!cur) return;
@@ -175,6 +219,8 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
     e = normPlan({ slot: isSlot ? iso : null, date: iso }); savePlan(e); return e;
   };
   const dropAbsent = (e: Plan, quiet?: boolean) => {
+    // Zonder recht op opkomsten alleen de afwezigheid opslaan; wie de opkomst opent, haalt ze er later stil uit.
+    if (!(can('build') || can('bank'))) return 0;
     const o = e.opkId ? getO(e.opkId) : null; if (!o || !e.absent.length) return 0;
     let n = 0; const who = new Set<string>();
     if (o.lead && e.absent.includes(o.lead)) { who.add(o.lead); o.lead = ''; n++; }
@@ -257,13 +303,13 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   const importShared = (g: Gedeeld, title?: string) => {
     const { opk, add } = copyFromShared(g, settings, can('settings'));
     if (title) opk.title = title;
-    if (add.length) saveSettings({ categories: [...settings.categories, ...add] });
+    if (add.length) saveSettings(s => ({ categories: [...s.categories, ...add.filter(a => !s.categories.some(c => c.id === a.id))] }));
     saveOpk(opk);
     if (gid) countCopy(gid, g.id).catch(() => {});
     return opk;
   };
 
-  const value: Ctx = { sid, sp, loading, denied, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
+  const value: Ctx = { sid, sp, loading, denied, loadError, flushAll, canLink, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
     saveOpk, deleteOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
     getO, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null };
   return <C.Provider value={value}>{children}</C.Provider>;

@@ -47,7 +47,7 @@ export function isTeamleider(sp: Pick<Speltak, 'tlIds' | 'members'> | null | und
 }
 export const PERM_LABELS: Record<PermKey, string> = { plan: 'Jaarplanning', build: 'Opkomsten', bank: 'Banken', settings: 'Instellingen' };
 export const PERM_HELP: Record<PermKey, string> = {
-  plan: 'Onderwerpen, planners, afwezigheid en brieven in de jaarplanning aanpassen en opkomsten koppelen.',
+  plan: 'Onderwerpen, planners, afwezigheid en brieven in de jaarplanning aanpassen. Samen met Opkomsten of Banken ook opkomsten koppelen.',
   build: 'Opkomsten en kampen bouwen, bewerken en leiding indelen.',
   bank: 'Activiteitenbank en opkomstenbank bewerken.',
   settings: 'Instellingen van de speltak aanpassen (niet het team).',

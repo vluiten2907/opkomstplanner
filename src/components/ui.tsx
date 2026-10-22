@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { useToast } from '../store/toast';
 import { fmtT, pad2 } from '../lib/time';
@@ -60,11 +60,25 @@ export function Chip({ on, onClick, children, disabled, title, className = '' }:
 
 export function Dot({ color, style }: { color: string; style?: React.CSSProperties }) { return <i className="dot" style={{ ['--c' as any]: color, ...style }} />; }
 
+/**
+ * Tekstveld dat pas na een korte pauze opslaat. `flush` schrijft direct weg (bij wegklikken);
+ * bij het sluiten van het onderdeel (bijv. naar een andere pagina) gaat wat nog wacht ook mee.
+ */
 export function useDebouncedInput(value: string, onCommit: (v: string) => void, delay = 400) {
   const [v, setV] = useState(value);
-  const last = useRef(value);
-  useEffect(() => { if (value !== last.current) { last.current = value; setV(value); } }, [value]);
-  useEffect(() => { if (v === last.current) return; const t = setTimeout(() => { last.current = v; onCommit(v); }, delay); return () => clearTimeout(t); }, [v]);
-  return [v, setV] as const;
+  const last = useRef(value), cur = useRef(value), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // altijd de nieuwste onCommit gebruiken, niet die van de toetsaanslag waarmee de timer begon
+  const commit = useRef(onCommit); commit.current = onCommit;
+  useEffect(() => { if (value !== last.current) { last.current = value; cur.current = value; setV(value); } }, [value]);
+  const flush = useCallback(() => { clearTimeout(timer.current); if (cur.current !== last.current) { last.current = cur.current; commit.current(cur.current); } }, []);
+  const set = useCallback((x: string) => { cur.current = x; setV(x); clearTimeout(timer.current); timer.current = setTimeout(flush, delay); }, [flush, delay]);
+  useEffect(() => {
+    // tabblad sluiten of naar de achtergrond: niet op de pauze wachten (en waarschuwen als er nog iets wachtte)
+    const before = (e: BeforeUnloadEvent) => { if (cur.current !== last.current) { flush(); e.preventDefault(); e.returnValue = ''; } };
+    const hide = () => { if (document.visibilityState === 'hidden') flush(); };
+    window.addEventListener('beforeunload', before); window.addEventListener('pagehide', flush); document.addEventListener('visibilitychange', hide);
+    return () => { window.removeEventListener('beforeunload', before); window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', hide); flush(); };
+  }, [flush]);
+  return [v, set, flush] as const;
 }
 export const timeLabel = (v: number) => fmtT(v);

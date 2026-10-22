@@ -88,14 +88,15 @@ function TopicInput({ keyId, value, placeholder, label, disabled }: { keyId: str
 }
 
 function PlanRow({ r, today }: { r: Row; today: string }) {
-  const { settings, getO, unlinkEntry, can, sid } = useSpeltak();
+  const { settings, getO, unlinkEntry, can, canLink, sid } = useSpeltak();
   const nav = useNavigate();
   const e = r.e, d = rowDate(r), type = e ? e.type : 'opkomst', o = e && e.opkId ? getO(e.opkId) : null;
   const [st, en] = entryTimes(settings, e, o || null), past = rowEnd(r) < today, moved = !!(e && e.slot && e.date !== e.slot);
   const sub = type === 'opkomst' ? `wk ${isoWeek(d)} · ${fmtT(st)}–${fmtT(en)}` : type === 'kamp' ? `wk ${isoWeek(d)} · kamp / weekend` : `wk ${isoWeek(d)}`;
   const plan = can('plan');
   const dateBtn = <button className="pdate" disabled={!plan} onClick={() => openModal({ kind: 'date', keyId: r.key })} title="Datum of soort aanpassen"><b>{fmtRange(d, e && e.endDate)}</b><span>{sub}</span>{moved && <span className="moved">verzet van {fmtShort(e!.slot!)}</span>}</button>;
-  const topic = <TopicInput keyId={r.key} value={o ? o.title : (e ? e.topic : '')} disabled={!plan} placeholder={type === 'geen' ? 'Reden, bijv. Herfstvakantie' : 'Onderwerp, bijv. Pionieren'} label={'Onderwerp ' + fmtShort(d)} />;
+  // gekoppeld: het onderwerp is de titel van de opkomst, en die aanpassen vraagt ook recht op opkomsten
+  const topic = <TopicInput keyId={r.key} value={o ? o.title : (e ? e.topic : '')} disabled={!plan || (!!o && !(can('build') || can('bank')))} placeholder={type === 'geen' ? 'Reden, bijv. Herfstvakantie' : 'Onderwerp, bijv. Pionieren'} label={'Onderwerp ' + fmtShort(d)} />;
   const cls = ['prow', type, past ? 'past' : ''].join(' ');
   if (type === 'geen') return <div className={cls} id={rowDomId(r.key)}>{dateBtn}<div className="pf"><span className="plabel">Reden</span><div className="pcell nowrap"><span className="pill neutral">Geen opkomst</span>{topic}</div></div></div>;
   const people = (f: 'planners' | 'absent', list: string[]) => <div className="pcell"><PeopleChips list={list} abs={f === 'absent'} />
@@ -112,8 +113,8 @@ function PlanRow({ r, today }: { r: Row; today: string }) {
         {o.cats.length > 0 && <span className="cdots">{o.cats.map(c => opkCatOf(settings, c)).filter(Boolean).map(c => <Dot key={c!.id} color={c!.color} />)}</span>}</button>
       <StatusPill o={o} />
       {can('build') && <button className="iconbtn" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })} title="Leiding indelen" aria-label="Leiding indelen"><SquarePen size={15} /></button>}
-      {plan && <button className="iconbtn" onClick={() => { unlinkEntry(e!); toast('Ontkoppeld. De opkomst staat nu bij de concepten in de opkomstenbank.'); }} title="Ontkoppelen" aria-label="Opkomst ontkoppelen"><X size={15} /></button>}
-    </div> : <div className="pcell">{plan ? <button className="btn sm" onClick={() => openModal({ kind: 'link', keyId: r.key })}><Plus size={14} />Koppelen</button> : <span className="hint">Nog geen programma</span>}</div>}</div>
+      {canLink && <button className="iconbtn" onClick={() => { unlinkEntry(e!); toast('Ontkoppeld. De opkomst staat nu bij de concepten in de opkomstenbank.'); }} title="Ontkoppelen" aria-label="Opkomst ontkoppelen"><X size={15} /></button>}
+    </div> : <div className="pcell">{canLink ? <button className="btn sm" onClick={() => openModal({ kind: 'link', keyId: r.key })}><Plus size={14} />Koppelen</button> : <span className="hint">Nog geen programma</span>}</div>}</div>
     <div className="pf"><span className="plabel">Planning door</span>{people('planners', plannersOf(e, o))}</div>
     <div className="pf"><span className="plabel">Afwezig</span>{people('absent', e ? e.absent : [])}</div>
     <div className="pf"><span className="plabel">Brief</span><div className="pcell"><button className={lcls} disabled={!plan} onClick={() => openModal({ kind: 'letter', keyId: r.key })}><Mail size={14} />{ltxt}</button></div></div>

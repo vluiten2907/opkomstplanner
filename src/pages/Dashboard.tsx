@@ -103,7 +103,7 @@ function TimeEdit({ st, en, onSet, onClose }: { st: number; en: number; onSet: (
 }
 
 function Hero({ r, today }: { r: Row; today: string }) {
-  const { settings, getO, presentForEntry, sid, can, saveOpk, savePlan, entryFor } = useSpeltak();
+  const { settings, getO, presentForEntry, sid, can, canLink, saveOpk, savePlan, entryFor } = useSpeltak();
   const nav = useNavigate(); const pdf = usePdf();
   const [timeEdit, setTimeEdit] = useState(false);
   const e = r.e, d = rowDate(r), o = e && e.opkId ? getO(e.opkId) : null;
@@ -168,7 +168,7 @@ function Hero({ r, today }: { r: Row; today: string }) {
         {can('build') && <button className="btn" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })}><Users size={16} />Leiding indelen</button>}
         <button className="btn" onClick={() => pdf(o)}><Download size={16} />PDF maken</button><button className="btn ghost" onClick={gotoRow}>In jaarplanning</button></div>
     </> : <div className="empty"><span>{kamp ? 'Aan dit kamp is nog geen programma gekoppeld.' : 'Aan deze opkomst is nog geen programma gekoppeld.'}</span>
-      <div className="row">{can('plan') && <button className="btn primary" onClick={() => openModal({ kind: 'link', keyId: r.key })}>Opkomst koppelen</button>}<button className="btn" onClick={gotoRow}>In jaarplanning</button></div></div>}
+      <div className="row">{canLink && <button className="btn primary" onClick={() => openModal({ kind: 'link', keyId: r.key })}>Opkomst koppelen</button>}<button className="btn" onClick={gotoRow}>In jaarplanning</button></div></div>}
   </section>;
 }
 
@@ -188,16 +188,17 @@ function NextItem({ r }: { r: Row }) {
   const nav = useNavigate();
   const e = r.e, d = rowDate(r), o = e && e.opkId ? getO(e.opkId) : null, st = entryStatus(e, o || null, leaders);
   const title = (o && o.title) || (e && e.topic) || (st === 'off' ? 'Geen opkomst' : 'Nog geen onderwerp');
+  const planners = plannersOf(e, o);
   const tags: React.ReactNode[] = [];
   if (st === 'off') tags.push(<span key="off" className="pill neutral">Geen opkomst</span>);
   else {
     if (st === 'kamp') tags.push(<span key="k" className="pill kamp">Kamp</span>);
-    if (!e || !e.planners.length) tags.push(<span key="p" className="pill warn">Nog geen planner</span>);
+    if (!planners.length) tags.push(<span key="p" className="pill warn">Nog geen planner</span>);
     if (!o) tags.push(<span key="np" className="pill neutral">Geen programma</span>);
     else tags.push(st === 'warn' ? <span key="w" className="pill warn">Aandachtspunten</span> : <span key="g" className="pill good">Programma klaar</span>);
     if (e && e.letter.needed) tags.push(<span key="l" className={'pill ' + (e.letter.sent ? 'good' : 'warn')}>{e.letter.sent ? 'Brief verstuurd' : 'Brief'}</span>);
   }
-  const sub = st === 'off' ? fmtRange(d, e && e.endDate) : `${fmtRange(d, e && e.endDate)} · ${e && e.planners.length ? 'planning: ' + e.planners.join(', ') : 'nog niemand toegewezen'}`;
+  const sub = st === 'off' ? fmtRange(d, e && e.endDate) : `${fmtRange(d, e && e.endDate)} · ${planners.length ? 'planning: ' + planners.join(', ') : 'nog niemand toegewezen'}`;
   return <li><button className="nextitem lift transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-1 active:translate-y-0.5" onClick={() => nav(`/s/${sid}/jaarplanning?focus=${encodeURIComponent(r.key)}`)}>
     <span className="nd"><b>{fromISO(d).getDate()}</b><span>{mon3(d)}</span></span>
     <span className="ni"><b>{title}</b><span className="hint">{sub}</span></span>
