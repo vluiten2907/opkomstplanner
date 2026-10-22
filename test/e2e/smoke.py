@@ -122,6 +122,8 @@ with sync_playwright() as p:
 
     # --- jaarplanning
     pg.click('nav >> text=Jaarplanning'); w(600)
+    check(pg.locator('.presets .chip:has-text("Komende 3 maanden")').get_attribute('aria-pressed') == 'true', 'jaarplanning opent standaard op komende 3 maanden')
+    pg.click('.presets >> text=Dit seizoen'); w(400)
     rows = pg.locator('.prow:not(.head)'); check(rows.count() > 20, 'jaarplanning toont opkomstdagen')
     first = rows.nth(1)
     first.locator('.ptopic').fill('Pionieren'); w(700)

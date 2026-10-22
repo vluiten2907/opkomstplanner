@@ -4,7 +4,7 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 
 ## Bezig
 
-_(niets)_
+- **Jaarplanning standaard 3 maanden** — de jaarplanning opent op *Komende 3 maanden* (vandaag + 13 weken) i.p.v. het hele seizoen; een andere keuze blijft staan zolang het tabblad open is.
 
 
 ## Open

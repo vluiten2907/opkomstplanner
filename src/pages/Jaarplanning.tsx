@@ -25,7 +25,7 @@ export default function Jaarplanning() {
   const { settings, plans, can } = useSpeltak();
   const [params, setParams] = useSearchParams();
   const today = todayISO();
-  const [range, setRange] = useState<Range>(() => { try { const r = JSON.parse(sessionStorage.getItem('opk.range') || ''); if (r && r.from && r.to) return r; } catch {} return seasonRange(settings, seasonOf(settings, today)); });
+  const [range, setRange] = useState<Range>(() => { try { const r = JSON.parse(sessionStorage.getItem('opk.range') || ''); if (r && r.from && r.to) return r; } catch {} return presetRange(settings, '3m'); });
   useEffect(() => { try { sessionStorage.setItem('opk.range', JSON.stringify(range)); } catch {} }, [range]);
   // focus op een rij vanuit het dashboard of de kalender
   const focus = params.get('focus');
