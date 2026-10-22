@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { TentTree, LogOut, ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, Save } from 'lucide-react';
 import VerifyNote from '../components/VerifyNote';
 import { useAuth } from '../store/auth';
 import { useRoles } from '../store/roles';
 import { saveProfile } from '../store/beheer';
 import { toast } from '../store/toast';
 import { Field } from '../components/ui';
+import PageHead from '../components/PageHead';
 
 /** Mijn account: gebruikersnaam en e-mailadres bekijken, voor- en achternaam invullen. */
 export default function AccountPage() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { profile } = useRoles();
   const nav = useNavigate();
   const [first, setFirst] = useState(''); const [last, setLast] = useState(''); const [busy, setBusy] = useState(false);
-  useEffect(() => { document.title = 'Opkomstplanner · Mijn account'; }, []);
   useEffect(() => { if (profile) { setFirst(profile.firstName); setLast(profile.lastName); } }, [profile]);
   const back = () => { const sid = localStorage.getItem('opk.sid'); nav(sid ? `/s/${sid}` : '/'); };
   const save = async () => {
@@ -25,10 +25,7 @@ export default function AccountPage() {
   };
   return <div className="auth-wrap" style={{ alignItems: 'start' }}>
     <div className="stack" style={{ width: 'min(640px, 100%)', gap: 18 }}>
-      <div className="row between page-head">
-        <div className="brand flex items-center gap-2.5"><TentTree size={26} strokeWidth={1.9} /><span className="brand-txt"><span>Opkomstplanner</span><small>{user?.displayName || user?.email}</small></span></div>
-        <div className="row" style={{ gap: 6 }}><button className="btn ghost sm" onClick={back}><ArrowLeft size={14} />Terug</button><button className="btn ghost sm" onClick={() => logout().then(() => nav('/inloggen'))}><LogOut size={14} />Uitloggen</button></div>
-      </div>
+      <PageHead title="Opkomstplanner · Mijn account"><button className="btn ghost sm" onClick={back}><ArrowLeft size={14} />Terug</button></PageHead>
       <h1 className="display text-5xl md:text-7xl font-black tracking-tighter">Mijn account</h1>
       <VerifyNote />
       <section className="card pad stack">

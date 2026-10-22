@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { useToast } from '../store/toast';
-import { fmtT, pad2 } from '../lib/time';
+import { pad2 } from '../lib/time';
 
 export function Toast() {
   const { msg, action, hide } = useToast();
@@ -81,4 +81,3 @@ export function useDebouncedInput(value: string, onCommit: (v: string) => void, 
   }, [flush]);
   return [v, set, flush] as const;
 }
-export const timeLabel = (v: number) => fmtT(v);

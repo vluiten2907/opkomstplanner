@@ -18,8 +18,10 @@ const Oefenen = lazy(() => import('./pages/Oefenen'));
 
 function Gate({ children }: { children: React.ReactNode }) {
   const { user, ready } = useAuth();
+  const loc = useLocation();
   if (!ready) return <Loading />;
-  if (!user) return <Navigate to="/inloggen" replace />;
+  // na het inloggen terug naar de pagina die je wilde openen (bijv. een gedeelde link)
+  if (!user) return <Navigate to="/inloggen" replace state={{ next: loc.pathname + loc.search }} />;
   return <>{children}</>;
 }
 function SpeltakRoutes() {

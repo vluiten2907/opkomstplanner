@@ -47,9 +47,9 @@ export default function Dashboard() {
 }
 
 function Notice({ e, due, today }: { e: Plan; due: string; today: string }) {
-  const { getO, savePlan, sid } = useSpeltak();
+  const { opkOf, savePlan, sid } = useSpeltak();
   const nav = useNavigate();
-  const left = dayDiff(today, due), o = e.opkId ? getO(e.opkId) : null;
+  const left = dayDiff(today, due), o = opkOf(e);
   const title = (o && o.title) || e.topic || 'opkomst';
   const msg = left < 0 ? `${plural(-left, 'dag', 'dagen')} te laat` : left === 0 ? 'Vandaag versturen' : `Vóór ${fmtShort(due)}, nog ${plural(left, 'dag', 'dagen')}`;
   const sent = () => { savePlan({ ...e, letter: { ...e.letter, sent: true } }); toast('Brief gemarkeerd als verstuurd', { label: 'Ongedaan maken', fn: () => savePlan({ ...e, letter: { ...e.letter, sent: false } }) }); };
@@ -103,10 +103,10 @@ function TimeEdit({ st, en, onSet, onClose }: { st: number; en: number; onSet: (
 }
 
 function Hero({ r, today }: { r: Row; today: string }) {
-  const { settings, getO, presentForEntry, sid, can, canLink, saveOpk, savePlan, entryFor } = useSpeltak();
+  const { settings, opkOf, presentForEntry, sid, can, canLink, saveOpk, savePlan, entryFor } = useSpeltak();
   const nav = useNavigate(); const pdf = usePdf();
   const [timeEdit, setTimeEdit] = useState(false);
-  const e = r.e, d = rowDate(r), o = e && e.opkId ? getO(e.opkId) : null;
+  const e = r.e, d = rowDate(r), o = opkOf(e);
   const [st, en] = entryTimes(settings, e, o || null), days = dayDiff(today, d);
   const when = d < today ? 'Bezig' : days === 0 ? 'Vandaag' : days === 1 ? 'Morgen' : `Over ${days} dagen`;
   const kamp = !!e && e.type === 'kamp';
@@ -184,9 +184,9 @@ export function ProgList({ o, date }: { o: Opk; date: string | null }) {
 }
 
 function NextItem({ r }: { r: Row }) {
-  const { getO, leaders, sid } = useSpeltak();
+  const { opkOf, leaders, sid } = useSpeltak();
   const nav = useNavigate();
-  const e = r.e, d = rowDate(r), o = e && e.opkId ? getO(e.opkId) : null, st = entryStatus(e, o || null, leaders);
+  const e = r.e, d = rowDate(r), o = opkOf(e), st = entryStatus(e, o, leaders);
   const title = (o && o.title) || (e && e.topic) || (st === 'off' ? 'Geen opkomst' : 'Nog geen onderwerp');
   const planners = plannersOf(e, o);
   const tags: React.ReactNode[] = [];
@@ -206,7 +206,7 @@ function NextItem({ r }: { r: Row }) {
 }
 
 function MiniCal({ today }: { today: string }) {
-  const { settings, plans, getO, leaders, sid } = useSpeltak();
+  const { settings, plans, opkOf, leaders, sid } = useSpeltak();
   const nav = useNavigate();
   const [calMonth, setCalMonth] = useState(today.slice(0, 7));
   const [y, m] = calMonth.split('-').map(Number);
@@ -214,7 +214,7 @@ function MiniCal({ today }: { today: string }) {
   const from = addDays(first, -((fromISO(first).getDay() + 6) % 7));
   const marks: Record<string, { st: string; key: string; title: string; first: boolean; last: boolean }> = {};
   rowsIn(settings, plans, addDays(from, -10), addDays(from, 41)).forEach(r => {
-    const d0 = rowDate(r), d1 = rowEnd(r), e = r.e, o = e && e.opkId ? getO(e.opkId) : null, st = entryStatus(e, o || null, leaders);
+    const d0 = rowDate(r), d1 = rowEnd(r), e = r.e, o = opkOf(e), st = entryStatus(e, o, leaders);
     const title = `${fmtRange(d0, e && e.endDate)}: ${(o && o.title) || (e && e.topic) || (st === 'off' ? 'geen opkomst' : 'nog open')}`;
     for (let d = d0; d <= d1; d = addDays(d, 1)) marks[d] = { st, key: r.key, title, first: d === d0, last: d === d1 };
   });
@@ -236,10 +236,10 @@ function MiniCal({ today }: { today: string }) {
 }
 
 function SeasonCounts({ today }: { today: string }) {
-  const { settings, plans, getO, leaders, sid } = useSpeltak();
+  const { settings, plans, opkOf, leaders, sid } = useSpeltak();
   const Y = seasonOf(settings, today), R = seasonRange(settings, Y), rows = rowsIn(settings, plans, R.from, R.to);
   const c: Record<string, number> = { ok: 0, warn: 0, topic: 0, open: 0, kamp: 0, off: 0 };
-  rows.forEach(r => { const o = r.e && r.e.opkId ? getO(r.e.opkId) : null; const st = entryStatus(r.e, o || null, leaders); if (st !== 'open' || rowEnd(r) >= today) c[st]++; });
+  rows.forEach(r => { const st = entryStatus(r.e, opkOf(r.e), leaders); if (st !== 'open' || rowEnd(r) >= today) c[st]++; });
   const letters = plans.filter(e => e.letter.needed && !e.letter.sent && e.date >= today).length;
   const li = (cls: string, label: string, n: number) => <li key={cls}><i className={'legend-dot cday ' + cls} />{label}<b>{n}</b></li>;
   return <><div className="row between"><h3>Seizoen {seasonLabel(settings, Y)}</h3><Link className="linkbtn" to={`/s/${sid}/jaarplanning`}>Openen</Link></div>
@@ -248,9 +248,9 @@ function SeasonCounts({ today }: { today: string }) {
 }
 
 function CatSpread({ today }: { today: string }) {
-  const { settings, plans, getO } = useSpeltak();
+  const { settings, plans, opkOf } = useSpeltak();
   const Y = seasonOf(settings, today), R = seasonRange(settings, Y), cnt: Record<string, number> = {};
-  rowsIn(settings, plans, R.from, R.to).forEach(r => { const o = r.e && r.e.opkId ? getO(r.e.opkId) : null; if (!o) return; o.cats.forEach(c => cnt[c] = (cnt[c] || 0) + 1); });
+  rowsIn(settings, plans, R.from, R.to).forEach(r => { const o = opkOf(r.e); if (!o) return; o.cats.forEach(c => cnt[c] = (cnt[c] || 0) + 1); });
   const list = opkCatList(settings), max = Math.max(1, ...Object.values(cnt));
   return <><h3>Activiteitengebieden</h3>
     <div className="bars wide">{list.map(c => <div key={c.id} className="barrow"><span className="nm" title={c.label}>{c.label}</span><div className="track"><div className="fill" style={{ width: `${(cnt[c.id] || 0) / max * 100}%`, background: `color-mix(in srgb, ${c.color} var(--keep), #fff)` }} /></div><span className="val">{cnt[c.id] || 0}</span></div>)}</div></>;

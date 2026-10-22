@@ -78,19 +78,19 @@ function RangeInput({ label, value, onChange }: { label: string; value: string; 
 }
 
 function TopicInput({ keyId, value, placeholder, label, disabled }: { keyId: string; value: string; placeholder: string; label: string; disabled: boolean }) {
-  const { entryFor, savePlan, getO, saveOpk } = useSpeltak();
+  const { entryFor, savePlan, opkOf, saveOpk } = useSpeltak();
   const [v, setV] = useState(value); const editing = useRef(false);
   useEffect(() => { if (!editing.current) setV(value); }, [value]);
-  const commit = (val: string) => { const en = { ...entryFor(keyId), topic: val }; const o = en.opkId ? getO(en.opkId) : null; if (o) saveOpk({ ...o, title: val }); savePlan(en); };
+  const commit = (val: string) => { const en = { ...entryFor(keyId), topic: val }; const o = opkOf(en); if (o) saveOpk({ ...o, title: val }); savePlan(en); };
   return <input className="ptopic" value={v} disabled={disabled} placeholder={placeholder} aria-label={label}
     onFocus={() => { editing.current = true; }} onChange={e => { setV(e.target.value); commit(e.target.value); }} onBlur={() => { editing.current = false; }}
     onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />;
 }
 
 function PlanRow({ r, today }: { r: Row; today: string }) {
-  const { settings, getO, unlinkEntry, can, canLink, sid } = useSpeltak();
+  const { settings, opkOf, unlinkEntry, can, canLink, sid } = useSpeltak();
   const nav = useNavigate();
-  const e = r.e, d = rowDate(r), type = e ? e.type : 'opkomst', o = e && e.opkId ? getO(e.opkId) : null;
+  const e = r.e, d = rowDate(r), type = e ? e.type : 'opkomst', o = opkOf(e);
   const [st, en] = entryTimes(settings, e, o || null), past = rowEnd(r) < today, moved = !!(e && e.slot && e.date !== e.slot);
   const sub = type === 'opkomst' ? `wk ${isoWeek(d)} · ${fmtT(st)}–${fmtT(en)}` : type === 'kamp' ? `wk ${isoWeek(d)} · kamp / weekend` : `wk ${isoWeek(d)}`;
   const plan = can('plan');

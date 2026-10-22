@@ -5,7 +5,7 @@ import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { BankCard, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field } from '../components/ui';
-import { CatSelect, LocInput } from './Bouwer';
+import { CatSelect, LocInput } from '../components/fields';
 import { clone, fmtDur, plural, uid } from '../lib/time';
 import { allBlocks, byTitle, catOf, freeName, nameTaken, normLib, type Lib } from '../lib/model';
 

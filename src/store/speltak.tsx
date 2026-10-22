@@ -2,11 +2,11 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import * as F from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './auth';
-import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, copyOpk, isKamp, addDaysSafe, presentNames, relabelDays, planTimesDiffer, applyPlanTimes } from '../lib/model';
-import { isTeamleider, normPerms, type Member, type PermKey, type Speltak, type Invite, type Perms } from '../lib/types';
+import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, copyOpk, isKamp, presentNames, relabelDays, planTimesDiffer, applyPlanTimes } from '../lib/model';
+import { isTeamleider, normPerms, normSpeltak, type Member, type PermKey, type Speltak, type Invite, type Perms } from '../lib/types';
 import { useRoles } from './roles';
 import { createInvite as mkInvite } from './beheer';
-import { clone, fmtT } from '../lib/time';
+import { addDays, clone, fmtT } from '../lib/time';
 import { toast } from './toast';
 import { hasUnsaved, markQueued, settle, track } from './saving';
 import { ensureLid, normGedeeld, snapshotOf, writeShared, removeShared, sharedId, copyFromShared, countCopy, type Gedeeld } from './groepsbank';
@@ -36,6 +36,8 @@ type Ctx = {
   removeMember: (uid: string) => Promise<void>;
   createInvite: (email: string, kind: 'teamleider' | 'leiding', perms: Perms, transfer?: boolean) => Promise<Invite>;
   getO: (id: string | null | undefined) => Opk | undefined;
+  /** Gekoppelde opkomst van een rij in de jaarplanning, of null. */
+  opkOf: (e: Plan | null | undefined) => Opk | null;
   getL: (id: string | null | undefined) => Lib | undefined;
   entryOfOpk: (o: Opk | null | undefined) => Plan | null;
   presentForEntry: (e: Plan | null, o?: Opk | null) => string[];
@@ -104,10 +106,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
     const err = (k: keyof Ready) => (e: any) => { if (e?.code === 'permission-denied') setDenied(true); else setLoadError(true); mark(k, 'fail'); };
     const u1 = onSnapshot(doc(db, 'speltakken', sid), s => {
       if (!s.exists()) { setSp(null); setDenied(true); mark('sp', 'fail'); return; }
-      const d = s.data();
-      setSp({ id: s.id, name: d.name || '', groupName: d.groupName || '', createdAt: d.createdAt || 0, createdBy: d.createdBy || '',
-        settings: normSettings({ ...d.settings, groupName: d.groupName, speltak: d.name }), members: d.members || {}, memberIds: d.memberIds || [],
-        gid: d.gid || null, tlIds: Array.isArray(d.tlIds) ? d.tlIds : null });
+      setSp(normSpeltak(s.id, s.data()));
       mark('sp', 'ok');
     }, err('sp'));
     const sub = (name: 'opkomsten' | 'activiteiten' | 'planning', norm: (x: any) => any, set: (v: any[]) => void) =>
@@ -215,6 +214,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
 
   /* ---- afgeleiden en koppelingen (zelfde logica als de losse versie) ---- */
   const getO = (id: string | null | undefined) => opks.find(o => o.id === id);
+  const opkOf = (e: Plan | null | undefined) => (e && e.opkId && getO(e.opkId)) || null;
   const getL = (id: string | null | undefined) => lib.find(l => l.id === id);
   const entryOfOpk = (o: Opk | null | undefined) => (o && plans.find(p => p.opkId === o.id)) || null;
   const presentForEntry = (e: Plan | null, o?: Opk | null) => presentNames(leaders, e ? e.absent : [], o);
@@ -238,7 +238,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   const dropAbsent = (e: Plan, quiet?: boolean) => {
     // Zonder recht op opkomsten alleen de afwezigheid opslaan; wie de opkomst opent, haalt ze er later stil uit.
     if (!(can('build') || can('bank'))) return 0;
-    const o = e.opkId ? getO(e.opkId) : null; if (!o || !e.absent.length) return 0;
+    const o = opkOf(e); if (!o || !e.absent.length) return 0;
     let n = 0; const who = new Set<string>();
     if (o.lead && e.absent.includes(o.lead)) { who.add(o.lead); o.lead = ''; n++; }
     allBlocks(o).forEach(b => { const keep = b.names.filter(x => !e.absent.includes(x)); if (keep.length !== b.names.length) { b.names.filter(x => e.absent.includes(x)).forEach(x => who.add(x)); n += b.names.length - keep.length; b.names = keep; } });
@@ -254,7 +254,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
     }
     if (!keepNames) allBlocks(o).forEach(b => b.names = []);
     // kamp: de jaarplanning gaat voor; dagen die een weekdag heten krijgen de weekdag van hun datum
-    if (isKamp(o)) { e.type = 'kamp'; if (!e.endDate && o.days.length > 1) e.endDate = addDaysSafe(e.date, o.days.length - 1); relabelDays(o, e.date); }
+    if (isKamp(o)) { e.type = 'kamp'; if (!e.endDate && o.days.length > 1) e.endDate = addDays(e.date, o.days.length - 1); relabelDays(o, e.date); }
     if (e.opkId && e.opkId !== o.id) { const prev = getO(e.opkId); if (prev) saveOpk({ ...prev, state: 'draft' }); }
     const old = entryOfOpk(o); if (old && old !== e) savePlan({ ...old, opkId: null });
     o.state = 'planned'; e.opkId = o.id; if (e.type === 'geen') e.type = 'opkomst';
@@ -273,7 +273,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
     return true;
   };
   const unlinkEntry = (e: Plan) => {
-    const o = e.opkId ? getO(e.opkId) : null;
+    const o = opkOf(e);
     if (o) { e.topic = o.title || e.topic; saveOpk({ ...o, state: 'draft' }); }
     savePlan({ ...e, opkId: null });
   };
@@ -328,7 +328,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
 
   const value: Ctx = { sid, sp, loading, denied, loadError, flushAll, canLink, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
     saveOpk, deleteOpk, removeOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
-    getO, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null };
+    getO, opkOf, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null };
   return <C.Provider value={value}>{children}</C.Provider>;
 }
 export const useSpeltak = () => useContext(C);

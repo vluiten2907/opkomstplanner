@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Bookmark, CalendarDays, Copy, Download, Plus, Tent, Trash2, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
@@ -8,8 +8,9 @@ import { guardLeave, setUnsaved, useDirty } from '../store/unsaved';
 import { Strip, PickOpk, usePdf, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, TimePicker } from '../components/ui';
 import { Ticks, PrepZones, blkGeom, lanesStyle } from '../components/timeline';
-import { cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, uid, DAYS } from '../lib/time';
-import { addDaysSafe, allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, LIB_FIELDS, PREP_OPTS, SWATCHES, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+import { CatSelect, LocInput } from '../components/fields';
+import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, uid, DAYS } from '../lib/time';
+import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, LIB_FIELDS, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /* ============ Startscherm ============ */
 export default function Bouwer() {
@@ -45,7 +46,7 @@ type Ctx = { o: Opk; D: { start: number; end: number; blocks: Block[]; label?: s
 
 function Builder({ o: stored }: { o: Opk }) {
   const S = useSpeltak();
-  const { settings, leaders, lib, opks, saveOpk, savePlan, saveLib, entryOfOpk, presentFor, getO, sid, can, canLink, dropAbsent, removeOpk } = S;
+  const { settings, leaders, opks, saveOpk, savePlan, saveLib, entryOfOpk, presentFor, getO, sid, can, canLink, dropAbsent, removeOpk } = S;
   const nav = useNavigate(); const pdf = usePdf();
   const [, bump] = useState(0);
   // Een opkomst uit de bank bewerk je als kladversie: pas bij Opslaan (of Opslaan als kopie) gaat hij naar de bank.
@@ -88,6 +89,7 @@ function Builder({ o: stored }: { o: Opk }) {
     setSelId(id); if (id && sideRef.current) sideRef.current.scrollTop = 0;
   };
   const deleteBlock = (id: string) => {
+    if (readOnly) return;
     const list = kamp ? (o.days.find(d => d.blocks.some(x => x.id === id)) || { blocks: [] as Block[] }).blocks : o.blocks;
     const i = list.findIndex(b => b.id === id); if (i < 0) return;
     const [b] = list.splice(i, 1); if (selId === id) setSelId(null);
@@ -225,7 +227,7 @@ function DaysBar({ o, di, setDayIdx, upd, date, readOnly }: { o: Opk; di: number
     toast(n ? plural(n, 'maaltijd', 'maaltijden') + ' toegevoegd' : 'Geen maaltijden toegevoegd: ze staan er al of vallen buiten de tijden van deze dag.');
   };
   return <div className="daysbar">
-    <div className="daytabs" role="tablist">{o.days.map((x, j) => <button key={x.id} className="daytab" role="tab" aria-selected={j === di} onClick={() => setDayIdx(j)}><b>{dayTitle(o, j, date ? addDaysSafe(date, j) : null)}</b><span>{fmtT(x.start)}–{fmtT(x.end)} · {x.blocks.length}</span></button>)}
+    <div className="daytabs" role="tablist">{o.days.map((x, j) => <button key={x.id} className="daytab" role="tab" aria-selected={j === di} onClick={() => setDayIdx(j)}><b>{dayTitle(o, j, date ? addDays(date, j) : null)}</b><span>{fmtT(x.start)}–{fmtT(x.end)} · {x.blocks.length}</span></button>)}
       {!readOnly && <button className="daytab add" onClick={addDay} title="Dag toevoegen"><Plus size={14} />Dag</button>}</div>
     {!readOnly && <div className="dayedit">
       <Field label="Naam van de dag" htmlFor="dy-label"><input id="dy-label" value={d.label} onChange={ev => upd(() => { d.label = ev.target.value; })} placeholder="bijv. Zaterdag" /></Field>
@@ -363,31 +365,6 @@ function SidePanel({ tab, setTab, ctx, A, lanesRef, onSelect, onPlan, onDrop }: 
 }
 
 /* ============ Onderdeel bewerken ============ */
-export function CatSelect({ value, onChange, prefix }: { value: string; onChange: (id: string) => void; prefix: string }) {
-  const { settings, saveSettings, can } = useSpeltak();
-  const [newOpen, setNewOpen] = useState(false); const [name, setName] = useState('');
-  const add = () => {
-    const v = name.trim(); if (!v) return;
-    const c = { id: uid(), label: v, color: SWATCHES[settings.categories.length % SWATCHES.length] };
-    saveSettings(cur => ({ categories: [...cur.categories, c] })); onChange(c.id); setNewOpen(false); setName(''); toast('Categorie toegevoegd');
-  };
-  return <Field label="Categorie" htmlFor={prefix + '-cat'}>
-    <select id={prefix + '-cat'} value={newOpen ? '__new' : value} onChange={ev => { if (ev.target.value === '__new') { setNewOpen(true); return; } setNewOpen(false); onChange(ev.target.value); }}>
-      {settings.categories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-      {(!value || !settings.categories.some(c => c.id === value)) && <option value={value}>Zonder categorie</option>}
-      {can('settings') && <option value="__new">+ Nieuwe categorie…</option>}
-      {newOpen && !can('settings') && null}
-    </select>
-    {newOpen && <div className="newcat"><input className="inp" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} placeholder="Naam nieuwe categorie" autoFocus /><button className="btn sm" onClick={add}>Toevoegen</button></div>}
-  </Field>;
-}
-
-export function LocInput({ id, value, onChange, placeholder }: { id: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
-  const { settings, lib } = useSpeltak();
-  const locs = useMemo(() => { const s = new Set(settings.locations); lib.forEach(l => l.location && s.add(l.location)); return [...s]; }, [settings.locations, lib]);
-  return <><input id={id} value={value} list={id + '-list'} onChange={e => onChange(e.target.value)} placeholder={placeholder} /><datalist id={id + '-list'}>{locs.map(l => <option key={l} value={l} />)}</datalist></>;
-}
-
 function Editor({ b, ctx, upd, onClose, onDelete, onDup, saveLib }: { b: Block; ctx: Ctx; upd: (fn: () => void) => void; onClose: () => void; onDelete: () => void; onDup: () => void; saveLib: (l: Lib) => void }) {
   const { settings, leaders, lib, getL, entryOfOpk, can } = useSpeltak();
   const { o, T0, T1, nn, present, readOnly } = ctx;

@@ -57,13 +57,6 @@ export async function readInvite(token: string): Promise<Invite | null> {
 export const revokeInvite = (id: string) => deleteDoc(doc(db, 'invites', id));
 
 /** Openstaande uitnodigingen per niveau ophalen (eenmalig). */
-export async function listInvites(by: { all?: boolean; gid?: string; sid?: string }): Promise<Invite[]> {
-  const c = collection(db, 'invites');
-  const q = by.all ? c : by.gid ? query(c, where('gid', '==', by.gid)) : query(c, where('sid', '==', by.sid));
-  const s = await getDocs(q);
-  return s.docs.map(d => normInvite(d.id, d.data())).filter(i => !i.usedBy).sort((a, b) => b.createdAt - a.createdAt);
-}
-
 /** Wie trad toe met een "Mijn rol overdragen"-uitnodiging van `by` in deze speltak? uid's, gecontroleerd aan de uitnodiging zelf. */
 export async function transferJoiners(sid: string, by: string): Promise<string[]> {
   const s = await getDocs(query(collection(db, 'invites'), where('sid', '==', sid)));
@@ -101,7 +94,6 @@ export async function acceptInvite(inv: Invite, me: Me) {
 }
 
 /* ---------- Beheer (totaal) ---------- */
-export const setRootPerson = (uid: string, p: Admin) => updateDoc(doc(db, 'beheer', 'totaal'), { ['people.' + uid]: p, ids: arrayUnion(uid) });
 export async function removeRootPerson(uid: string, ids: string[]) {
   if (ids.filter(x => x !== uid).length === 0) throw new Error('last');
   await updateDoc(doc(db, 'beheer', 'totaal'), { ['people.' + uid]: deleteField(), ids: ids.filter(x => x !== uid) });

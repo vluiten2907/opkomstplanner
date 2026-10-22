@@ -138,7 +138,7 @@ function AddRow({ placeholder, onAdd }: { placeholder: string; onAdd: (v: string
 
 /* ---------- Back-up terugzetten (ook uit de losse versie) ---------- */
 function Restore() {
-  const { settings, saveSettings, saveLib, saveOpk, savePlan, lib, opks, plans, can } = useSpeltak();
+  const { settings, saveSettings, saveLib, saveOpk, savePlan, opks, plans, can } = useSpeltak();
   const ref = useRef<HTMLInputElement>(null);
   const restore = (f: File | undefined) => {
     if (!f) return; const rd = new FileReader();
@@ -162,7 +162,6 @@ function Restore() {
         d.opks.forEach((x: any) => saveOpk(normOpk(x, settings)));
         d.plans.forEach((x: any) => { const p = normPlan(x); if (!plans.some(q => q.id !== p.id && (q.slot && q.slot === p.slot))) savePlan(p); });
         toast(`Back-up teruggezet: ${(skipLib ? 0 : libs.length) + d.opks.length + d.plans.length} items toegevoegd.` + (skipLib ? ' Activiteiten overgeslagen: daarvoor heb je het recht Banken nodig.' : ''));
-        void lib;
       } catch { toast('Dit bestand kan niet worden gelezen.'); }
     };
     rd.readAsText(f);

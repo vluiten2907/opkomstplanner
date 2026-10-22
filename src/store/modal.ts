@@ -16,7 +16,6 @@ export type NameSpec = { kind: 'name'; title: string; sub?: string; label: strin
 type S = { modal: ModalSpec | null; open: (m: ModalSpec) => void; close: () => void };
 export const useModal = create<S>(set => ({ modal: null, open: m => set({ modal: m }), close: () => set({ modal: null }) }));
 export const openModal = (m: ModalSpec) => useModal.getState().open(m);
-export const closeModal = () => useModal.getState().close();
 
 /** Gebruik `title` als die vrij is; anders vragen om een andere naam. */
 export function withFreeName(title: string, spec: Omit<NameSpec, 'kind' | 'initial'> & { suggest: string }) {

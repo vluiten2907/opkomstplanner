@@ -26,11 +26,11 @@ export default function AuthPage({ mode }: { mode: 'login' | 'reset' }) {
       <h2>{mode === 'login' ? 'Inloggen' : 'Wachtwoord vergeten'}</h2>
       <Field label="E-mailadres" htmlFor="a-email"><input id="a-email" type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required /></Field>
       {mode !== 'reset' && <Field label="Wachtwoord" htmlFor="a-pw"><input id="a-pw" type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete="current-password" minLength={6} required /></Field>}
-      {err && <p className="hint" style={{ color: 'var(--danger)', fontWeight: 700 }}>{err}</p>}
+      {err && <p className="hint err">{err}</p>}
       {done && <p className="hint" style={{ color: 'var(--good)', fontWeight: 700 }}>Als dit adres bekend is, staat er een e-mail klaar om een nieuw wachtwoord te kiezen. Niets ontvangen? Kijk ook in je spammap.</p>}
       <button className="btn primary" disabled={busy}>{mode === 'login' ? 'Inloggen' : 'E-mail sturen'}</button>
       <div className="row between" style={{ fontSize: 14 }}>
-        {mode === 'login' ? <Link to="/wachtwoord">Wachtwoord vergeten</Link> : <Link to="/inloggen" state={{ next }}>Terug naar inloggen</Link>}
+        {mode === 'login' ? <Link to="/wachtwoord" state={{ next }}>Wachtwoord vergeten</Link> : <Link to="/inloggen" state={{ next }}>Terug naar inloggen</Link>}
       </div>
       {mode === 'login' && <p className="hint">Nog geen account? Dat maak je aan via de uitnodigingslink die je van je teamleider of beheerder krijgt.</p>}
       {mode === 'login' && <div className="oefenlink"><span className="hint">Eerst rondkijken? Probeer alles uit met voorbeelddata, zonder account.</span><Link className="btn" to="/s/oefen"><GraduationCap size={16} />Oefenomgeving</Link></div>}

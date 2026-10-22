@@ -6,18 +6,17 @@ import { toast } from '../store/toast';
 import { Modal, TimePicker, Field, Chip, ConfirmBtn } from './ui';
 import { PickOpk } from './shared';
 import { addDays, clone, fmtLong, fmtNL, fmtRange, parseNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, todayISO } from '../lib/time';
-import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, entryTimes, firstFree, fixedBlocks, isKamp, kampLength, lanesLayout, minNeed, newKamp, newOpk, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
+import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, entryTimes, firstFree, fixedBlocks, isKamp, kampLength, lanesLayout, minNeed, newEntry, newKamp, newOpk, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
 import { Ticks, PrepZones, blkGeom, lanesStyle } from './timeline';
-import { uid } from '../lib/time';
 import type { NameSpec } from '../store/modal';
 
 const NO_UNLINK = 'Hier hangt een opkomst aan. Ontkoppelen kan alleen met het recht Opkomsten of Banken.';
 
 /* ---------- Datum en soort ---------- */
 export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose: () => void; onSaved?: (e: Plan) => void }) {
-  const { settings, peekEntry, entryFor, unlinkEntry, savePlan, deletePlan, getO, saveOpk, can } = useSpeltak();
+  const { settings, peekEntry, entryFor, unlinkEntry, savePlan, deletePlan, opkOf, saveOpk, can } = useSpeltak();
   const e = peekEntry(keyId), slot = keyId.startsWith('s:') ? keyId.slice(2) : (e && e.slot);
-  const d0 = e ? e.date : slot!, linked = e && e.opkId ? getO(e.opkId) : null;
+  const d0 = e ? e.date : slot!, linked = opkOf(e);
   const [st0, en0] = entryTimes(settings, e, linked || null);
   const canOpk = can('build') || can('bank');
   const [type, setType] = useState<Plan['type']>(e ? e.type : 'opkomst');
@@ -64,7 +63,7 @@ export function ExtraModal({ onClose, onCreated }: { onClose: () => void; onCrea
     const iso = parseNL(date), endIso = end.trim() ? parseNL(end) : '';
     if (!iso) { toast('Typ de datum als dd-mm-jjjj.'); return; }
     if ((end.trim() && !endIso) || (endIso && endIso < iso)) { toast('Controleer "tot en met".'); return; }
-    const e: Plan = { id: uid(), slot: null, date: iso, endDate: endIso && endIso !== iso ? endIso : '', type, topic: topic.trim(), start: null, end: null, planners: [], absent: [], letter: { needed: false, due: '', sent: false }, opkId: null, note: '', updatedAt: Date.now() };
+    const e = newEntry(null, iso); e.endDate = endIso && endIso !== iso ? endIso : ''; e.type = type; e.topic = topic.trim();
     savePlan(e); onCreated(e); onClose();
   };
   return <Modal title="Extra datum" sub={'Voor een opkomst, kamp of activiteit buiten de vaste ' + DAYS[settings.opkDay] + 'en.'} onClose={onClose}>
@@ -77,11 +76,11 @@ export function ExtraModal({ onClose, onCreated }: { onClose: () => void; onCrea
 
 /* ---------- Planning door / afwezig ---------- */
 export function PeopleModal({ keyId, field, onClose }: { keyId: string; field: 'planners' | 'absent'; onClose: () => void }) {
-  const { leaders, peekEntry, entryFor, savePlan, dropAbsent, getO, saveOpk } = useSpeltak();
+  const { leaders, peekEntry, entryFor, savePlan, dropAbsent, opkOf, saveOpk } = useSpeltak();
   const [, bump] = useState(0);
   const [extra, setExtra] = useState('');
   const e = peekEntry(keyId); const d = e ? e.date : keyId.slice(2);
-  const o = e && e.opkId ? getO(e.opkId) : null;
+  const o = opkOf(e);
   const list = e ? (field === 'planners' ? plannersOf(e, o) : e[field]) : []; const names = [...new Set([...leaders, ...list])];
   const toggle = (n: string) => {
     const en = { ...entryFor(keyId) }, off = list.includes(n);

@@ -1,4 +1,5 @@
-# Bouwt de app en zet hem via SFTP op Strato (conqueston.nl/opkomst) bij elke push naar main.
+# Controleert en bouwt de app en zet hem via SFTP op Strato (conqueston.nl/opkomst) bij elke push naar main.
+# Slaagt `npm run check` niet, dan wordt er niets geüpload.
 # De Firebase-config staat in .env.production (niet geheim).
 # Vereist in GitHub > Settings > Secrets and variables > Actions:
 #   STRATO_SFTP_HOST      SFTP-server uit het Strato-klantmenu (bijv. ssh.strato.de)
@@ -31,7 +32,19 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - run: npm ci
+      # Eerst alles controleren (lint, typecheck, unit-tests, build en rooktest); faalt dat, dan gaat er niets live.
+      - name: Playwright installeren
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw
+        run: pip install playwright && python -m playwright install --with-deps chromium
+      - name: Controleren (npm run check)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw
+        run: npm run check
       - name: Build
         run: npm run build
       - name: Mailinstellingen voor uitnodigingen

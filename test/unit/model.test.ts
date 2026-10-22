@@ -1,0 +1,245 @@
+// Unit-tests voor de pure functies in src/lib/model.ts en src/lib/time.ts.
+// Draait in `npm run check`, of los: node --experimental-strip-types --test 'test/unit/*.test.ts'
+// Node haalt de types zelf weg; er is geen extra testpakket nodig.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import * as M from '../../src/lib/model.ts';
+import { fmtT, isoWeek, parseNL } from '../../src/lib/time.ts';
+import type { Block, Opk, Plan, Settings } from '../../src/lib/model.ts';
+
+const S = (extra: Partial<Settings> = {}): Settings => ({ ...M.defaultSettings(), ...extra });
+const blk = (id: string, start: number, dur: number, extra: Partial<Block> = {}): Block =>
+  M.normBlock({ id, start, dur, title: id, names: ['Akela'], libId: 'lib-' + id, ...extra });
+const opk = (extra: Partial<Opk> = {}): Opk => M.normOpk({ id: 'o1', state: 'draft', title: 'Spel', start: 840, end: 990, prep: 30, post: 30, lead: 'Baloe', srcId: 'bron', fromShared: 'g_x', shared: false,
+  blocks: [blk('a', 840, 30), blk('b', 900, 30)], ...extra });
+const plan = (extra: Partial<Plan>): Plan => M.normPlan({ id: 'p', ...extra });
+const fixed = (o: { blocks: Block[] }, cat: string) => o.blocks.find(x => x.cat === cat)!;
+const texts = (a: M.Analysis) => a.issues.map(i => i.text);
+
+/* ---------- eerste vrije moment ---------- */
+test('firstFree', () => {
+  const day = { start: 840, end: 990, blocks: [blk('a', 840, 30), blk('b', 900, 30)] };
+  assert.equal(M.firstFree(day, 30), 870, 'gat tussen twee onderdelen');
+  assert.equal(M.firstFree(day, 45), 930, 'te lang voor het gat: na het laatste onderdeel');
+  assert.equal(M.firstFree(day, 90), null, 'nergens plek');
+  assert.equal(M.firstFree({ start: 480, end: 1380, blocks: [] }, 60), 480, 'lege dag: begin');
+  assert.equal(M.firstFree({ start: 0, end: 100, blocks: [blk('x', 0, 40), blk('y', 10, 10)] }, 20), 40, 'overlappende onderdelen tellen samen');
+});
+
+/* ---------- opkomstenbank: zonder namen ---------- */
+test('toBank: concept gaat zelf de bank in, zonder namen', () => {
+  const o = opk(), b = M.toBank(o, 'In de bank');
+  assert.equal(b.id, 'o1'); assert.equal(b.blocks[0].id, 'a');
+  assert.equal(b.state, 'bank'); assert.equal(b.title, 'In de bank'); assert.equal(b.shared, true);
+  assert.equal(b.lead, ''); assert.ok(M.allBlocks(b).every(x => x.names.length === 0), 'geen namen');
+  assert.equal(b.srcId, null); assert.equal(b.fromShared, null);
+  assert.equal(b.blocks[0].libId, 'lib-a', 'koppeling met de activiteitenbank blijft');
+  assert.equal(o.state, 'draft'); assert.equal(o.lead, 'Baloe'); assert.equal(o.blocks[0].names[0], 'Akela', 'origineel ongewijzigd');
+});
+test('toBank: ingepland → kopie met nieuwe ids; kamp ook zonder namen', () => {
+  const p = opk({ state: 'planned' }), pb = M.toBank(p, 'Kopie');
+  assert.notEqual(pb.id, 'o1'); assert.ok(pb.blocks.every(x => !['a', 'b'].includes(x.id))); assert.equal(pb.state, 'bank');
+  assert.equal(M.toBank(p, 'x', false).id, 'o1', 'copy=false: zelfde id');
+  const k = M.toBank(M.normOpk({ id: 'k1', kind: 'kamp', state: 'planned', lead: 'Kaa', days: [{ id: 'd1', label: 'Zaterdag', start: 480, end: 1380, blocks: [blk('c', 600, 60)] }] }), 'Kamp');
+  assert.notEqual(k.id, 'k1'); assert.notEqual(k.days[0].id, 'd1'); assert.equal(k.days[0].blocks[0].names.length, 0); assert.equal(k.lead, '');
+});
+
+/* ---------- kopie met nieuwe ids ---------- */
+test('copyOpk', () => {
+  const s = S({ prepMin: 30, postMin: 45 });
+  const c = M.copyOpk(M.normOpk({ id: 'o2', prep: 0, post: 15, blocks: [blk('a', 840, 30)] }), s);
+  assert.notEqual(c.id, 'o2'); assert.notEqual(c.blocks[0].id, 'a'); assert.equal(c.prep, 0); assert.equal(c.post, 15);
+  const old = M.copyOpk({ id: 'o3', title: 'Oud', blocks: [] } as any, s);
+  assert.equal(old.prep, 30); assert.equal(old.post, 45, 'oude opkomst zonder voorbereiding krijgt de standaard');
+});
+
+/* ---------- vaste blokken ---------- */
+test('fixedBlocks: openen, ranja en sluiten', () => {
+  const f = M.fixedBlocks(S(), 840, 990);
+  assert.deepEqual(f.map(b => [b.cat, b.start, b.dur]), [['__open', 840, 5], ['__close', 985, 5], ['__ranja', 910, 15]]);
+  assert.ok(f.every(b => b.minLeaders === 0 && !b.pdfPage), 'tellen niet mee voor leiding en pdf');
+  assert.deepEqual(M.fixedBlocks(S({ fixedOn: false }), 840, 990), [], 'uitgezet: geen vaste blokken');
+  assert.deepEqual(M.fixedBlocks(S(), 840, 860).map(b => b.cat), ['__open', '__close'], 'te kort voor ranja');
+  assert.deepEqual(M.fixedBlocks(S({ fixedRanja: 0 }), 840, 990).map(b => b.cat), ['__open', '__close']);
+});
+test('newOpk heeft vaste blokken, kamp niet', () => {
+  assert.equal(M.newOpk(S()).blocks.filter(M.isFixed).length, 3);
+  const k = M.newKamp(S(), 2);
+  assert.equal(k.blocks.length, 0); assert.ok(k.days.every(d => d.blocks.length === 0));
+});
+
+/* ---------- tijden aanpassen (regressie: niet meer in het origineel schrijven, eind vóór begin geweigerd) ---------- */
+test('changeOpkTime', () => {
+  const f = M.normOpk({ id: 'f', start: 840, end: 990, blocks: M.fixedBlocks(S(), 840, 990) });
+  const later = M.changeOpkTime(f, 'start', 1000);
+  assert.ok(later.opk); assert.equal(later.opk.start, 1000); assert.equal(later.opk.end, 1060);
+  assert.match(later.note || '', /Eindtijd verschoven naar 17:40/);
+  assert.equal(fixed(later.opk, '__open').start, 1000, 'openen schuift mee met het begin');
+  assert.equal(fixed(later.opk, '__close').start, 1055, 'sluiten schuift mee met het eind');
+  assert.equal(f.start, 840); assert.equal(f.end, 990); assert.equal(fixed(f, '__open').start, 840, 'origineel ongewijzigd');
+  const bad = M.changeOpkTime(f, 'end', 840);
+  assert.equal(bad.opk, undefined); assert.equal(bad.error, 'De eindtijd moet na de begintijd liggen.');
+  const end = M.changeOpkTime(f, 'end', 1020);
+  assert.equal(end.opk!.end, 1020); assert.equal(fixed(end.opk!, '__close').start, 1015); assert.equal(end.note, undefined);
+  const earlier = M.changeOpkTime(f, 'start', 780);
+  assert.equal(fixed(earlier.opk!, '__open').start, 780); assert.equal(fixed(earlier.opk!, '__ranja').start, 880, 'ranja blijft in het midden');
+});
+test('changeOpkTime: verplaatste vaste blokken blijven staan', () => {
+  const f = M.normOpk({ id: 'f', start: 840, end: 990, blocks: M.fixedBlocks(S(), 840, 990) });
+  fixed(f, '__open').start = 850; fixed(f, '__ranja').start = 930;
+  const r = M.changeOpkTime(f, 'start', 810).opk!;
+  assert.equal(fixed(r, '__open').start, 850); assert.equal(fixed(r, '__ranja').start, 930);
+});
+test('applyPlanTimes: hele programma naar 10:00–12:00', () => {
+  const ap = M.normOpk({ id: 'g', start: 840, end: 990, blocks: [...M.fixedBlocks(S(), 840, 990), blk('x', 900, 30)] });
+  M.applyPlanTimes(ap, 600, 720);
+  assert.equal(ap.start, 600); assert.equal(ap.end, 720);
+  assert.equal(fixed(ap, '__open').start, 600); assert.equal(fixed(ap, '__close').start, 715);
+  assert.equal(ap.blocks.find(b => b.id === 'x')!.start, 660, 'onderdelen schuiven mee');
+  const k = M.newKamp(S(), 2), before = JSON.stringify(k); M.applyPlanTimes(k, 600, 720);
+  assert.equal(JSON.stringify(k), before, 'kamp blijft ongewijzigd');
+});
+
+/* ---------- analyse (aandachtspunten) ---------- */
+test('minNeed: hoogste minimum van de niet-vaste onderdelen', () => {
+  const o = opk({ blocks: [blk('a', 840, 30, { minLeaders: 2 }), blk('b', 900, 30, { minLeaders: 4 }), blk('__o', 840, 5, { cat: '__open', minLeaders: 9 })] });
+  assert.equal(M.minNeed(o), 4);
+  assert.equal(M.minNeed(opk({ blocks: [] })), 0);
+});
+test('analyze: gaten, buiten de tijd, beschrijving en locatie', () => {
+  const o = opk({ start: 840, end: 900, prep: 0, post: 0, blocks: [blk('a', 840, 30, { short: 'x', location: 'Bos', names: [] }), blk('b', 890, 20, { names: [] })] });
+  const a = M.analyze(o, [], []);
+  assert.equal(a.total, 60); assert.equal(a.planned, 40); assert.equal(a.free, 20);
+  assert.ok(texts(a).includes('Niet ingepland: 14:30–14:50 (20 min)'));
+  assert.ok(texts(a).includes('b valt buiten 14:00–15:00'));
+  assert.ok(texts(a).includes('b: nog geen beschrijving') && texts(a).includes('b: geen locatie'));
+  assert.ok(!texts(a).some(t => t.startsWith('a:')), 'compleet onderdeel geeft niets');
+});
+test('analyze: afwezig, dubbel ingedeeld en te weinig leiding', () => {
+  const o = opk({ blocks: [blk('a', 840, 30, { minLeaders: 1, names: ['Akela', 'Baloe'] }), blk('b', 850, 30, { minLeaders: 3, names: ['Akela'] })] });
+  const a = M.analyze(o, ['Akela', 'Kaa'], ['Akela', 'Baloe', 'Kaa']);
+  assert.ok(texts(a).includes('Baloe is ingedeeld bij a, maar is afwezig'));
+  assert.ok(texts(a).includes('Akela staat tegelijk bij a en b'));
+  assert.ok(a.clashes.has('a|Akela') && a.clashes.has('b|Akela'));
+  assert.ok(texts(a).includes('b: 1 van minimaal 3 leiding ingedeeld'));
+  assert.ok(texts(a).includes('Minimaal 3 leiding nodig (voor b), 2 aanwezig'));
+  assert.equal(a.peak, 3);
+  assert.equal(a.warn, a.issues.filter(i => i.lvl === 'warn').length);
+  const none = M.analyze(o, [], ['Akela', 'Baloe', 'Kaa']);
+  assert.ok(texts(none).includes('Minimaal 3 leiding nodig (voor b), 0 aanwezig'), 'ook als niemand aanwezig is');
+});
+test('analyze: bank-opkomst kijkt niet naar namen', () => {
+  const o = opk({ state: 'bank', blocks: [blk('b', 850, 30, { minLeaders: 3, names: [] })] });
+  const a = M.analyze(o, [], ['Akela']);
+  assert.ok(!texts(a).some(t => /leiding/.test(t)));
+});
+test('analyze: kamp per dag, met de dagnaam ervoor', () => {
+  const k = M.normOpk({ id: 'k', kind: 'kamp', days: [
+    { id: 'd1', label: 'Zaterdag', start: 600, end: 660, blocks: [blk('a', 600, 30, { short: 'x', location: 'Veld' })] },
+    { id: 'd2', label: 'Zondag', start: 600, end: 630, blocks: [blk('b', 600, 30, { short: 'x', location: 'Veld' })] },
+  ] });
+  const a = M.analyze(k, ['Akela'], ['Akela']);
+  assert.equal(a.total, 90); assert.equal(a.planned, 60);
+  assert.deepEqual(texts(a), ['Zaterdag: Niet ingepland: 10:30–11:00 (30 min)']);
+  assert.equal(a.per.Akela.length, 2);
+});
+test('presentNames en plannersOf', () => {
+  const o = opk({ state: 'planned', lead: 'Kaa', blocks: [blk('a', 840, 30, { names: ['Henk', 'Baloe'] })] });
+  assert.deepEqual(M.presentNames(['Akela', 'Baloe'], ['Baloe'], o), ['Akela', 'Henk', 'Kaa'], 'afwezig telt niet, met de hand ingedeeld wel');
+  assert.deepEqual(M.plannersOf(plan({ planners: ['Akela'] }), o), ['Akela', 'Kaa'], 'oude eindverantwoordelijke telt als planner');
+  assert.deepEqual(M.plannersOf(plan({ planners: ['Akela'] }), { ...o, state: 'bank' }), ['Akela']);
+  assert.deepEqual(M.plannersOf(null, null), []);
+});
+test('entryStatus', () => {
+  const o = opk({ state: 'planned', blocks: [blk('a', 840, 30, { names: ['Baloe'], short: 'x', location: 'Bos' })] });
+  assert.equal(M.entryStatus(null, null), 'open');
+  assert.equal(M.entryStatus(plan({ type: 'geen' }), null), 'off');
+  assert.equal(M.entryStatus(plan({ type: 'kamp' }), null), 'kamp');
+  assert.equal(M.entryStatus(plan({ topic: 'Bosspel' }), null), 'topic');
+  assert.equal(M.entryStatus(plan({ absent: ['Baloe'] }), o, ['Baloe']), 'warn', 'afwezige leiding ingedeeld');
+});
+
+/* ---------- tijdlijn ---------- */
+test('lanesLayout: overlappende onderdelen naast elkaar', () => {
+  const L = M.lanesLayout([blk('a', 0, 30), blk('b', 10, 10), blk('c', 20, 20), blk('d', 60, 10)]);
+  assert.deepEqual(L.a, { lane: 0, n: 2 }); assert.deepEqual(L.b, { lane: 1, n: 2 }); assert.deepEqual(L.c, { lane: 1, n: 2 }, 'c past in de baan van b');
+  assert.deepEqual(L.d, { lane: 0, n: 1 }, 'los onderdeel: eigen groep');
+  assert.deepEqual(M.lanesLayout([]), {});
+});
+
+/* ---------- kamp ---------- */
+test('kampDaysFor en kampLength', () => {
+  const d = M.kampDaysFor(2, '2026-10-17');
+  assert.deepEqual(d.map(x => [x.label, x.start, x.end]), [['Zaterdag', 1140, 1380], ['Zondag', 480, 900]]);
+  const one = M.kampDaysFor(1, null);
+  assert.deepEqual([one[0].label, one[0].start, one[0].end], ['Vrijdag', 540, 1020]);
+  const own = M.kampDaysFor(3, '2026-10-16', 1200, 960);
+  assert.deepEqual(own.map(x => [x.label, x.start, x.end]), [['Vrijdag', 1200, 1380], ['Zaterdag', 480, 1380], ['Zondag', 480, 960]]);
+  assert.equal(M.kampLength('2026-10-16'), 3, 'vrijdag t/m zondag');
+  assert.equal(M.kampLength('2026-10-17'), 2, 'zaterdag t/m zondag');
+  assert.equal(M.kampLength('2026-10-18'), 1, 'zondag');
+  assert.equal(M.kampLength('2026-10-14'), 3, 'andere dag: 3 dagen');
+  assert.equal(M.kampLength('2026-10-16', '2026-10-20'), 5);
+  assert.equal(M.kampLength('2026-10-01', '2026-12-01'), 14, 'hooguit 14 dagen');
+});
+test('kampdag mag doorlopen tot na middernacht (26:00)', () => {
+  const d = M.normDay({ label: 'Zaterdag', start: 1200, end: 1560, blocks: [blk('nacht', 1440, 60)] });
+  assert.equal(d.end, 1560); assert.equal(fmtT(d.end), '02:00');
+  const a = M.analyzeOne(d, [], [], false);
+  assert.ok(!a.issues.some(i => /valt buiten/.test(i.text)), 'onderdeel om 00:00 valt binnen de dag');
+  assert.equal(M.normDay({ start: 600, end: 500 }).end, 660, 'eind vóór begin wordt een uur na het begin');
+});
+test('dayTitle en relabelDays: weekdagnaam volgt de datum', () => {
+  const k = M.newKamp(S(), 2);
+  assert.equal(M.dayTitle(k, 0, '2026-10-17'), 'Zaterdag 17 okt');
+  assert.equal(M.dayTitle(k, 1, '2026-10-18', true), 'Zondag 18 oktober');
+  assert.equal(M.dayTitle(k, 0, null), k.days[0].label);
+  k.days[1].label = 'Hike'; assert.equal(M.dayTitle(k, 1, '2026-10-18'), 'Hike 18 okt', 'eigen naam blijft');
+  assert.equal(M.relabelDays(k, '2026-10-17'), true); assert.equal(k.days[0].label, 'Zaterdag'); assert.equal(k.days[1].label, 'Hike');
+  assert.equal(M.relabelDays(k, '2026-10-17'), false, 'niets meer te veranderen');
+});
+
+/* ---------- seizoen en jaarplanning ---------- */
+test('seasonRange en seasonOf', () => {
+  assert.deepEqual(M.seasonRange(S(), 2026), { from: '2026-09-01', to: '2027-07-31' });
+  assert.deepEqual(M.seasonRange(S({ seasonStartMonth: 1, seasonEndMonth: 12 }), 2026), { from: '2026-01-01', to: '2026-12-31' });
+  assert.equal(M.seasonOf(S(), '2026-07-31'), 2025);
+  assert.equal(M.seasonOf(S(), '2026-08-01'), 2026, 'zomerpauze hoort bij het komende seizoen');
+  assert.equal(M.seasonOf(S(), '2027-03-01'), 2026);
+  assert.equal(M.seasonLabel(S(), 2026), '2026–2027');
+});
+test('rowsIn: vaste opkomstdagen plus extra data, op datum', () => {
+  const s = S({ opkDay: 6 });
+  const plans = [plan({ id: 'p1', slot: '2026-10-17', date: '2026-10-17', topic: 'Bosspel' }), plan({ id: 'x', slot: null, date: '2026-10-21', topic: 'Extra' }),
+    plan({ id: 'k', slot: null, date: '2026-10-09', endDate: '2026-10-11', type: 'kamp' }), plan({ id: 'weg', slot: null, date: '2026-12-01' })];
+  const rows = M.rowsIn(s, plans, '2026-10-10', '2026-10-31');
+  assert.deepEqual(rows.map(r => r.key), ['k', 's:2026-10-10', 'p1', 'x', 's:2026-10-24', 's:2026-10-31']);
+  assert.equal(rows[2].e!.topic, 'Bosspel');
+  assert.equal(M.rowEnd(rows[0]), '2026-10-11');
+  assert.deepEqual(M.opkDaysIn(s, 'kapot', '2026-10-31'), [], 'foute datum: geen eindeloze lus');
+});
+test('newEntry en normPlan', () => {
+  const e = M.newEntry(null, '2026-10-21');
+  assert.equal(e.slot, null); assert.equal(e.date, '2026-10-21'); assert.equal(e.type, 'opkomst'); assert.equal(e.opkId, null);
+  assert.deepEqual(e.letter, { needed: false, due: '', sent: false });
+  assert.equal(M.newEntry('2026-10-17').date, '2026-10-17', 'zonder datum: de vaste dag');
+  const p = M.normPlan({ id: 'p', date: '2026-10-17', type: 'raar', planners: 'Akela, Baloe', start: '600' });
+  assert.equal(p.type, 'opkomst'); assert.deepEqual(p.planners, ['Akela', 'Baloe']); assert.equal(p.start, 600); assert.equal(p.end, null);
+});
+
+/* ---------- datum en tijd ---------- */
+test('parseNL', () => {
+  assert.equal(parseNL('17-10-2026'), '2026-10-17');
+  assert.equal(parseNL(' 1/2/26 '), '2026-02-01');
+  assert.equal(parseNL('1.2.2026'), '2026-02-01');
+  assert.equal(parseNL('31-02-2026'), null, 'bestaat niet');
+  assert.equal(parseNL('17-10-202'), null, 'jaartal van 3 cijfers');
+  assert.equal(parseNL('17-10-1999'), null);
+  assert.equal(parseNL('morgen'), null);
+});
+test('isoWeek', () => {
+  assert.equal(isoWeek('2026-01-01'), 1);
+  assert.equal(isoWeek('2021-01-03'), 53, 'zondag hoort bij de week ervoor');
+  assert.equal(isoWeek('2024-12-30'), 1, 'maandag in de eerste week van het nieuwe jaar');
+  assert.equal(isoWeek('2026-10-22'), 43);
+});

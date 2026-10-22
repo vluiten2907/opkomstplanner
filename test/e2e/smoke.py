@@ -5,6 +5,7 @@ Faalt (exit 1) bij een mislukte controle of een fout in de console.
 Screenshots komen in test/e2e/out/ (niet in git).
 """
 import base64, json, os, re, sys
+from datetime import date, timedelta
 os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 from playwright.sync_api import sync_playwright
 
@@ -26,6 +27,12 @@ with sync_playwright() as p:
     pg.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' and 'ERR_FAILED' not in m.text else None)
     w = lambda ms=400: pg.wait_for_timeout(ms)
     shot = lambda n, full=True: pg.screenshot(path=f'{OUT}/{n}.png', full_page=full)
+    def soon(cond, ms=4000):
+        # wacht tot de voorwaarde klopt (hooguit ms), in plaats van een vaste pauze
+        for _ in range(ms // 100):
+            if cond(): return True
+            pg.wait_for_timeout(100)
+        return cond()
 
     def register(name, email):
         first, _, last = name.partition(' ')
@@ -197,6 +204,12 @@ with sync_playwright() as p:
     pg.locator('.blk:has-text("Kompasposten")').first.click(); w(300)
     pg.fill('.side input[placeholder^="Andere namen"]', 'Henk'); pg.locator('.side input[placeholder^="Andere namen"]').blur(); w(600); pg.click('.side .closex'); w(200)
     check(aanwezig() == voor + 1 and pg.locator('.present .chip:has-text("Henk")').count() == 1, 'met de hand ingedeelde leiding telt mee als aanwezig')
+    # onderdeel verwijderen (Delete) en terugzetten met Ongedaan maken
+    kp = pg.locator('.blk:has-text("Kompasposten")'); undo = pg.locator('.toast.show button:has-text("Ongedaan maken")')
+    kp.nth(1).click(); pg.keyboard.press('Delete')
+    check(soon(lambda: kp.count() == 1 and undo.count() == 1), 'onderdeel verwijderd, melding met Ongedaan maken')
+    undo.click()
+    check(soon(lambda: kp.count() == 2), 'Ongedaan maken zet het onderdeel terug')
     shot('03-bouwer')
 
     # --- leiding indelen (tijdlijn naast elkaar)
@@ -210,6 +223,14 @@ with sync_playwright() as p:
     pg.locator('.modal .blk:has-text("Kompasposten") .tk-names button:has-text("Vincent Test")').first.click(); w(200)
     shot('04-indelen', False)
     pg.click('.modal >> text=Klaar'); w(300)
+
+    # --- afwezig melden in de jaarplanning: de naam gaat meteen uit de indeling
+    names_now = lambda: ' '.join(pg.locator('.blk .names').all_inner_texts())
+    check('Carla' in names_now(), 'Carla is ingedeeld bij een onderdeel')
+    pg.click('nav >> text=Jaarplanning'); w(500); pg.click('.presets >> text=Dit seizoen'); w(300)
+    rows.nth(1).locator('[aria-label="Afwezigheid aanpassen"]').click(); pg.click('.modal .chip:text-is("Carla")'); pg.click('.modal >> text=Klaar')
+    rows.nth(1).locator('.plink').click()
+    check(soon(lambda: '/bouwer/' in pg.url and pg.locator('.blk:has-text("Kompasposten")').count() == 2 and 'Carla' not in names_now()), 'afwezig gemeld in de jaarplanning: naam weg uit de indeling')
 
     # --- pdf
     with pg.expect_download() as dl: pg.click('text=PDF maken')
@@ -419,6 +440,7 @@ with sync_playwright() as p:
     check(pg.evaluate("t => JSON.parse(localStorage.getItem('fake.firestore'))['invites/' + t].usedBy", link.rsplit('/', 1)[-1]) == anna_uid, 'uitnodiging na toetreden als gebruikt gemarkeerd')
     pg.goto(link); w(700)
     check(pg.locator('text=Deze uitnodiging is al gebruikt').count() == 1, 'dezelfde uitnodiging werkt niet nog een keer')
+    check(pg.locator('p.err:has-text("al gebruikt")').evaluate('e => getComputedStyle(e).fontWeight') == '700', 'melding in foutstijl')
     pg.goto(BASE + '/'); w(900)
     pg.click('nav >> text=Instellingen'); w(400)
     check(pg.locator('text=Anna de Vries (jij)').count() == 1, 'nieuw lid staat in het team')
@@ -430,6 +452,7 @@ with sync_playwright() as p:
     check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'leiding via uitnodiging → dashboard speltak')
     check(pg.locator('.namenote').count() == 0, 'geen melding: voor- en achternaam bij registreren ingevuld')
     pg.goto(BASE + '/account'); w(700)
+    check(pg.title() == 'Opkomstplanner · Mijn account' and pg.locator('.page-head button:has-text("Uitloggen")').count() == 1 and pg.locator('.page-head button:has-text("Terug")').count() == 1, 'mijn account: kop met Terug en Uitloggen')
     check(pg.locator('#ac-first').input_value() == 'Greet' and pg.locator('#ac-last').input_value() == 'Beheer', 'mijn account toont voor- en achternaam')
     pg.fill('#ac-last', 'de Beheerder'); pg.click('text=Opslaan'); w(600)
     shot('06-account')
@@ -549,10 +572,15 @@ with sync_playwright() as p:
     w(1500)
     check(pg.locator('h1').first.inner_text().strip() == 'Scouts' and pg.locator('.hero h2.hero-title').inner_text() == 'Dashboardtitel', 'terugknop: vorige speltak met zijn eigen gegevens')
     pg.evaluate("localStorage.removeItem('fake.delayListen')")
-    login('wim@test.nl', 'geheim123')
+    # uitgelogd een link openen: na het inloggen kom je op die pagina, niet op het dashboard
+    logout_to(f'{BASE}/s/{welpen}/jaarplanning')
+    check('/inloggen' in pg.url, 'uitgelogd een link openen: eerst inloggen')
+    pg.fill('input[type=email]', 'wim@test.nl'); pg.fill('input[type=password]', 'geheim123'); pg.click('.btn.primary')
+    check(soon(lambda: pg.url.rstrip('/').endswith(f'/s/{welpen}/jaarplanning') and pg.locator('.prow').count() > 0), 'na inloggen naar de pagina van de link (jaarplanning)')
 
     # --- oefenomgeving: voorbeelddata met watermerk, alleen in deze browser
     pg.goto(BASE + '/speltakken'); w(800)
+    check('Leiding · 2 in het team' in pg.locator('.pick:has-text("Welpen")').inner_text() and pg.title() == 'Opkomstplanner', 'mijn speltakken: rol en teamgrootte')
     pg.click('a:has-text("Oefenen")'); w(1200)
     check('/s/oefen/dashboard' in pg.url and pg.locator('.watermark.on').count() == 1 and pg.locator('.oefenbar').count() == 1, 'oefenomgeving: watermerk en melding')
     check(pg.locator('text=Junglejacht en stratego').count() >= 1, 'oefenomgeving: voorbeelddata op het dashboard')
@@ -650,8 +678,14 @@ with sync_playwright() as p:
     pg.goto(BASE + '/s/oefen/bouwer/opk-vuur'); w(1000)
     tsel = pg.locator('.meta .timefield select')
     check(pg.locator('.pill:has-text("Alleen lezen")').count() == 1 and tsel.count() == 4 and all(tsel.nth(k).is_disabled() for k in range(4)), 'alleen lezen: begin- en eindtijd van de opkomst niet aan te passen')
+    check(pg.locator('#om-title').get_attribute('readonly') is not None and pg.locator('.ctx button:has-text("Leiding indelen")').count() == 0 and pg.locator('.plan-head button:has-text("In bank")').count() == 0,
+          'alleen lezen: titel vast, geen Leiding indelen en geen In bank')
     pg.locator('.blk').nth(1).click(); w(300)
     check(pg.locator('.side .timefield .tp-h').is_disabled() and pg.locator('#bf-dur').is_disabled(), 'alleen lezen: begintijd van een onderdeel niet aan te passen')
+    nb0 = pg.locator('.blk').count(); pg.keyboard.press('Delete'); w(300)
+    check(pg.locator('.blk').count() == nb0, 'alleen lezen: onderdeel niet te verwijderen')
+    pg.goto(BASE + '/s/oefen/instellingen'); w(1000)
+    check(pg.locator('#gs-name').is_disabled() and pg.locator('button:has-text("Back-up terugzetten")').count() == 0, 'zonder recht Instellingen: instellingen alleen bekijken, geen back-up terugzetten')
     oefen_set("s['speltakken/oefen'].members['oefen-jij'].perms = { plan: false, build: false, bank: true, settings: false }")
     pg.goto(BASE + '/s/oefen/opkomsten'); w(1000); pg.click('.bcard:has-text("Rond de wereld")'); w(300); pg.click('.side >> text=Bewerken'); w(800)
     check(pg.locator('.plan-head button:has-text("Kopie")').count() == 0 and pg.locator('.plan-head button:has-text("Verwijderen")').count() == 1,
@@ -662,6 +696,28 @@ with sync_playwright() as p:
     pg.set_input_files('input[type=file][accept=".json,application/json"]', files=[{'name': 'backup.json', 'mimeType': 'application/json', 'buffer': backup}]); w(900)
     check('Activiteiten overgeslagen' in pg.locator('.toast').inner_text() and oefen_get("!s['speltakken/oefen/activiteiten/lib-backup']"), 'back-up terugzetten zonder recht Banken: activiteiten overgeslagen')
     oefen_set("const sp = s['speltakken/oefen']; sp.tlIds = ['oefen-jij']; sp.members['oefen-jij'].role = 'teamleider'; sp.members['oefen-jij'].perms = { plan: true, build: true, bank: true, settings: true }")
+    # back-up maken en terugzetten: wordt aangevuld, bestaande gegevens blijven
+    pg.goto(BASE + '/s/oefen/instellingen'); w(1000)
+    with pg.expect_download() as dl: pg.click('button:has-text("Back-up maken")')
+    bk = json.load(open(dl.value.path(), encoding='utf-8'))
+    check(bk['version'] == 4 and any(o['id'] == 'opk-vuur' for o in bk['opks']) and len(bk['plans']) > 0, 'back-up maken: bestand met opkomsten en planning')
+    n_opk = oefen_get("Object.keys(s).filter(k => k.startsWith('speltakken/oefen/opkomsten/')).length"); st0 = oefen_get("s['speltakken/oefen'].settings.defStart")
+    backup = json.dumps({'version': 4, 'opks': [], 'plans': [], 'lib': [{'id': 'lib-backup', 'title': 'Uit de back-up'}],
+                         'settings': {'defStart': st0 + 60, 'categories': [{'id': 'cat-backup', 'label': 'Uit de back-up', 'color': '#2D7A4F'}]}}).encode()
+    pg.set_input_files('input[type=file][accept=".json,application/json"]', files=[{'name': 'backup.json', 'mimeType': 'application/json', 'buffer': backup}])
+    check(soon(lambda: oefen_get("!!s['speltakken/oefen/activiteiten/lib-backup']")) and 'Back-up teruggezet: 1 items toegevoegd.' in pg.locator('.toast').inner_text(), 'back-up terugzetten: activiteit toegevoegd')
+    check(soon(lambda: oefen_get("s['speltakken/oefen'].settings.categories.some(c => c.id === 'cat-backup')")) and oefen_get("s['speltakken/oefen'].settings.defStart") == st0
+          and oefen_get("Object.keys(s).filter(k => k.startsWith('speltakken/oefen/opkomsten/')).length") == n_opk, 'back-up terugzetten: categorie erbij, eigen tijden en opkomsten blijven')
+    # extra datum toevoegen en de rij weer leegmaken
+    pg.goto(BASE + '/s/oefen/jaarplanning'); w(1000); pg.click('.presets >> text=Komende 3 maanden'); w(300)
+    pg.click('button:has-text("Extra datum")')
+    pg.fill('.modal input[placeholder="dd-mm-jjjj"]', (date.today() + timedelta(days=12)).strftime('%d-%m-%Y')); pg.fill('.modal input[placeholder="bijv. Groepsweekend"]', 'Extra oefendag')
+    pg.click('.modal button:has-text("Toevoegen")')
+    xrow = lambda: pg.evaluate("[...document.querySelectorAll('.prow:not(.head)')].findIndex(r => r.querySelector('.ptopic')?.value === 'Extra oefendag')")
+    check(soon(lambda: xrow() >= 0 and oefen_get("Object.values(s).some(p => p && p.topic === 'Extra oefendag' && p.slot === null && p.type === 'opkomst')")), 'extra datum toegevoegd in de jaarplanning')
+    pg.locator('.prow:not(.head)').nth(xrow()).locator('.pdate').click()
+    pg.click('.modal >> text=Rij leegmaken'); pg.click('.modal >> text=Klik nogmaals om leeg te maken')
+    check(soon(lambda: xrow() < 0) and 'Rij leeggemaakt' in pg.locator('.toast').inner_text(), 'extra datum: rij leegmaken haalt hem weg')
     pg.goto(BASE + '/s/oefen/bouwer/opk-vuur'); w(1500)
     check(not oefen_get("JSON.stringify(s['speltakken/oefen/opkomsten/opk-vuur'].blocks).includes('Bagheera')"), 'opkomst openen met recht Opkomsten: afwezige leiding stil uit de indeling')
     pg.click('.ctx >> text=Leiding indelen'); w(500)
@@ -672,6 +728,7 @@ with sync_playwright() as p:
     tf = lambda k: pg.locator('.meta .timefield').nth(k).locator('.tp-h')
     tf(0).select_option('18'); w(300)
     check(tf(1).input_value() == '19' and 'Eindtijd verschoven naar 19:' in pg.locator('.toast').inner_text(), 'bouwer: begintijd na de eindtijd schuift de eindtijd mee')
+    check(pg.locator('.blk[aria-label="Openen, 18:00 tot 18:05"]').count() == 1 and pg.locator('.blk[aria-label="Sluiten, 18:55 tot 19:00"]').count() == 1, 'bouwer: begintijd wijzigen, Openen en Sluiten schuiven mee')
     tf(1).select_option('17'); w(300)
     check(tf(1).input_value() == '19' and 'moet na de begintijd' in pg.locator('.toast').inner_text(), 'bouwer: eindtijd vóór de begintijd wordt geweigerd')
     w(700); check(oefen_get("s['speltakken/oefen/opkomsten/opk-vuur'].end") // 60 == 19, 'bouwer: nieuwe tijden opgeslagen')

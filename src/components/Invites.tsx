@@ -5,7 +5,7 @@ import { db } from '../lib/firebase';
 import { inviteUrl, revokeInvite, sendInviteMail } from '../store/beheer';
 import { toast } from '../store/toast';
 import { ConfirmBtn } from './ui';
-import { inviteExpired, KIND_LABELS, normInvite, type Invite } from '../lib/types';
+import { inviteExpired, inviteWhere, INVITE_DAYS, KIND_LABELS, normInvite, type Invite } from '../lib/types';
 import { fmtNL } from '../lib/time';
 
 export type InviteScope = { all: true } | { gid: string } | { sid: string };
@@ -31,7 +31,7 @@ export function useOpenInvites(scopes: InviteScope[]) {
   }, [byScope]);
 }
 
-const where_ = (i: Invite) => i.kind === 'totaal' ? 'hele planner' : i.kind === 'groep' ? i.groupName : [i.groupName, i.speltakName].filter(Boolean).join(' · ');
+const where_ = (i: Invite) => inviteWhere(i, 'hele planner');
 
 async function copyText(t: string) {
   try { await navigator.clipboard.writeText(t); toast('Link gekopieerd'); return true; }
@@ -46,7 +46,7 @@ export function InviteList({ invites, showWhere = true }: { invites: Invite[]; s
     return <div key={i.id} className="invrow">
       <div style={{ minWidth: 0 }}>
         <b className="ell">{i.email}</b>
-        <div className="hint ell">{KIND_LABELS[i.kind]}{showWhere ? ` · ${where_(i)}` : ''}{i.transfer ? ' · overdracht' : ''} · {exp ? <span style={{ color: 'var(--danger)', fontWeight: 700 }}>verlopen</span> : `geldig t/m ${fmtNL(new Date(i.expiresAt).toISOString().slice(0, 10))}`}</div>
+        <div className="hint ell">{KIND_LABELS[i.kind]}{showWhere ? ` · ${where_(i)}` : ''}{i.transfer ? ' · overdracht' : ''} · {exp ? <span className="err">verlopen</span> : `geldig t/m ${fmtNL(new Date(i.expiresAt).toISOString().slice(0, 10))}`}</div>
       </div>
       <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
         {!exp && <button className="btn sm ghost" onClick={() => copyText(inviteUrl(i.id))} title="Link kopiëren"><Copy size={14} />Link</button>}
@@ -62,8 +62,8 @@ export function InviteLink({ inv, fromName, onClose }: { inv: Invite; fromName: 
   const [mail, setMail] = useState<'' | 'bezig' | 'verstuurd' | 'uit'>('');
   const url = inviteUrl(inv.id);
   const what = `${KIND_LABELS[inv.kind]} voor ${where_(inv)}`;
-  const mailto = `mailto:${inv.email}?subject=${encodeURIComponent('Uitnodiging Opkomstplanner: ' + what)}&body=${encodeURIComponent(`Hoi,\n\n${fromName || 'Ik'} nodigt je uit voor de Opkomstplanner als ${what}.\n\nOpen deze link en maak een account aan met dit e-mailadres (${inv.email}):\n${url}\n\nDe link is ${30} dagen geldig.\n\nGroet,\n${fromName}`)}`;
-  return <div className="banknote"><span>Uitnodiging als <b>{KIND_LABELS[inv.kind]}</b>{inv.transfer ? ' (rol overdragen)' : ''} voor <b>{inv.email}</b>. Verstuur de mail of stuur de link zelf door; hij werkt alleen voor dat e-mailadres en is 30 dagen geldig.</span>
+  const mailto = `mailto:${inv.email}?subject=${encodeURIComponent('Uitnodiging Opkomstplanner: ' + what)}&body=${encodeURIComponent(`Hoi,\n\n${fromName || 'Ik'} nodigt je uit voor de Opkomstplanner als ${what}.\n\nOpen deze link en maak een account aan met dit e-mailadres (${inv.email}):\n${url}\n\nDe link is ${INVITE_DAYS} dagen geldig.\n\nGroet,\n${fromName}`)}`;
+  return <div className="banknote"><span>Uitnodiging als <b>{KIND_LABELS[inv.kind]}</b>{inv.transfer ? ' (rol overdragen)' : ''} voor <b>{inv.email}</b>. Verstuur de mail of stuur de link zelf door; hij werkt alleen voor dat e-mailadres en is {INVITE_DAYS} dagen geldig.</span>
     <code className="mono-code">{url}</code>
     <div className="row"><button className="btn sm" onClick={async () => setCopied(await copyText(url))}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? 'Gekopieerd' : 'Kopiëren'}</button>{mail !== 'uit' && <button className="btn sm primary" disabled={mail === 'bezig' || mail === 'verstuurd'} onClick={async () => {
       setMail('bezig');

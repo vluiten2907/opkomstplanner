@@ -22,13 +22,12 @@ function SaveState() {
   return <span className={'savestate ' + cls} title={txt || undefined}>{icon}<span className="sr-only">{txt}</span></span>;
 }
 
-export function applyAccent(accent: string, logo: string) {
+export function applyAccent(accent: string) {
   const A = ACCENTS[accent] || ACCENTS.marine;
   let el = document.getElementById('accentStyle') as HTMLStyleElement | null;
   if (!el) { el = document.createElement('style'); el.id = 'accentStyle'; document.head.appendChild(el); }
   const dark = `--accent:${A.d};--accent-soft:${A.ds};--accent-ink:#0E1210;--pop:${A.popD};`;
   el.textContent = `:root{--accent:${A.l};--accent-soft:${A.ls};--accent-ink:#FFFFFF;--pop:${A.pop}}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){${dark}}}:root[data-theme="dark"]{${dark}}`;
-  void logo;
 }
 
 export default function Layout({ children }: { children: ReactNode }) {
@@ -39,7 +38,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const team = isTL || isAdmin;
   const nav = useNavigate();
   const [menu, setMenu] = useState(false);
-  useEffect(() => { applyAccent(settings.accent, settings.logo); document.title = sp ? `Opkomstplanner · ${sp.groupName || ''} ${sp.name || ''}`.trim() : 'Opkomstplanner'; }, [settings.accent, settings.logo, sp]);
+  useEffect(() => { applyAccent(settings.accent); document.title = sp ? `Opkomstplanner · ${sp.groupName || ''} ${sp.name || ''}`.trim() : 'Opkomstplanner'; }, [settings.accent, sp]);
   useEffect(() => { if (sp && !practice) localStorage.setItem('opk.sid', sid); }, [sp, sid, practice]);
   useEffect(() => { if (!menu) return; const h = () => setMenu(false); document.addEventListener('click', h); return () => document.removeEventListener('click', h); }, [menu]);
   if (denied) return <div className="auth-wrap"><div className="card pad stack auth-card"><h2>Geen toegang</h2><p className="hint">Je bent geen lid van deze speltak, of hij bestaat niet meer.</p><button className="btn primary" onClick={() => { localStorage.removeItem('opk.sid'); nav('/speltakken'); }}>Mijn speltakken</button></div></div>;

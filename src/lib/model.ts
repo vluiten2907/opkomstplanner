@@ -1,4 +1,4 @@
-import { addDays, clone, dayDiff, fmtDur, fmtT, fromISO, num, splitNames, todayISO, toISO, uid, wd2, DAYS, MONTHS, cap, mon3 } from './time';
+import { addDays, clone, dayDiff, fmtDur, fmtT, fromISO, num, splitNames, todayISO, toISO, uid, wd2, DAYS, MONTHS, cap, mon3 } from './time.ts';
 
 /* ---------- Types ---------- */
 export type Cat = { id: string; label: string; color: string };
@@ -392,4 +392,3 @@ export function lanesLayout(blocks: Block[]) {
   Object.keys(pos).forEach(id => { out[id] = { lane: pos[id].lane, n: pos[id].cluster.ends.length }; });
   return out;
 }
-export { addDays as addDaysSafe } from './time';

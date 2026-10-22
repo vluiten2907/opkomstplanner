@@ -1,4 +1,4 @@
-import type { Settings } from './model';
+import { normSettings, type Settings } from './model';
 
 export type PermKey = 'plan' | 'build' | 'bank' | 'settings';
 export type Perms = Record<PermKey, boolean>;
@@ -12,6 +12,12 @@ export type Speltak = {
   /** Wie teamleider is; ontbreekt bij oude speltakken (dan telt `members[uid].role`). */
   tlIds: string[] | null;
 };
+/** Speltak uit Firestore; de naam en groepsnaam staan ook in de instellingen (voor pdf en kop). */
+export function normSpeltak(id: string, d: any): Speltak {
+  return { id, name: d.name || '', groupName: d.groupName || '', createdAt: d.createdAt || 0, createdBy: d.createdBy || '',
+    settings: normSettings({ ...d.settings, groupName: d.groupName || '', speltak: d.name || '' }), members: d.members || {}, memberIds: Array.isArray(d.memberIds) ? d.memberIds : [],
+    gid: d.gid || null, tlIds: Array.isArray(d.tlIds) ? d.tlIds : null };
+}
 /** Beheerder van een groep of van het geheel. */
 export type Admin = { name: string; email: string; since: number; inviteId?: string };
 /** Een Scouting-vereniging met eigen beheerders. */
@@ -40,6 +46,8 @@ export function normInvite(id: string, d: any): Invite {
     expiresAt: d.expiresAt || (d.createdAt || 0) + INVITE_DAYS * 864e5 * 100, usedBy: d.usedBy || null, transfer: !!d.transfer };
 }
 export const inviteExpired = (i: Invite) => i.expiresAt < Date.now();
+/** Waarvoor de uitnodiging is: de hele planner, een groep, of groep · speltak. */
+export const inviteWhere = (i: Invite, whole: string) => i.kind === 'totaal' ? whole : i.kind === 'groep' ? i.groupName : [i.groupName, i.speltakName].filter(Boolean).join(' · ');
 /** Is deze persoon teamleider van de speltak? (nieuw: tlIds, oud: rol in members) */
 export function isTeamleider(sp: Pick<Speltak, 'tlIds' | 'members'> | null | undefined, uid: string | undefined | null): boolean {
   if (!sp || !uid || !sp.members[uid]) return false;

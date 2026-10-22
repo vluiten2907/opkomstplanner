@@ -7,7 +7,7 @@ import { toast } from '../store/toast';
 import { openModal, withFreeName } from '../store/modal';
 import { BankCard, Strip, CatTags, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field } from '../components/ui';
-import { clone, fmtDur, fmtT, plural } from '../lib/time';
+import { fmtDur, fmtT, plural } from '../lib/time';
 import { allBlocks, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, newOpk, opkCatList, opkCatOf, toBank, type Cat, type Opk } from '../lib/model';
 import type { Gedeeld } from '../store/groepsbank';
 

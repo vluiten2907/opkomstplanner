@@ -1,18 +1,28 @@
-# Controleert bij elke pull request of de app nog bouwt.
+# Controleert bij elke pull request (en push buiten main) alles wat `npm run check` lokaal doet:
+# lint, typecheck, unit-tests, build en de rooktest met Playwright tegen de demo-build.
 name: Check
 on:
   pull_request:
   push:
     branches-ignore: [main]
 jobs:
-  build:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
       - run: npm ci
-      - run: npx tsc -p tsconfig.app.json --noEmit
-      - run: node test/unit/model.test.mjs
-      - run: npm run build
-        env: { VITE_BASE: /opkomst/ }
+      # Playwright via Python (de rooktest is Python); browsers in een eigen map, /opt/pw-browsers bestaat hier niet
+      - name: Playwright installeren
+        env: { PLAYWRIGHT_BROWSERS_PATH: '${{ runner.temp }}/pw' }
+        run: pip install playwright && python -m playwright install --with-deps chromium
+      - name: npm run check
+        env: { PLAYWRIGHT_BROWSERS_PATH: '${{ runner.temp }}/pw' }
+        run: npm run check
+      - name: Screenshots van de rooktest
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with: { name: rooktest, path: test/e2e/out/, if-no-files-found: ignore }

@@ -1,22 +1,26 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { TentTree, LogOut, Plus, ShieldCheck, Users, UserPlus, ExternalLink, Link2, ChevronRight, Trash2, UserRound } from 'lucide-react';
+import { Plus, ShieldCheck, Users, UserPlus, ExternalLink, Link2, ChevronRight, Trash2, UserRound } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../store/auth';
 import { useRoles } from '../store/roles';
 import { toast } from '../store/toast';
-import { applyAccent } from '../components/Layout';
+import PageHead from '../components/PageHead';
 import { ConfirmBtn, Field } from '../components/ui';
 import { InviteLink, InviteList, useOpenInvites, type InviteScope } from '../components/Invites';
 import { addMember, setPerms, claimName, releaseName, syncNames, createGroep, newGroepId, createInvite, createSpeltakInGroep, deleteSpeltak, deleteGroep, countOpkomsten, ensureTlIds, findAccount, readAccounts, removeFromTeam, type AccountInfo, transferTeamleider, type Person, isEmail, linkSpeltak, removeGroupAdmin, removeRootPerson, renameGroep, setGroupAdmin, setTeamleider } from '../store/beheer';
-import { DEFAULT_LEIDING_PERMS, PERM_LABELS, normPerms, isTeamleider, type Admin, type Member, type PermKey, type Groep, type Invite, type Speltak } from '../lib/types';
-import { normSettings } from '../lib/model';
+import { DEFAULT_LEIDING_PERMS, PERM_LABELS, normPerms, normSpeltak, isTeamleider, type Admin, type Member, type PermKey, type Groep, type Invite, type Speltak } from '../lib/types';
 import { plural } from '../lib/time';
 
-const normSp = (id: string, d: any): Speltak => ({ id, name: d.name || '', groupName: d.groupName || '', createdAt: d.createdAt || 0, createdBy: d.createdBy || '',
-  settings: normSettings(d.settings), members: d.members || {}, memberIds: d.memberIds || [], gid: d.gid || null, tlIds: Array.isArray(d.tlIds) ? d.tlIds : null });
 const err = (e: any, fallback: string) => toast(e?.message === 'last' ? 'Er moet minstens één beheerder overblijven.' : e?.message === 'name-taken' ? 'Er is al iemand met deze naam in de groep. Namen zijn uniek binnen een groep.' : e?.code === 'permission-denied' ? 'Dat mag je niet (of de nieuwe regels staan nog niet in Firebase).' : fallback);
+
+/** Open of dicht, onthouden in deze browser (standaard dicht). */
+function useStoredToggle(key: string) {
+  const [on, setOn] = useState(() => { try { return localStorage.getItem(key) === '1'; } catch { return false; } });
+  const toggle = () => setOn(o => { try { localStorage.setItem(key, o ? '0' : '1'); } catch { /* geen opslag */ } return !o; });
+  return [on, toggle] as const;
+}
 
 /** Speltakken die je als beheerder mag zien: alles (totaal) of per groep. */
 function useSpeltakken(isRoot: boolean, gids: string[]) {
@@ -26,7 +30,7 @@ function useSpeltakken(isRoot: boolean, gids: string[]) {
     setMap({});
     const c = collection(db, 'speltakken');
     const qs = isRoot ? [['*', c] as const] : gids.map(g => [g, query(c, where('gid', '==', g))] as const);
-    const stops = qs.map(([k, q]) => onSnapshot(q, s => setMap(m => ({ ...m, [k]: s.docs.map(d => normSp(d.id, d.data())) })), () => setMap(m => ({ ...m, [k]: [] }))));
+    const stops = qs.map(([k, q]) => onSnapshot(q, s => setMap(m => ({ ...m, [k]: s.docs.map(d => normSpeltak(d.id, d.data())) })), () => setMap(m => ({ ...m, [k]: [] }))));
     return () => stops.forEach(f => f());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
@@ -34,10 +38,8 @@ function useSpeltakken(isRoot: boolean, gids: string[]) {
 }
 
 export default function BeheerPage() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const R = useRoles();
-  const nav = useNavigate();
-  useEffect(() => { applyAccent('marine', ''); document.title = 'Opkomstplanner · Beheer'; }, []);
   const gids = R.groups.map(g => g.id);
   const sps = useSpeltakken(R.isRoot, gids);
   const scopes: InviteScope[] = R.isRoot ? [{ all: true }] : gids.map(gid => ({ gid }));
@@ -45,10 +47,7 @@ export default function BeheerPage() {
   const [gone, setGone] = useState<Gone | null>(null);
   const me = { uid: user!.uid, name: user?.displayName || user?.email || '', email: user?.email || '' };
 
-  const head = <div className="row between page-head">
-    <div className="brand flex items-center gap-2.5"><TentTree size={26} strokeWidth={1.9} /><span className="brand-txt"><span>Opkomstplanner</span><small>{me.name}</small></span></div>
-    <div className="row" style={{ gap: 6 }}><Link className="btn ghost sm" to="/speltakken"><Users size={14} />Mijn speltakken</Link><Link className="btn ghost sm" to="/account"><UserRound size={14} />Account</Link><button className="btn ghost sm" onClick={() => logout().then(() => nav('/inloggen'))}><LogOut size={14} />Uitloggen</button></div>
-  </div>;
+  const head = <PageHead title="Opkomstplanner · Beheer"><Link className="btn ghost sm" to="/speltakken"><Users size={14} />Mijn speltakken</Link><Link className="btn ghost sm" to="/account"><UserRound size={14} />Account</Link></PageHead>;
   const wrap = (body: React.ReactNode) => <div className="auth-wrap" style={{ alignItems: 'start' }}><div className="stack beheer" style={{ width: 'min(960px, 100%)', gap: 18 }}>{head}{body}</div></div>;
   if (!R.ready) return wrap(<p className="hint">Laden…</p>);
   if (!R.isAdmin) return wrap(<div className="empty"><span>Je bent geen beheerder. Deze pagina is voor Beheer (totaal) en beheerders van een groep.</span><Link className="btn" to="/speltakken">Mijn speltakken</Link></div>);
@@ -173,9 +172,7 @@ function GroupCard({ g, sps, me, canAll, allSps, groups, onGone }: { g: Groep; s
   const [name, setName] = useState(g.name); useEffect(() => setName(g.name), [g.name]);
   const [newSp, setNewSp] = useState(''); const [pick, setPick] = useState('');
   // Standaard ingeklapt; per groep onthouden in deze browser.
-  const openKey = 'opk.groep.open.' + g.id;
-  const [open, setOpen] = useState(() => { try { return localStorage.getItem(openKey) === '1'; } catch { return false; } });
-  const toggle = () => setOpen(o => { try { localStorage.setItem(openKey, o ? '0' : '1'); } catch { /* geen opslag */ } return !o; });
+  const [open, toggle] = useStoredToggle('opk.groep.open.' + g.id);
   const mine = g.adminIds.includes(me.uid);
   // Beheerder van de groep kan alleen iemand worden die al leiding is in een speltak van deze groep.
   const cands = new Map<string, Admin & { tl: boolean }>();
@@ -320,9 +317,7 @@ function PersonPicker({ pool, exclude, label, button, onPick, children }: { pool
 
 function SpeltakRow({ sp, g, me, pool, all, names }: { sp: Speltak; g: Groep; me: Me; pool: Person[]; all: Speltak[]; names: Record<string, AccountInfo> }) {
   // Standaard ingeklapt; per speltak onthouden in deze browser.
-  const openKey = 'opk.speltak.open.' + sp.id;
-  const [open, setOpenRaw] = useState(() => { try { return localStorage.getItem(openKey) === '1'; } catch { return false; } });
-  const setOpen = (fn: (o: boolean) => boolean) => setOpenRaw(o => { const n = fn(o); try { localStorage.setItem(openKey, n ? '1' : '0'); } catch { /* geen opslag */ } return n; });
+  const [open, toggle] = useStoredToggle('opk.speltak.open.' + sp.id);
   const members = Object.entries(sp.members).sort((a, b) => Number(isTeamleider(sp, b[0])) - Number(isTeamleider(sp, a[0])) || a[1].name.localeCompare(b[1].name, 'nl'));
   const [email, setEmail] = useState(''); const [inv, setInv] = useState<Invite | null>(null); const [busy, setBusy] = useState(false);
   const [kind, setKind] = useState<'leiding' | 'teamleider'>('leiding');
@@ -347,9 +342,9 @@ function SpeltakRow({ sp, g, me, pool, all, names }: { sp: Speltak; g: Groep; me
   };
   return <div className={'member spcard' + (open ? ' open' : '')}>
     <div className="row between" style={{ flexWrap: 'wrap', gap: 8 }}>
-      <button type="button" className="sp-head" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+      <button type="button" className="sp-head" aria-expanded={open} onClick={toggle}>
         <ChevronRight size={16} className="gc-chev" />
-        <span style={{ minWidth: 0 }}><b>{sp.name || 'Speltak'}</b><span className="hint" style={{ display: 'block' }}>{tl ? `Teamleider: ${tl}` : <span style={{ color: 'var(--danger)', fontWeight: 700 }}>Nog geen teamleider</span>} · {plural(sp.memberIds.length, 'lid', 'leden')}</span></span>
+        <span style={{ minWidth: 0 }}><b>{sp.name || 'Speltak'}</b><span className="hint" style={{ display: 'block' }}>{tl ? `Teamleider: ${tl}` : <span className="err">Nog geen teamleider</span>} · {plural(sp.memberIds.length, 'lid', 'leden')}</span></span>
       </button>
       <Link className="btn sm" to={`/s/${sp.id}`} onClick={() => localStorage.setItem('opk.sid', sp.id)}><ExternalLink size={14} />Openen</Link>
     </div>
@@ -379,7 +374,6 @@ function SpeltakRow({ sp, g, me, pool, all, names }: { sp: Speltak; g: Groep; me
   </div>;
 }
 
-/** Leidingoverzicht van de groep: iedereen per speltak, met teamleider, beheerder en verwijderen. */
 /** Voor- en achternaam uit de accounts (op e-mailadres) van iedereen in deze speltakken. */
 function useFullNames(sps: Speltak[]) {
   const emails = [...new Set(sps.flatMap(sp => Object.values(sp.members).map(m => (m.email || '').toLowerCase())).filter(Boolean))].sort();

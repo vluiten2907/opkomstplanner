@@ -6,7 +6,7 @@ import { acceptInvite, claimName, nameOwner, readInvite, saveProfile } from '../
 import { Field } from '../components/ui';
 import VerifyNote from '../components/VerifyNote';
 import { auth } from '../lib/firebase';
-import { inviteExpired, KIND_LABELS, PERM_LABELS, type Invite } from '../lib/types';
+import { inviteExpired, inviteWhere, KIND_LABELS, PERM_LABELS, type Invite } from '../lib/types';
 
 /** Uitnodiging openen. Een account aanmaken kan alleen hier, met het e-mailadres van de uitnodiging. */
 export default function InvitePage() {
@@ -27,7 +27,7 @@ export default function InvitePage() {
     {body}</div></div>;
   if (!inv) return box(<><h2>Uitnodiging niet gevonden</h2><p className="hint">De link klopt niet, is ingetrokken of al gebruikt.</p><Link className="btn" to="/">Naar de start</Link></>);
 
-  const where = inv.kind === 'totaal' ? 'de hele Opkomstplanner' : inv.kind === 'groep' ? inv.groupName : [inv.groupName, inv.speltakName].filter(Boolean).join(' · ');
+  const where = inviteWhere(inv, 'de hele Opkomstplanner');
   const intro = <>
     <h2>{inv.invitedByName || 'Iemand'} nodigt je uit</h2>
     <p>Als <b>{KIND_LABELS[inv.kind]}</b> voor <b>{where}</b>.</p>
@@ -35,7 +35,7 @@ export default function InvitePage() {
     {inv.kind === 'leiding' && inv.transfer && <p className="hint">{inv.invitedByName || 'De teamleider'} wil de rol van teamleider aan je overdragen. Dat doet {inv.invitedByName || 'hij'} zodra je in het team zit.</p>}
   </>;
   const used = !!inv.usedBy, expired = inviteExpired(inv);
-  if (used || expired) return box(<>{intro}<p className="hint" style={{ color: 'var(--danger)', fontWeight: 700 }}>{used ? 'Deze uitnodiging is al gebruikt.' : 'Deze uitnodiging is verlopen. Vraag om een nieuwe.'}</p><Link className="btn" to="/">Naar de start</Link></>);
+  if (used || expired) return box(<>{intro}<p className="hint err">{used ? 'Deze uitnodiging is al gebruikt.' : 'Deze uitnodiging is verlopen. Vraag om een nieuwe.'}</p><Link className="btn" to="/">Naar de start</Link></>);
 
   const accept = async (u: { uid: string; email: string | null; displayName: string | null }, nm?: string) => {
     // Namen zijn uniek binnen een groep (zoals een gebruikersnaam).
@@ -74,7 +74,7 @@ export default function InvitePage() {
       </div>}
       {mode === 'register' && <Field label="Gebruikersnaam" htmlFor="i-name" hint={`Je naam is je gebruikersnaam binnen ${inv.groupName || 'de groep'}: hij mag er maar één keer voorkomen.`}><input id="i-name" value={name} onChange={e => setName(e.target.value)} placeholder="Zoals de leiding je kent, bijv. Akela" autoComplete="name" /></Field>}
       <Field label={mode === 'register' ? 'Kies een wachtwoord' : 'Wachtwoord'} htmlFor="i-pw"><input id="i-pw" type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete={mode === 'register' ? 'new-password' : 'current-password'} minLength={6} required /></Field>
-      {err && <p className="hint" style={{ color: 'var(--danger)', fontWeight: 700 }}>{err}</p>}
+      {err && <p className="hint err">{err}</p>}
       <button className="btn primary" disabled={busy}>{mode === 'register' ? 'Account aanmaken en toetreden' : 'Inloggen en toetreden'}</button>
       <div className="row between" style={{ fontSize: 14 }}>
         {mode === 'register' ? <button type="button" className="linkbtn" onClick={() => { setMode('login'); setErr(''); }}>Ik heb al een account</button>
@@ -88,12 +88,12 @@ export default function InvitePage() {
   const join = async () => { setBusy(true); setErr(''); try { await accept(auth.currentUser || user, chosen || undefined); } catch (e: any) { setErr(joinErr(e)); setBusy(false); } };
   if (mine && !verified) return box(<>{intro}
     <VerifyNote box onVerified={join} />
-    {err && <p className="hint" style={{ color: 'var(--danger)', fontWeight: 700 }}>{err}</p>}
+    {err && <p className="hint err">{err}</p>}
     <div className="row"><button className="btn ghost sm" onClick={() => logout()}>Uitloggen</button></div>
   </>);
   return box(<>{intro}
-    {!mine && <p className="hint" style={{ color: 'var(--danger)', fontWeight: 700 }}>Je bent ingelogd als {user.email}, maar de uitnodiging is voor {inv.email}.</p>}
-    {err && <p className="hint" style={{ color: 'var(--danger)', fontWeight: 700 }}>{err}</p>}
+    {!mine && <p className="hint err">Je bent ingelogd als {user.email}, maar de uitnodiging is voor {inv.email}.</p>}
+    {err && <p className="hint err">{err}</p>}
     <div className="row">{mine ? <button className="btn primary" disabled={busy} onClick={join}>Toetreden</button>
       : <button className="btn primary" onClick={() => logout()}>Uitloggen en opnieuw</button>}<Link className="btn ghost" to="/">Niet nu</Link></div>
   </>);
