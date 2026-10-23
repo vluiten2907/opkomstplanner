@@ -359,3 +359,11 @@ test('fitsTopic', () => {
   assert.equal(M.fitsTopic(o('Opkomst in het bos'), 'Sinterklaasopkomst'), false, 'algemene woorden tellen niet');
   assert.equal(M.fitsTopic(o('Sinterklaasopkomst'), ''), false, 'geen onderwerp');
 });
+test('libFields en blockFromLib', () => {
+  const l = M.normLib({ id: 'L1', title: 'Kompasposten', dur: 45, cat: 'spel', minLeaders: 2, location: 'Bos', short: 'Kort', desc: 'Lang', prep: 'Klaarzetten', materials: 'Kompas', updatedAt: 5 });
+  assert.deepEqual(Object.keys(M.libFields(l)).sort(), [...M.LIB_FIELDS].sort(), 'alleen de gedeelde velden, geen id of updatedAt');
+  const b = M.blockFromLib(l, 840);
+  assert.equal(b.libId, 'L1'); assert.equal(b.start, 840); assert.ok(b.id && b.id !== 'L1', 'eigen id');
+  assert.deepEqual(M.libFields(b), M.libFields(l));
+  assert.deepEqual(b.names, [], 'geen namen uit de bank');
+});

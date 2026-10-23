@@ -8,7 +8,8 @@ import { defaultSettings } from '../lib/model';
 import { ALL_PERMS, INVITE_DAYS, NO_PERMS, inviteExpired, normInvite, normPerms, type Admin, type Groep, type Invite, type InviteKind, type Member, type PermKey, type Perms, type Speltak } from '../lib/types';
 import { uid as mkId } from '../lib/time';
 
-type Me = { uid: string; name: string; email: string };
+/** De ingelogde gebruiker die de actie doet. */
+export type Me = { uid: string; name: string; email: string };
 
 /** Lange, willekeurige code: de uitnodigingslink is het geheim. */
 export function newToken() {
@@ -102,7 +103,6 @@ export const rememberInvite = (token: string) => { try { localStorage.setItem(IN
 /** Vergeten, als het (nog) deze uitnodiging is. */
 export const forgetInvite = (token: string | undefined) => { try { if (token && localStorage.getItem(INV_KEY) === token) localStorage.removeItem(INV_KEY); } catch { /* geen opslag */ } };
 
-/** Openstaande uitnodigingen per niveau ophalen (eenmalig). */
 /** Wie trad toe met een "Mijn rol overdragen"-uitnodiging van `by` in deze speltak? uid's, gecontroleerd aan de uitnodiging zelf. */
 export async function transferJoiners(sid: string, by: string): Promise<string[]> {
   const s = await getDocs(query(collection(db, 'invites'), where('sid', '==', sid)));
@@ -271,14 +271,7 @@ export async function removeFromTeam(sp: Speltak, uid: string, successor?: Perso
 
 /** Speltak met alle opkomsten, activiteiten, planning en open uitnodigingen weggooien. Niet terug te draaien. */
 export async function deleteSpeltak(sp: Speltak) {
-  for (const sub of ['opkomsten', 'activiteiten', 'planning']) {
-    const s = await getDocs(collection(db, 'speltakken', sp.id, sub));
-    for (let i = 0; i < s.docs.length; i += 400) {
-      const b = writeBatch(db);
-      s.docs.slice(i, i + 400).forEach(d => b.delete(doc(db, 'speltakken', sp.id, sub, d.id)));
-      await b.commit();
-    }
-  }
+  for (const sub of ['opkomsten', 'activiteiten', 'planning']) await wipe(['speltakken', sp.id, sub]);
   try {
     const s = await getDocs(sp.gid ? query(collection(db, 'invites'), where('gid', '==', sp.gid), where('sid', '==', sp.id)) : query(collection(db, 'invites'), where('sid', '==', sp.id)));
     await Promise.all(s.docs.map(d => deleteDoc(doc(db, 'invites', d.id))));
@@ -353,6 +346,7 @@ export async function countOpkomsten(sps: Speltak[]) {
   const n = await Promise.all(sps.map(sp => getDocs(collection(db, 'speltakken', sp.id, 'opkomsten')).then(s => s.docs.length).catch(() => 0)));
   return n.reduce((a, b) => a + b, 0);
 }
+/** Alle documenten in een collectie weggooien, in porties van 400 (een batch mag er hoogstens 500). */
 async function wipe(path: [string, ...string[]]) {
   const s = await getDocs(collection(db, ...path));
   for (let i = 0; i < s.docs.length; i += 400) {

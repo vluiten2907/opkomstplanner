@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { guardLeave, useDirty } from '../store/unsaved';
 import { useNavigate } from 'react-router-dom';
 import { CalendarDays, Copy, ExternalLink, Plus, Users, X } from 'lucide-react';
@@ -6,7 +6,7 @@ import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal, withFreeName } from '../store/modal';
 import { BankCard, Strip, CatTags, PageTitle, SaveBar } from '../components/shared';
-import { Chip, ConfirmBtn, Dot, Field, useSheetDialog } from '../components/ui';
+import { Chip, ConfirmBtn, Dot, Field, useEscapeClose, useSheetDialog } from '../components/ui';
 import { fmtDur, fmtT, plural } from '../lib/time';
 import { allBlocks, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, newOpk, opkCatList, opkCatOf, opkSearchText, toBank, type Cat, type Opk } from '../lib/model';
 import { markFresh } from '../store/fresh';
@@ -27,7 +27,7 @@ export default function Opkomstenbank() {
   const catLabel = cat ? opkCatOf(settings, cat)?.label || '' : '';
 
   // eigen bank: zoeken in titel, beschrijving, locatie en onderdelen; concepten volgen zoeken en filter ook
-  const hit = (o: Opk) => (!cat || o.cats.includes(cat)) && (!ql || searchText(o).includes(ql));
+  const hit = (o: Opk) => (!cat || o.cats.includes(cat)) && (!ql || opkSearchText(o).includes(ql));
   const bank = opks.filter(o => o.state === 'bank' && hit(o)).sort(byTitle);
   const drafts = opks.filter(o => o.state === 'draft' && hit(o)).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   const uses: Record<string, number> = {};
@@ -42,18 +42,14 @@ export default function Opkomstenbank() {
   const speltakken = [...new Map(others.map(x => [x.sid, x.speltakName || 'Speltak'])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'nl'));
   const labelsOf = (x: Gedeeld) => x.opk.cats.map(id => (x.catDefs.find(c => c.id === id) || opkCatOf(settings, id))?.label?.toLowerCase());
   const groupList = others.filter(x => (!from || x.sid === from) && (!cat || labelsOf(x).includes(catLabel.toLowerCase()))
-    && (!ql || (searchText(x.opk) + ' ' + x.speltakName.toLowerCase()).includes(ql)))
+    && (!ql || (opkSearchText(x.opk) + ' ' + x.speltakName.toLowerCase()).includes(ql)))
     .sort((a, b) => byTitle(a.opk, b.opk));
   // alleen wat nu in de eigen bank staat telt (een ingeplande kopie of een concept houdt fromShared ook)
   const copied = new Set(opks.filter(o => o.state === 'bank' && o.fromShared).map(o => o.fromShared!));
   const G = g && sel ? others.find(x => x.id === sel) : undefined;
   // op een smal scherm ligt het paneel als vel over de pagina: dan is het een venster (focus erin, Esc sluit, focus terug naar de kaart)
   const [sheetRef, sheetProps] = useSheetDialog(!!(T || G), g ? 'Uit de groepsbank' : 'Opkomst uit de bank', () => document.querySelector<HTMLElement>('.bcard.sel'));
-  useEffect(() => {
-    if (!sel) return;
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.modal')) setSel(null); };
-    document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h);
-  });
+  useEscapeClose(!!sel, () => setSel(null));
 
   // lege bank of lege groep: geen zoekveld, filters of zijpaneel (de tabbladen blijven)
   const bare = g ? !others.length : !total && !opks.some(o => o.state === 'draft');
@@ -132,9 +128,6 @@ export default function Opkomstenbank() {
     </div></>}
   </div>;
 }
-
-/** Waarin gezocht wordt: titel, beschrijving, locatie en de onderdelen (zonder de vaste blokken). */
-const searchText = opkSearchText;
 
 function CardMeta({ o, noGroup }: { o: Opk; noGroup?: boolean }) {
   return <span className="bm">{isKamp(o) ? <span className="pill kamp">Kamp · {plural(o.days.length, 'dag', 'dagen')}</span> : <span className="mono">{fmtT(o.start)}–{fmtT(o.end)}</span>}<span>{plural(allBlocks(o).length, 'onderdeel', 'onderdelen')}</span>{minNeed(o) ? <span>min. {minNeed(o)} leiding</span> : null}{!noGroup && o.group && <span>{o.group}</span>}</span>;

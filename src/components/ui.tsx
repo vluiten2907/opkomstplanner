@@ -62,6 +62,15 @@ export function useMedia(q: string) {
   return on;
 }
 
+/** Escape sluit het open zijpaneel van een bank, tenzij er een venster open is of de toets al is afgehandeld. */
+export function useEscapeClose(open: boolean, close: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.modal')) close(); };
+    document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h);
+  });
+}
+
 /**
  * Bewerkpaneel dat op een smal scherm (≤ 900 px, ook een laptop op 200%) als vel over de pagina ligt:
  * dan is het een venster. Focus erin, Tab blijft erin, de rest is onbereikbaar en na het sluiten gaat de focus terug.

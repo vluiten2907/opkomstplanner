@@ -11,7 +11,7 @@ import { Chip, ConfirmBtn, Dot, Field, TimePicker, useMedia, useSheetDialog } fr
 import { Ticks, PrepZones, blkGeom, blkLabel, lanesStyle } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, todayISO, uid, DAYS } from '../lib/time';
-import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isBlankOpk, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, LIB_FIELDS, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isBlankOpk, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /** Titel van de opkomst: loopt door op een volgende regel in plaats van af te breken (smal scherm), zonder echte regeleinden. */
 function TitleArea({ value, readOnly, onChange, placeholder, autoFocus }: { value: string; readOnly: boolean; onChange: (v: string) => void; placeholder: string; autoFocus?: boolean }) {
@@ -492,13 +492,13 @@ function Editor({ b, ctx, upd, onClose, onDelete, onDup, saveLib }: { b: Block; 
     withFreeName(b.title, {
       title: 'Andere naam kiezen', sub: `"${b.title.trim()}" staat al in de activiteitenbank. Geef de activiteit een andere naam.`, label: 'Titel van de activiteit', okLabel: 'Bewaren in activiteitenbank',
       suggest: freeName(lib, b.title), taken: n => nameTaken(lib, n),
-      ok: name => { const l = normLib({ id: uid() }); LIB_FIELDS.forEach(k => { (l as any)[k] = (b as any)[k]; }); l.title = name; saveLib(l); upd(() => { b.title = name; b.libId = l.id; }); toast('Opgeslagen in de activiteitenbank'); },
+      ok: name => { const l = { ...normLib({ id: uid() }), ...libFields(b), title: name }; saveLib(l); upd(() => { b.title = name; b.libId = l.id; }); toast('Opgeslagen in de activiteitenbank'); },
     });
   };
   const updLib = () => {
     if (!L) return;
     if (nameTaken(lib, b.title, L.id)) { toast(`"${b.title.trim()}" bestaat al in de activiteitenbank. Geef het onderdeel eerst een andere naam.`); return; }
-    const l = { ...L }; LIB_FIELDS.forEach(k => { (l as any)[k] = (b as any)[k]; }); saveLib(l); toast('Activiteitenbank bijgewerkt');
+    saveLib({ ...L, ...libFields(b) }); toast('Activiteitenbank bijgewerkt');
   };
   const ro = readOnly;
   return <div className="pad stack">

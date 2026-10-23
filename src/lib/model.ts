@@ -61,6 +61,10 @@ export const ACCENTS: Record<string, { label: string; l: string; ls: string; d: 
   grijs: { label: 'Grijs', l: '#3B4248', ls: '#E2E5E8', d: '#C3CAD0', ds: '#2A2F33', rgb: [59, 66, 72], pop: '#F2C14E', popD: '#E3B04B' },
 };
 export const LIB_FIELDS = ['title', 'dur', 'cat', 'minLeaders', 'location', 'short', 'desc', 'prep', 'materials'] as const;
+/** Velden die een onderdeel en een activiteit uit de bank delen. */
+export type LibFields = Pick<Lib, typeof LIB_FIELDS[number]>;
+/** Alleen de gedeelde velden (titel, duur, categorie, …) van een onderdeel of activiteit, om over te zetten naar de ander. */
+export const libFields = (x: LibFields): LibFields => Object.fromEntries(LIB_FIELDS.map(k => [k, x[k]])) as LibFields;
 
 export function defaultSettings(): Settings {
   return { categories: clone(DEFAULT_CATS), leaders: [], locations: [], defStart: 14 * 60, defEnd: 16 * 60 + 30, opkDay: 6,
@@ -239,7 +243,7 @@ export function relabelDays(o: Opk, firstISO: string) {
   return changed;
 }
 export function blockFromLib(l: Lib, start: number): Block {
-  const b = normBlock({}); LIB_FIELDS.forEach(k => { (b as any)[k] = (l as any)[k]; }); b.libId = l.id; b.start = start; return b;
+  return { ...normBlock({}), ...libFields(l), libId: l.id, start };
 }
 /** Kopie met nieuwe ids (opkomst, dagen en onderdelen). Met `s` krijgen ontbrekende voorbereiding/nabespreking de standaard. */
 export function copyOpk(src: Opk, s?: Settings): Opk {

@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { guardLeave, useDirty } from '../store/unsaved';
 import { Plus, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { BankCard, PageTitle, SaveBar } from '../components/shared';
-import { Chip, ConfirmBtn, Dot, Field, useSheetDialog } from '../components/ui';
+import { Chip, ConfirmBtn, Dot, Field, useEscapeClose, useSheetDialog } from '../components/ui';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { clone, fmtDur, plural, uid } from '../lib/time';
 import { allBlocks, byTitle, catOf, freeName, nameTaken, normLib, type Lib } from '../lib/model';
@@ -26,11 +26,7 @@ export default function Activiteitenbank() {
   const isNew = !!L && !lib.some(l => l.id === L.id);
   // op een smal scherm ligt het paneel als vel over de pagina: dan is het een venster (focus erin, Esc sluit, focus terug naar de kaart)
   const [sheetRef, sheetProps] = useSheetDialog(!!L, 'Activiteit bewerken', () => document.querySelector<HTMLElement>('.bcard.sel'));
-  useEffect(() => {
-    if (!sel) return;
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.modal')) setSel(null); };
-    document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h);
-  });
+  useEscapeClose(!!sel, () => setSel(null));
   // lege bank (en niets open): geen zoekveld, filters of zijpaneel, alleen uitleg met één knop
   if (!lib.length && !L) return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title="Activiteitenbank" sub="Nog geen activiteiten" />
