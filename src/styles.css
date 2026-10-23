@@ -667,6 +667,7 @@ aside .notice .ntext { flex: none; }
 .menu { position: absolute; right: 0; top: calc(100% + 6px); background: var(--paper); box-shadow: 0 0 0 2px var(--edge), 6px 6px 0 2px var(--hard); border-radius: 12px; padding: 6px; min-width: 240px; z-index: 40; display: grid; gap: 2px; }
 .menu button { text-align: left; border: 0; background: transparent; padding: 9px 10px; border-radius: 8px; cursor: pointer; font-weight: 600; }
 .menu button:hover { background: var(--sunk); }
+.menu button[data-armed] { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, var(--paper)); }
 .mono-code { font-family: ui-monospace, Menlo, monospace; font-size: 13px; word-break: break-all; background: var(--sunk); padding: 8px 10px; border-radius: 8px; }
 .perm-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: start; }
 .team { display: grid; gap: 8px; }

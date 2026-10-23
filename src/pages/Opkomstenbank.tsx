@@ -42,7 +42,8 @@ export default function Opkomstenbank() {
   const groupList = others.filter(x => (!from || x.sid === from) && (!cat || labelsOf(x).includes(catLabel.toLowerCase()))
     && (!ql || (x.opk.title + ' ' + x.opk.short + ' ' + x.speltakName).toLowerCase().includes(ql)))
     .sort((a, b) => byTitle(a.opk, b.opk));
-  const copied = new Set(opks.filter(o => o.fromShared).map(o => o.fromShared!));
+  // alleen wat nu in de eigen bank staat telt (een ingeplande kopie of een concept houdt fromShared ook)
+  const copied = new Set(opks.filter(o => o.state === 'bank' && o.fromShared).map(o => o.fromShared!));
   const G = g && sel ? others.find(x => x.id === sel) : undefined;
 
   const switchTab = (t: Tab) => guardLeave(() => { setTab(t); setSelRaw(null); setFrom(''); });

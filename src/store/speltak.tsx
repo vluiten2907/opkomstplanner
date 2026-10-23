@@ -99,6 +99,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   const [, bump] = useState(0);
   // nieuwste opkomsten, voor acties die later (vanuit een melding) worden uitgevoerd
   const opksRef = useRef<Opk[]>([]);
+  const plansRef = useRef<Plan[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -128,6 +129,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   useEffect(() => { opksRef.current = opks; }, [opks]);
+  useEffect(() => { plansRef.current = plans; }, [plans]);
   const me = user && sp ? sp.members[user.uid] : null;
   const myName = me?.name || user?.displayName || '';
   const roles = useRoles();
@@ -180,7 +182,16 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   const removeOpk = async (o: Opk) => {
     const e = plans.find(p => p.opkId === o.id); if (e) savePlan({ ...e, opkId: null });
     const used = opks.some(x => x.state === 'planned' && x.srcId === o.id);
-    toast(o.state === 'bank' ? `"${o.title || 'Opkomst'}" uit de bank verwijderd${used ? '. Ingeplande opkomsten blijven staan' : ''}` : 'Concept verwijderd');
+    // Ongedaan maken: terug met hetzelfde id (verwijzingen kloppen weer) en de koppeling terug als de rij nog vrij is.
+    // Een gedeelde bank-opkomst zet de synchronisatie vanzelf terug in de groepsbank.
+    const back = clone(o);
+    const undo = () => {
+      if (opksRef.current.some(x => x.id === back.id)) return;
+      saveOpk(clone(back));
+      const cur = e && plansRef.current.find(p => p.id === e.id);
+      if (cur && !cur.opkId) savePlan({ ...cur, opkId: back.id });
+    };
+    toast(o.state === 'bank' ? `"${o.title || 'Opkomst'}" uit de bank verwijderd${used ? '. Ingeplande opkomsten blijven staan' : ''}` : 'Concept verwijderd', { label: 'Ongedaan maken', fn: undo });
     await deleteOpk(o.id);
   };
   // Alleen de gewijzigde velden wegschrijven ('settings.accent', 'groupName', 'name'): twee wijzigingen vlak na elkaar,

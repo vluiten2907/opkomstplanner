@@ -345,7 +345,12 @@ with sync_playwright() as p:
     pg.fill('#dy-label', 'Zaterdag'); w(300); shot('17-kamp-zaterdag', False)
     kday = re.search(r'\d+', tabs.nth(0).inner_text()).group(0)
     add_block(60, 'Kampvuur', '30', 'Veld', 'Carla')
-    pg.click('.blk:has-text("Kampvuur")'); w(300); pg.fill('#bf-prep', 'Hout halen'); w(600); pg.click('.side .closex'); w(300)
+    pg.click('.blk:has-text("Kampvuur")'); w(300); pg.fill('#bf-prep', 'Hout halen'); w(600)
+    m0 = pg.input_value('#bf-min'); pg.click('#bf-min'); pg.keyboard.press('Backspace'); pg.keyboard.type('3'); w(200)
+    typed, tag3 = pg.input_value('#bf-min'), pg.locator('.blk:has-text("Kampvuur") .tag:has-text("/3 leiding")').count() == 1
+    pg.fill('#bf-min', m0); pg.keyboard.press('Tab'); w(600)
+    check(typed == '3' and tag3 and pg.input_value('#bf-min') == m0, 'onderdeel: minimaal aantal leiding wissen en 3 typen geeft 3')
+    pg.click('.side .closex'); w(300)
     with pg.expect_download() as dl: pg.click('button:has-text("PDF maken")')
     dl.value.save_as(f'{OUT}/kamp.pdf'); T = pdf_texts(f'{OUT}/kamp.pdf')
     head = [(x, y) for x, y, t in T if re.fullmatch(rf'za {kday} \d\d:\d\d  Kampvuur', t)]
@@ -388,10 +393,18 @@ with sync_playwright() as p:
     sb('Annuleren').click(); w(200); pg.click('.side .closex'); w(200)
     pg.click('nav >> text=Activiteitenbank'); w(400)
     n0 = pg.locator('.bcard').count()
+    pg.click('text=Nieuwe activiteit'); w(300); pg.click('.side .closex'); w(300)
+    check(pg.locator('#lf-title').count() == 0 and pg.locator('.toast.show button:has-text("Weggooien")').count() == 0 and pg.locator('.bcard').count() == n0,
+          'nieuwe activiteit zonder invoer: kruisje sluit direct, zonder vraag')
     pg.click('text=Nieuwe activiteit'); w(300); pg.fill('#lf-title', 'kompasposten'); w(200)
     check(pg.locator('.bcard').count() == n0 and sb('Opslaan').is_disabled(), 'nieuwe activiteit: pas in de bank na Opslaan, bestaande naam geweigerd')
     pg.fill('#lf-title', 'Vlaggenroof'); sb('Opslaan').click(); w(500)
     check(pg.locator('.bcard:has-text("Vlaggenroof")').count() == 1, 'nieuwe activiteit opgeslagen')
+    pg.click('#lf-min'); pg.keyboard.press('Backspace'); pg.keyboard.type('3'); w(100); typed = pg.input_value('#lf-min'); pg.keyboard.press('Tab'); w(100)
+    check(typed == '3' and pg.input_value('#lf-min') == '3', 'minimaal aantal leiding: wissen en 3 typen geeft 3 (niet 13)')
+    pg.click('#lf-min'); pg.keyboard.press('Backspace'); pg.keyboard.press('Tab'); w(100); kept = pg.input_value('#lf-min')
+    pg.fill('#lf-min', '0'); pg.keyboard.press('Tab'); w(100)
+    check(kept == '3' and pg.input_value('#lf-min') == '1', 'minimaal aantal leiding: leeg laten houdt de waarde, te laag wordt bij wegklikken 1')
     pg.fill('#lf-title', 'Vlaggenroof XL'); w(200); sb('Annuleren').click(); w(200)
     check(pg.locator('#lf-title').input_value() == 'Vlaggenroof' and pg.locator('.bcard:has-text("Vlaggenroof XL")').count() == 0, 'activiteit: annuleren slaat niets op')
     pg.fill('#lf-short', 'Twee teams'); sb('Opslaan als kopie').click(); w(200)
@@ -406,6 +419,10 @@ with sync_playwright() as p:
     card = lambda t: pg.locator(f'.bwrap:has(.bcard:has-text("{t}"))')
     card('Vlaggenroof groot').locator('.carddel').click(); w(150); card('Vlaggenroof groot').locator('text=Verwijderen?').click(); w(600)
     check(pg.locator('.bcard:has-text("Vlaggenroof groot")').count() == 0 and pg.locator('.bcard:has-text("Vlaggenroof")').count() == 1, 'activiteit verwijderd vanaf de kaart')
+    pg.click('.toast.show button:has-text("Ongedaan maken")'); w(900)
+    lib_back = pg.evaluate("Object.entries(JSON.parse(localStorage.getItem('fake.firestore'))).some(([k, v]) => k.includes('/activiteiten/') && v && v.title === 'Vlaggenroof groot')")
+    check(pg.locator('.bcard:has-text("Vlaggenroof groot")').count() == 1 and lib_back, 'activiteit verwijderd: Ongedaan maken zet hem terug (ook opgeslagen)')
+    card('Vlaggenroof groot').locator('.carddel').click(); w(150); card('Vlaggenroof groot').locator('text=Verwijderen?').click(); w(600)
     for t in ('Bankweg', 'Bouwerweg'):
         pg.click('nav >> text=Opkomstbouwer'); w(300); pg.click('text=Nieuwe opkomst'); w(700); pg.fill('#om-title', t); w(700)
         pg.click('.plan-head >> button:has-text("In bank")'); w(600)
@@ -413,13 +430,17 @@ with sync_playwright() as p:
     check(card('Bankweg').locator('.carddel').count() == 1, 'opkomstenbank: verwijderknop op de kaart'); shot('15-bank-verwijderen')
     card('Bankweg').locator('.carddel').click(); w(150); shot('15b-bank-verwijderen-bevestigen'); card('Bankweg').locator('text=Verwijderen?').click(); w(600)
     check(pg.locator('.bcard:has-text("Bankweg")').count() == 0, 'afgeronde opkomst verwijderd vanaf de kaart')
+    pg.click('.toast.show button:has-text("Ongedaan maken")'); w(900)
+    check(pg.locator('.bcard:has-text("Bankweg")').count() == 1, 'opkomst uit de bank verwijderd: Ongedaan maken zet hem terug')
+    card('Bankweg').locator('.carddel').click(); w(150); card('Bankweg').locator('text=Verwijderen?').click(); w(600)
     pg.set_viewport_size({'width': 390, 'height': 800}); w(300)
     check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'opkomstenbank mobiel met verwijderknoppen: geen horizontale scroll'); shot('15c-bank-mobiel', False)
     pg.set_viewport_size({'width': 1360, 'height': 900}); w(300)
     pg.click('.bcard:has-text("Bouwerweg")'); w(300); pg.click('.side >> text=Bewerken'); w(700)
     pg.click('.plan-head >> button:has-text("Verwijderen")'); w(200); pg.click('.plan-head >> text=Klik nogmaals om te verwijderen'); w(700)
     check(pg.url.rstrip('/').endswith('/bouwer') and pg.locator('.pick:has-text("Bouwerweg")').count() == 0, 'bank-opkomst verwijderd vanuit de bouwer')
-    check(pg.locator('.toast').inner_text().strip() == '"Bouwerweg" uit de bank verwijderd', 'melding bij verwijderen uit de bank (nergens ingepland: geen extra zin)')
+    check(pg.locator('.toast > span').inner_text().strip() == '"Bouwerweg" uit de bank verwijderd' and pg.locator('.toast.show button:has-text("Ongedaan maken")').count() == 1,
+          'melding bij verwijderen uit de bank (nergens ingepland: geen extra zin), met Ongedaan maken')
     pg.reload(); w(1000); pg.click('nav >> text=Opkomstenbank'); w(500)
     check(pg.locator('.bcard:has-text("Bankweg"), .bcard:has-text("Bouwerweg")').count() == 0 and pg.locator('.bcard:has-text("Sluipspel")').count() == 1, 'verwijderde bank-opkomsten blijven weg, andere blijven staan')
 
@@ -598,6 +619,17 @@ with sync_playwright() as p:
     check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'groepsbank mobiel: geen horizontale scroll'); shot('11-groepsbank-mobiel')
     pg.click('.bcard:has-text("Sluipspel")'); w(400); shot('12-groepsbank-mobiel-detail', False)
     pg.set_viewport_size({'width': 1360, 'height': 900})
+    # kopie inplannen en daarna uit de eigen bank halen: de groepskaart zegt dan niet meer "Al in onze bank"
+    pg.click('.tabs.page >> text=Onze bank'); w(400); pg.click('.bcard:has-text("Sluipspel")'); w(300); pg.click('.side >> text=Inplannen'); w(300)
+    pg.fill('.modal input[placeholder^="Andere datum"]', '07-03-2031'); pg.click('.modal >> text=Op deze datum'); w(700); pg.click('.modal >> text=Klaar'); w(300)
+    pg.locator('.bwrap:has(.bcard:has-text("Sluipspel")) .carddel').click(); w(150); pg.locator('.bwrap:has(.bcard:has-text("Sluipspel")) >> text=Verwijderen?').click(); w(600)
+    pg.click('.tabs.page >> text=Groep'); w(500)
+    gtxt = pg.locator('.bcard:has-text("Sluipspel")').inner_text()
+    check(pg.locator('.tabs.page [role=tab]:has-text("Onze bank") .count').inner_text() == '0' and 'Al in onze bank' not in gtxt and 'gekopieerd' in gtxt,
+          'groepsbank: kopie uit de eigen bank gehaald (ingeplande kopie blijft) → niet meer "Al in onze bank"')
+    pg.click('.bcard:has-text("Sluipspel")'); w(300)
+    check(pg.locator('.side button:has-text("Kopieer naar onze bank")').count() == 1 and pg.locator('.side >> text=staat al in jullie opkomstenbank').count() == 0, 'groepsbank: opnieuw kopiëren zonder extra klik')
+    pg.click('.side .closex'); w(200)
 
     # --- rol overdragen: de opvolger komt binnen als leiding met alle rechten, daarna draagt de teamleider zelf over
     def sid_of(name):
@@ -879,12 +911,42 @@ with sync_playwright() as p:
     pg.goto(BASE + '/s/oefen/opkomsten'); w(1000); pg.click('.bcard:has-text("Rond de wereld")'); w(300); pg.click('.side >> text=Bewerken'); w(800)
     check(pg.locator('.plan-head button:has-text("Kopie")').count() == 0 and pg.locator('.plan-head button:has-text("Verwijderen")').count() == 1,
           'alleen recht Banken: bank-opkomst wel verwijderen, geen kopie als concept (dat hoort bij Opkomsten)')
+    pg.goto(BASE + '/s/oefen/bouwer/opk-sint'); w(1000)
+    check(pg.locator('.plan-head button:has-text("In bank")').count() == 1 and pg.locator('.plan-head button:has-text("Verwijderen")').count() == 0, 'alleen recht Banken: concept wel in de bank zetten, niet verwijderen')
     oefen_set("s['speltakken/oefen'].members['oefen-jij'].perms = { plan: false, build: true, bank: false, settings: true }")
+    # alleen Opkomsten: de opkomstenbank is alleen-lezen, in de bouwer net zo (wel Kopie en Inplannen)
+    pg.goto(BASE + '/s/oefen/opkomsten'); w(1000); pg.click('.bcard:has-text("Rond de wereld")'); w(300)
+    check(pg.locator('#tf-title').get_attribute('readonly') is not None and pg.locator('.side button:has-text("Bekijken")').count() == 1, 'alleen recht Opkomsten: bank-opkomst in het zijpaneel alleen bekijken')
+    pg.click('.side >> text=Bekijken'); w(900)
+    check(pg.locator('#om-title').get_attribute('readonly') is not None and pg.locator('.pill:has-text("Alleen lezen")').count() == 1 and pg.locator('.savebar').count() == 0
+          and pg.locator('.plan-head button:has-text("Kopie")').count() == 1 and pg.locator('.plan-head button:has-text("Inplannen")').count() == 1
+          and pg.locator('.plan-head button:has-text("Verwijderen")').count() == 0, 'alleen recht Opkomsten: bank-opkomst in de bouwer alleen-lezen, wel Kopie en Inplannen')
+    pg.locator('.lanes .blk:has-text("Hapjes proeven")').click(); w(300)
+    check(pg.locator('#bf-cat').is_disabled() and pg.locator('#bf-cat option[value="__new"]').count() == 0 and pg.locator('#bf-loc').get_attribute('readonly') is not None
+          and pg.locator('#bf-min').get_attribute('readonly') is not None, 'alleen lezen: categorie, locatie en minimaal leiding van een onderdeel vast')
+    pg.goto(BASE + '/s/oefen/bouwer/opk-sint'); w(1000)
+    check(pg.locator('#om-title').get_attribute('readonly') is None and pg.locator('.plan-head button:has-text("In bank")').count() == 0 and pg.locator('.plan-head button:has-text("Verwijderen")').count() == 1,
+          'alleen recht Opkomsten: concept bewerken en verwijderen, niet in de bank zetten')
+    pg.locator('.lanes .blk:has-text("Pietendiploma halen")').click(); w(300)
+    check(not pg.locator('#bf-cat').is_disabled() and pg.locator('#bf-loc').get_attribute('readonly') is None, 'concept met recht Opkomsten: categorie en locatie aan te passen')
+    pg.goto(BASE + '/s/oefen/activiteiten'); w(1000); pg.locator('.bcard').first.click(); w(300)
+    loc0 = pg.input_value('#lf-loc'); pg.locator('#lf-loc').press_sequentially('Bos'); w(100)
+    check(pg.locator('#lf-cat').is_disabled() and pg.locator('#lf-cat option[value="__new"]').count() == 0 and pg.locator('#lf-loc').get_attribute('readonly') is not None and pg.input_value('#lf-loc') == loc0,
+          'activiteit alleen-lezen: categorie en locatie vast, geen Nieuwe categorie')
+    pg.click('.side .closex'); w(200)
     pg.goto(BASE + '/s/oefen/instellingen'); w(1000)
     backup = json.dumps({'version': 4, 'opks': [], 'plans': [], 'lib': [{'id': 'lib-backup', 'title': 'Uit de back-up'}], 'settings': {}}).encode()
     pg.set_input_files('input[type=file][accept=".json,application/json"]', files=[{'name': 'backup.json', 'mimeType': 'application/json', 'buffer': backup}]); w(900)
     check('Activiteiten overgeslagen' in pg.locator('.toast').inner_text() and oefen_get("!s['speltakken/oefen/activiteiten/lib-backup']"), 'back-up terugzetten zonder recht Banken: activiteiten overgeslagen')
     oefen_set("const sp = s['speltakken/oefen']; sp.tlIds = ['oefen-jij']; sp.members['oefen-jij'].role = 'teamleider'; sp.members['oefen-jij'].perms = { plan: true, build: true, bank: true, settings: true }")
+    # concept verwijderen kan terug
+    pg.goto(BASE + '/s/oefen/opkomsten'); w(1000)
+    sint = pg.locator('.pick:has-text("Sinterklaasopkomst")')
+    sint.locator('button:has-text("Verwijderen")').click(); w(150); sint.locator('button:has-text("Klik nogmaals")').click(); w(900)
+    gone = pg.locator('.pick:has-text("Sinterklaasopkomst")').count() == 0 and oefen_get("!s['speltakken/oefen/opkomsten/opk-sint']")
+    pg.click('.toast.show button:has-text("Ongedaan maken")'); w(900)
+    check(gone and pg.locator('.pick:has-text("Sinterklaasopkomst")').count() == 1 and oefen_get("s['speltakken/oefen/opkomsten/opk-sint'].state") == 'draft',
+          'concept verwijderd: Ongedaan maken zet hem terug (zelfde opkomst, opgeslagen)')
     # back-up maken en terugzetten: wordt aangevuld, bestaande gegevens blijven
     pg.goto(BASE + '/s/oefen/instellingen'); w(1000)
     with pg.expect_download() as dl: pg.click('button:has-text("Back-up maken")')
@@ -994,9 +1056,24 @@ with sync_playwright() as p:
     w(7300)
     check(pg.locator('.toast button').count() == 0 and pg.locator('.toast.has-act').count() == 0 and pg.evaluate("getComputedStyle(document.querySelector('.toast')).pointerEvents") == 'none',
           'verlopen melding: knop weg en niet meer aan te klikken')
-    pg.click('.oefenbar >> text=Opnieuw beginnen'); w(1800)
+    # opnieuw beginnen: eerst bevestigen, en bij niet-opgeslagen wijzigingen eerst vragen
+    pg.goto(BASE + '/s/oefen/opkomsten'); w(1000); pg.click('.bcard:has-text("Rond de wereld")'); w(300); pg.fill('#tf-title', 'Rond de wereld X'); w(200)
+    pg.click('.oefenbar >> text=Opnieuw beginnen'); w(300)
+    armed = pg.locator('.oefenbar button:has-text("Klik nogmaals: alles terugzetten")').count() == 1 and pg.locator('#tf-title').count() == 1
+    pg.click('.oefenbar >> text=Klik nogmaals: alles terugzetten'); w(300)
+    check(armed and pg.locator('.toast.show button:has-text("Weggooien")').count() == 1 and pg.input_value('#tf-title') == 'Rond de wereld X',
+          'oefenomgeving: opnieuw beginnen vraagt eerst bevestiging, en waarschuwt bij niet-opgeslagen wijzigingen')
+    pg.click('.toast.show button:has-text("Weggooien")'); w(1800)
     pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(900)
-    check(pg.input_value('#om-title') == 'Junglejacht en stratego', 'oefenomgeving: opnieuw beginnen zet voorbeelddata terug')
+    check(pg.input_value('#om-title') == 'Junglejacht en stratego' and 'Levend stratego XYZ' not in titles() and 'Levend stratego' in ' '.join(titles()), 'oefenomgeving: opnieuw beginnen zet voorbeelddata terug')
+    pg.click('button[aria-label="Account"]'); w(200); pg.click('.menu >> text=Opnieuw beginnen'); w(200)
+    check(pg.locator('.menu button:has-text("Klik nogmaals: alles terugzetten")').count() == 1 and pg.locator('.loading').count() == 0, 'accountmenu: opnieuw beginnen vraagt eerst bevestiging')
+    pg.click('button[aria-label="Account"]'); w(200)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); pg.evaluate('window.scrollTo(0, 0)'); w(100)
+    pg.click('.oefenbar >> text=Opnieuw beginnen'); w(200)
+    check(pg.locator('.oefenbar button:has-text("Klik nogmaals")').count() == 1 and pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'oefenbalk mobiel met bevestiging: geen horizontale scroll')
+    shot('13b-oefenen-bevestigen-mobiel', False); w(3200)
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     pg.set_viewport_size({'width': 390, 'height': 800}); w(300)
     tt = pg.locator('#om-title')
     whole = "e => e.scrollHeight <= e.clientHeight + 1 && e.scrollWidth <= e.clientWidth + 1"

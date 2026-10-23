@@ -8,7 +8,7 @@ import { guardLeave, setUnsaved, useDirty } from '../store/unsaved';
 import { Strip, PickOpk, usePdf, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, TimePicker } from '../components/ui';
 import { Ticks, PrepZones, blkGeom, lanesStyle } from '../components/timeline';
-import { CatSelect, LocInput } from '../components/fields';
+import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, uid, DAYS } from '../lib/time';
 import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, LIB_FIELDS, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
@@ -78,7 +78,8 @@ function Builder({ o: stored }: { o: Opk }) {
   const [sideTab, setSideTab] = useState<'bank' | 'check'>('bank');
   const lanesRef = useRef<HTMLDivElement>(null);
   const sideRef = useRef<HTMLElement>(null);
-  const readOnly = !can('build') && !(o.state === 'bank' && can('bank'));
+  // Een opkomst uit de bank bewerk je met het recht Banken, de rest met Opkomsten (zoals de uitleg bij de rechten zegt).
+  const readOnly = o.state === 'bank' ? !can('bank') : !can('build');
   const kamp = isKamp(o), row = useRowHeight(kamp);
   const di = Math.min(dayIdx, o.days.length - 1);
   const D = kamp ? o.days[di] : o;
@@ -151,8 +152,9 @@ function Builder({ o: stored }: { o: Opk }) {
     if (!allBlocks(o).length && !o.title) { toast('Geef de opkomst eerst een titel of een onderdeel.'); return; }
     const ask = { title: 'Andere naam kiezen', sub: o.title.trim() ? `"${o.title.trim()}" staat al in de opkomstenbank. Kies een andere naam.` : 'Geef de opkomst een titel voor de bank.', label: 'Opkomst titel', okLabel: 'In bank zetten', suggest: o.title.trim() ? freeName(bankOpks, o.title) : '' };
     // concept: gaat zelf de bank in; ingepland: er komt een kopie in de bank (allebei zonder namen)
-    if (o.state === 'draft') return withFreeName(o.title, { ...ask, taken: n => nameTaken(bankOpks, n, o.id), ok: name => { if (readOnly) return; saveOpk(toBank(o, name)); toast(S.sp?.gid ? 'In de opkomstenbank gezet en gedeeld met de groep, zonder namen' : 'Opgeslagen in de opkomstenbank, zonder namen van leiding'); } });
+    if (o.state === 'draft') return withFreeName(o.title, { ...ask, taken: n => nameTaken(bankOpks, n, o.id), ok: name => { if (!can('bank')) return; saveOpk(toBank(o, name)); toast(S.sp?.gid ? 'In de opkomstenbank gezet en gedeeld met de groep, zonder namen' : 'Opgeslagen in de opkomstenbank, zonder namen van leiding'); } });
     withFreeName(o.title, { ...ask, taken: n => nameTaken(bankOpks, n), ok: name => {
+      // zonder recht Opkomsten blijft de ingeplande opkomst zelf ongemoeid (upd doet dan niets)
       const b = toBank(o, name); saveOpk(b); upd(() => { o.srcId = b.id; }); toast('Kopie opgeslagen in de opkomstenbank, zonder leiding');
     } });
   };
@@ -165,9 +167,12 @@ function Builder({ o: stored }: { o: Opk }) {
     toast('Opkomstenbank bijgewerkt');
   };
   const pdfBtn = <button className="btn primary" onClick={() => pdf(o)}><Download size={16} />PDF maken</button>;
-  const actions = readOnly ? pdfBtn : o.state === 'draft' ? <><button className="btn" onClick={putInBank}><Bookmark size={16} />In bank</button>{canLink && <button className="btn" onClick={() => openModal({ kind: 'toplan', oid: o.id })}><CalendarDays size={16} />Inplannen</button>}{pdfBtn}{can('build') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Concept verwijderen" onConfirm={() => { nav(`/s/${sid}/bouwer`); removeOpk(o); }} />}</>
-    : o.state === 'bank' ? <>{can('build') && <button className="btn" onClick={dup} title="Kopie als concept"><Copy size={16} />Kopie</button>}{canLink && <button className="btn" onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: o.id }))}><CalendarDays size={16} />Inplannen</button>}{pdfBtn}{can('bank') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Uit de opkomstenbank verwijderen" onConfirm={() => { setUnsaved(false); nav(`/s/${sid}/bouwer`); removeOpk(o); }} />}</>
-      : <><button className="btn" onClick={putInBank}><Bookmark size={16} />In bank</button><button className="btn" onClick={() => go(`/s/${sid}/jaarplanning?focus=${e ? e.id : ''}`)}><CalendarDays size={16} />Jaarplanning</button>{pdfBtn}</>;
+  // Elke knop volgt zijn eigen recht: In bank en Verwijderen (bank) met Banken, Kopie en Verwijderen (concept) met Opkomsten.
+  const bankBtn = can('bank') && <button className="btn" onClick={putInBank}><Bookmark size={16} />In bank</button>;
+  const planBtn = canLink && <button className="btn" onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: o.id }))}><CalendarDays size={16} />Inplannen</button>;
+  const actions = o.state === 'draft' ? <>{bankBtn}{planBtn}{pdfBtn}{can('build') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Concept verwijderen" onConfirm={() => { nav(`/s/${sid}/bouwer`); removeOpk(stored); }} />}</>
+    : o.state === 'bank' ? <>{can('build') && <button className="btn" onClick={dup} title="Kopie als concept"><Copy size={16} />Kopie</button>}{planBtn}{pdfBtn}{can('bank') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Uit de opkomstenbank verwijderen" onConfirm={() => { setUnsaved(false); nav(`/s/${sid}/bouwer`); removeOpk(stored); }} />}</>
+      : <>{bankBtn}<button className="btn" onClick={() => go(`/s/${sid}/jaarplanning?focus=${e ? e.id : ''}`)}><CalendarDays size={16} />Jaarplanning</button>{pdfBtn}</>;
   const w = whole.warn;
   return <div className="stack pt-5 md:pt-7" style={{ gap: 16 }}>
     <section className="plan-head">
@@ -432,9 +437,9 @@ function Editor({ b, ctx, upd, onClose, onDelete, onDup, saveLib }: { b: Block; 
       <Field label="Begin" className="timefield"><TimePicker value={b.start} from={T0} to={T1 - 5} extra disabled={ro} onChange={v => upd(() => { b.start = v; b.dur = Math.max(5, Math.min(b.dur, T1 - b.start)); })} /></Field>
       <Field label="Duur" htmlFor="bf-dur"><select id="bf-dur" value={b.dur} disabled={ro} onChange={e => upd(() => { b.dur = +e.target.value; })}>{durs.map(d => <option key={d} value={d}>{fmtDur(d)}</option>)}</select></Field>
     </div>
-    <div className="two">{isFixed(b) ? <div className="field"><span className="lbl">Soort</span><span className="pill neutral" style={{ justifySelf: 'start' }}>{catOf(settings, b.cat).label}</span></div> : <CatSelect prefix="bf" value={b.cat} onChange={id => upd(() => { b.cat = id; })} />}
-      <Field label="Minimaal aantal leiding" htmlFor="bf-min"><input id="bf-min" type="number" min={0} max={30} readOnly={ro} value={b.minLeaders} onChange={e => upd(() => { b.minLeaders = Math.max(0, Math.min(30, parseInt(e.target.value, 10) || 0)); })} /></Field></div>
-    <Field label="Locatie" htmlFor="bf-loc"><LocInput id="bf-loc" value={b.location} onChange={v => upd(() => { b.location = v; })} placeholder="bijv. Grasveld" /></Field>
+    <div className="two">{isFixed(b) ? <div className="field"><span className="lbl">Soort</span><span className="pill neutral" style={{ justifySelf: 'start' }}>{catOf(settings, b.cat).label}</span></div> : <CatSelect prefix="bf" value={b.cat} disabled={ro} onChange={id => upd(() => { b.cat = id; })} />}
+      <Field label="Minimaal aantal leiding" htmlFor="bf-min"><NumInput id="bf-min" min={0} max={30} readOnly={ro} value={b.minLeaders} onChange={n => upd(() => { b.minLeaders = n; })} /></Field></div>
+    <Field label="Locatie" htmlFor="bf-loc"><LocInput id="bf-loc" value={b.location} readOnly={ro} onChange={v => upd(() => { b.location = v; })} placeholder="bijv. Grasveld" /></Field>
     {nn ? <div className="field"><span className="lbl">Verantwoordelijk</span><span className="hint">Deel je in bij het inplannen.</span></div> : <div className="field"><span className="lbl">Verantwoordelijk</span>
       <div className="row" style={{ gap: 6 }}>{leaders.length ? leaders.map(n => present.includes(n) ? <Chip key={n} on={b.names.includes(n)} disabled={ro} onClick={() => upd(() => { b.names = b.names.includes(n) ? b.names.filter(x => x !== n) : [...b.names, n]; })}>{n}</Chip>
         : <Chip key={n} className="absent" disabled title="Afwezig volgens de jaarplanning">{n} · afwezig</Chip>) : <span className="hint">Nog geen leidingteam.</span>}</div>

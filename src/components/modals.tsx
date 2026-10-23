@@ -11,6 +11,7 @@ import { Ticks, PrepZones, blkGeom, lanesStyle } from './timeline';
 import type { NameSpec } from '../store/modal';
 
 const NO_UNLINK = 'Hier hangt een opkomst aan. Ontkoppelen kan alleen met het recht Opkomsten of Banken.';
+const NO_UNLINK_LEAD = 'Deze naam staat in de opkomst zelf. Weghalen kan alleen met het recht Opkomsten of Banken.';
 
 /* ---------- Datum en soort ---------- */
 export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose: () => void; onSaved?: (e: Plan) => void }) {
@@ -76,7 +77,7 @@ export function ExtraModal({ onClose, onCreated }: { onClose: () => void; onCrea
 
 /* ---------- Planning door / afwezig ---------- */
 export function PeopleModal({ keyId, field, onClose }: { keyId: string; field: 'planners' | 'absent'; onClose: () => void }) {
-  const { leaders, peekEntry, entryFor, savePlan, dropAbsent, opkOf, saveOpk } = useSpeltak();
+  const { leaders, peekEntry, entryFor, savePlan, dropAbsent, opkOf, saveOpk, can } = useSpeltak();
   const [, bump] = useState(0);
   const [extra, setExtra] = useState('');
   const e = peekEntry(keyId); const d = e ? e.date : keyId.slice(2);
@@ -84,6 +85,8 @@ export function PeopleModal({ keyId, field, onClose }: { keyId: string; field: '
   const list = e ? (field === 'planners' ? plannersOf(e, o) : e[field]) : []; const names = [...new Set([...leaders, ...list])];
   const toggle = (n: string) => {
     const en = { ...entryFor(keyId) }, off = list.includes(n);
+    // een oude eindverantwoordelijke staat in de opkomst zelf: weghalen schrijft de opkomst, dus alleen met Opkomsten of Banken
+    if (field === 'planners' && off && o && o.lead === n && !(can('build') || can('bank'))) { toast(NO_UNLINK_LEAD); return; }
     en[field] = off ? en[field].filter(x => x !== n) : [...en[field], n];
     if (field === 'planners' && off && o && o.lead === n) saveOpk({ ...o, lead: '' }); // oude eindverantwoordelijke telt als planner
     if (field === 'absent') dropAbsent(en); savePlan(en); bump(x => x + 1);

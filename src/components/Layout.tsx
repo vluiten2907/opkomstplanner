@@ -6,6 +6,7 @@ import { useAuth } from '../store/auth';
 import { useSpeltak } from '../store/speltak';
 import { ACCENTS } from '../lib/model';
 import ModalHost from './ModalHost';
+import { ConfirmBtn } from './ui';
 import VerifyNote from './VerifyNote';
 import { guardLeave, useUnsaved } from '../store/unsaved';
 import { hasUnsaved, useSaving } from '../store/saving';
@@ -52,6 +53,8 @@ export default function Layout({ children }: { children: ReactNode }) {
     if (hasUnsaved()) { toast('Nog niet alles is opgeslagen. Wacht tot je weer verbinding hebt.', { label: 'Toch uitloggen', fn: out }); return; }
     await out();
   };
+  // oefenomgeving terugzetten: pas na bevestigen, en eerst vragen als er nog iets niet is opgeslagen
+  const reset = () => guardLeave(() => resetPractice?.());
   const initials = (myName || user?.email || '?').split(/\s+/).map(x => x[0]).join('').slice(0, 2).toUpperCase();
   // [pad, label, korte label voor smalle schermen]
   const links: [string, string, string][] = [['dashboard', 'Dashboard', 'Dashboard'], ['jaarplanning', 'Jaarplanning', 'Jaarplanning'], ['bouwer', 'Opkomstbouwer', 'Bouwer'], ['activiteiten', 'Activiteitenbank', 'Activiteiten'], ['opkomsten', 'Opkomstenbank', 'Opkomsten'], ['instellingen', team ? 'Team & instellingen' : 'Instellingen', team ? 'Team' : 'Instellingen']];
@@ -68,7 +71,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         <SaveState />
         <button className="btn sm" aria-label="Account" onClick={e => { e.stopPropagation(); setMenu(m => !m); }}><span className="avatar">{initials}</span><span className="acct-name">{myName || 'Account'}</span><ChevronDown size={14} /></button>
         {menu && practice && <div className="menu" onClick={e => e.stopPropagation()}>
-          <button onClick={() => { setMenu(false); resetPractice?.(); }}><RotateCcw size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Opnieuw beginnen</button>
+          <ConfirmBtn className="" label={<><RotateCcw size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Opnieuw beginnen</>} confirm="Klik nogmaals: alles terugzetten" onConfirm={() => { setMenu(false); reset(); }} />
           <button onClick={() => guardLeave(() => nav('/'))}><LogOut size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Oefenen stoppen</button>
         </div>}
         {menu && !practice && <div className="menu" onClick={e => e.stopPropagation()}>
@@ -80,7 +83,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       </div>
     </header>
     {practice && <div className="demobar oefenbar"><span><GraduationCap size={16} style={{ verticalAlign: -3, marginRight: 6 }} /><b>Oefenomgeving.</b> Dit is voorbeelddata. Probeer gerust alles uit: wat je verandert, blijft alleen in deze browser.</span>
-      <div className="row"><button className="btn sm" onClick={() => resetPractice?.()}><RotateCcw size={14} />Opnieuw beginnen</button><button className="btn sm primary" onClick={() => guardLeave(() => nav('/'))}>Stoppen</button></div></div>}
+      <div className="row"><ConfirmBtn className="btn sm" label={<><RotateCcw size={14} />Opnieuw beginnen</>} confirm="Klik nogmaals: alles terugzetten" onConfirm={reset} /><button className="btn sm primary" onClick={() => guardLeave(() => nav('/'))}>Stoppen</button></div></div>}
     {practice && <div className="watermark on" aria-hidden="true"><div><b>OEFENEN</b><span>voorbeelddata · niet echt</span></div></div>}
     {!online && <div className="banknote offnote" role="status"><span><CloudOff size={15} style={{ verticalAlign: -3, marginRight: 6 }} /><b>Geen verbinding.</b> {queued + busy > 0 ? 'Je wijzigingen worden opgeslagen zodra je weer online bent. Sluit dit tabblad nog niet.' : 'Wat je verandert, wordt opgeslagen zodra je weer online bent.'}</span></div>}
     {loadError && <div className="banknote offnote" role="alert"><span>Niet alles kon worden geladen. Probeer het over een paar minuten opnieuw.</span><div className="row">{reload}</div></div>}

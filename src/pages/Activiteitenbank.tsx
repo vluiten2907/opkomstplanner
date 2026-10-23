@@ -5,7 +5,7 @@ import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { BankCard, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field } from '../components/ui';
-import { CatSelect, LocInput } from '../components/fields';
+import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { clone, fmtDur, plural, uid } from '../lib/time';
 import { allBlocks, byTitle, catOf, freeName, nameTaken, normLib, type Lib } from '../lib/model';
 
@@ -19,7 +19,8 @@ export default function Activiteitenbank() {
   const uses: Record<string, number> = {};
   opks.forEach(o => allBlocks(o).forEach(b => { if (b.libId) uses[b.libId] = (uses[b.libId] || 0) + 1; }));
   const edit = can('bank');
-  const remove = (l: Lib) => { deleteLib(l.id); if (sel === l.id) setSelRaw(null); toast(`"${l.title || 'Activiteit'}" verwijderd${uses[l.id] ? '. Opkomsten die hem gebruiken blijven staan' : ''}`); };
+  // terugzetten met hetzelfde id, zodat onderdelen die ernaar verwijzen weer kloppen
+  const remove = (l: Lib) => { deleteLib(l.id); if (sel === l.id) setSelRaw(null); toast(`"${l.title || 'Activiteit'}" verwijderd${uses[l.id] ? '. Opkomsten die hem gebruiken blijven staan' : ''}`, { label: 'Ongedaan maken', fn: () => saveLib(clone(l)) }); };
   const create = () => guardLeave(() => { const l = normLib({ id: uid(), cat: (settings.categories[0] || {}).id || '', minLeaders: 1 }); setFresh(l); setSelRaw(l.id); setQ(''); setCat(''); setTimeout(() => document.getElementById('lf-title')?.focus(), 30); });
   const L = sel ? lib.find(l => l.id === sel) || (fresh && fresh.id === sel ? fresh : undefined) : undefined;
   const isNew = !!L && !lib.some(l => l.id === L.id);
@@ -51,7 +52,8 @@ function LibEditor({ l, isNew, lib, readOnly, onClose, onCancelNew, onSave, onCo
   // Je bewerkt een kladversie; pas bij Opslaan gaat hij naar de bank.
   const [d, setD] = useState<Lib>(() => clone(l));
   const [dirty, setDirty] = useState(false);
-  useDirty(dirty || isNew);
+  // een nieuwe, nog lege activiteit telt pas als gewijzigd na de eerste invoer: zo sluit je hem zonder vraag
+  useDirty(dirty);
   const upd = (fn: () => void) => { if (readOnly) return; fn(); setD({ ...d }); setDirty(true); };
   const durs: number[] = []; for (let x = 5; x <= 240; x += 5) durs.push(x);
   if (!durs.includes(d.dur)) durs.push(d.dur);
@@ -63,9 +65,9 @@ function LibEditor({ l, isNew, lib, readOnly, onClose, onCancelNew, onSave, onCo
     <div className="row between" style={{ alignItems: 'flex-start' }}><span className="eyebrow">{isNew ? 'Nieuwe activiteit' : 'Activiteit'}</span><button className="closex" onClick={onClose} aria-label="Sluiten"><X size={18} /></button></div>
     <Field label="Titel van de activiteit" htmlFor="lf-title"><input id="lf-title" value={d.title} readOnly={readOnly} onChange={e => upd(() => { d.title = e.target.value; })} placeholder="bijv. Levend Stratego" /></Field>
     <div className="two"><Field label="Duur" htmlFor="lf-dur"><select id="lf-dur" value={d.dur} disabled={readOnly} onChange={e => upd(() => { d.dur = +e.target.value; })}>{durs.sort((a, b) => a - b).map(x => <option key={x} value={x}>{fmtDur(x)}</option>)}</select></Field>
-      <Field label="Minimaal aantal leiding" htmlFor="lf-min"><input id="lf-min" type="number" min={1} max={30} readOnly={readOnly} value={d.minLeaders} onChange={e => upd(() => { d.minLeaders = Math.max(1, Math.min(30, parseInt(e.target.value, 10) || 1)); })} /></Field></div>
-    <CatSelect prefix="lf" value={d.cat} onChange={id => upd(() => { d.cat = id; })} />
-    <Field label="Locatie" htmlFor="lf-loc"><LocInput id="lf-loc" value={d.location} onChange={v => upd(() => { d.location = v; })} placeholder="bijv. Bos" /></Field>
+      <Field label="Minimaal aantal leiding" htmlFor="lf-min"><NumInput id="lf-min" min={1} max={30} readOnly={readOnly} value={d.minLeaders} onChange={n => upd(() => { d.minLeaders = n; })} /></Field></div>
+    <CatSelect prefix="lf" value={d.cat} disabled={readOnly} onChange={id => upd(() => { d.cat = id; })} />
+    <Field label="Locatie" htmlFor="lf-loc"><LocInput id="lf-loc" value={d.location} readOnly={readOnly} onChange={v => upd(() => { d.location = v; })} placeholder="bijv. Bos" /></Field>
     <Field label="Korte beschrijving" htmlFor="lf-short"><textarea id="lf-short" rows={2} readOnly={readOnly} value={d.short} onChange={e => upd(() => { d.short = e.target.value; })} /></Field>
     <Field label="Uitgebreide beschrijving" htmlFor="lf-desc"><textarea id="lf-desc" rows={6} readOnly={readOnly} value={d.desc} onChange={e => upd(() => { d.desc = e.target.value; })} /></Field>
     <Field label="Voorbereiding" htmlFor="lf-prep"><textarea id="lf-prep" rows={3} readOnly={readOnly} value={d.prep} onChange={e => upd(() => { d.prep = e.target.value; })} /></Field>
