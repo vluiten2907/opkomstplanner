@@ -11,7 +11,7 @@ import { Chip, ConfirmBtn, Dot, Field, TimePicker, useMedia, useSheetDialog } fr
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, todayISO, uid, DAYS } from '../lib/time';
-import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isBlankOpk, isFixed, isKamp, lanesLayout, libSearchText, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, fitsTopic, rowDate, rowsIn, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isBlankOpk, isFixed, isKamp, lanesLayout, libSearchText, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /** Titel van de opkomst: loopt door op een volgende regel in plaats van af te breken (smal scherm), zonder echte regeleinden. */
 function TitleArea({ value, readOnly, onChange, placeholder, autoFocus }: { value: string; readOnly: boolean; onChange: (v: string) => void; placeholder: string; autoFocus?: boolean }) {
@@ -39,7 +39,7 @@ function metaPref(narrow: boolean, v?: '0' | '1') {
 /* ============ Startscherm ============ */
 export default function Bouwer() {
   const { oid } = useParams();
-  const { opks, settings, saveOpk, sid, can, getO, removeOpk, entryOfOpk, practice } = useSpeltak();
+  const { opks, plans, settings, saveOpk, sid, can, canLink, getO, removeOpk, entryOfOpk, entryFor, newForEntry, practice } = useSpeltak();
   const nav = useNavigate();
   const o = oid ? getO(oid) : undefined;
   if (oid && o) return <Builder key={o.id} o={o} />;
@@ -49,6 +49,10 @@ export default function Bouwer() {
   const coming = opks.filter(x => x.state === 'planned').map(x => ({ x, e: entryOfOpk(x) }))
     .filter((r): r is { x: Opk; e: NonNullable<typeof r.e> } => !!r.e && (r.e.endDate || r.e.date) >= today)
     .sort((a, b) => a.e.date.localeCompare(b.e.date)).slice(0, 6);
+  // de eerstvolgende datums met een onderwerp (of een kamp) maar nog zonder programma; koppelen schrijft de jaarplanning én de opkomst: alleen met dat recht
+  const open = canLink ? rowsIn(settings, plans, today, addDays(today, 180)).filter(r => !!r.e && !r.e.opkId && r.e.type !== 'geen' && (!!r.e.topic.trim() || r.e.type === 'kamp')).slice(0, 3) : [];
+  // met het recht Opkomsten meteen een programma maken (onderwerp als titel, gekoppeld); anders kiezen uit de bank of een concept
+  const make = (key: string) => { const en = { ...entryFor(key) }, n = newForEntry(en, en.type === 'kamp'); nav(`/s/${sid}/bouwer/${n.id}`); };
   const create = (kamp: boolean) => { const n = kamp ? newKamp(settings, 3) : newOpk(settings); saveOpk(n); markFresh(n.id); nav(`/s/${sid}/bouwer/${n.id}`); };
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title="Opkomstbouwer" />
@@ -58,6 +62,19 @@ export default function Bouwer() {
       <div className="row between"><h2 id="bw-coming">Komende opkomsten</h2><button className="linkbtn" onClick={() => nav(`/s/${sid}/jaarplanning`)}>Hele jaarplanning</button></div>
       <div className="picklist coming">{coming.map(({ x, e }) => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
         kicker={<><span className="pk-when"><CalendarDays size={14} aria-hidden="true" />{fmtRange(e.date, e.endDate)}</span><StatusPill o={x} /></>} />)}</div>
+    </section>}
+    {open.length > 0 && <section className="stack" style={{ gap: 10 }} aria-labelledby="bw-open">
+      <h2 id="bw-open">Nog zonder programma</h2>
+      <div className="picklist">{open.map(r => {
+        const e = r.e!, d = rowDate(r), what = e.topic.trim() || 'Weekendkamp';
+        // past er al iets uit de bank of een concept bij het onderwerp? Dan ook kiezen (het venster Koppelen zet die bovenaan)
+        const fit = e.topic.trim() ? [...bank, ...drafts].find(x => fitsTopic(x, e.topic)) : undefined;
+        const pick = <button className="btn sm" onClick={() => openModal({ kind: 'link', keyId: r.key })} aria-label={`Koppelen: ${what}`}>Koppelen</button>;
+        return <div key={r.key} className="pick">
+          <div className="info"><span className="pick-kicker"><span className="pk-when"><CalendarDays size={14} aria-hidden="true" />{fmtRange(d, e.endDate)}</span>{e.type === 'kamp' && <span className="pill kamp">Kamp</span>}</span><b>{what}</b>
+            {fit && <span className="hint">Past bij: {fit.title || 'Naamloze opkomst'} ({fit.state === 'bank' ? 'opkomstenbank' : 'concept'})</span>}</div>
+          {can('build') ? <div className="row"><button className="btn sm primary" onClick={() => make(r.key)} aria-label={`Programma maken: ${what}`}><Plus size={14} />Maken</button>{fit && pick}</div> : pick}</div>;
+      })}</div>
     </section>}
     {drafts.length > 0 && <><h2>Concepten</h2><div className="picklist">{drafts.map(x => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
       extra={can('build') ? <ConfirmBtn className="btn sm ghost" label={<><Trash2 size={14} />Verwijderen</>} confirm="Klik nogmaals" title="Concept verwijderen" onConfirm={() => removeOpk(x)} /> : undefined} />)}</div></>}
@@ -134,6 +151,17 @@ function Builder({ o: stored }: { o: Opk }) {
   const toSide = (tab: 'bank' | 'check') => { setSelId(null); setSideTab(tab); setTimeout(() => sideRef.current?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }), 0); };
   // Een opkomst uit de bank bewerk je met het recht Banken, de rest met Opkomsten (zoals de uitleg bij de rechten zegt).
   const readOnly = o.state === 'bank' ? !can('bank') : !can('build');
+  // + Onderdeel onderin beeld, waar de knop Activiteit zweeft: die knop dan even weg, anders tik je hem per ongeluk aan
+  const addRef = useRef<HTMLButtonElement>(null);
+  const [addLow, setAddLow] = useState(false);
+  useEffect(() => {
+    const el = addRef.current; if (!narrow || !el || typeof IntersectionObserver === 'undefined') { setAddLow(false); return; }
+    let io: IntersectionObserver | null = null;
+    // alleen de onderste 120 px van het scherm tellen mee (ook als er een melding staat en de knop hoger zweeft)
+    const watch = () => { io?.disconnect(); io = new IntersectionObserver(([en]) => setAddLow(en.isIntersecting), { rootMargin: `-${Math.max(0, window.innerHeight - 120)}px 0px 0px 0px` }); io.observe(el); };
+    watch(); window.addEventListener('resize', watch);
+    return () => { io?.disconnect(); window.removeEventListener('resize', watch); };
+  }, [narrow, readOnly]);
   const kamp = isKamp(o), row = useRowHeight(kamp);
   const di = Math.min(dayIdx, o.days.length - 1);
   const D = kamp ? o.days[di] : o;
@@ -266,8 +294,8 @@ function Builder({ o: stored }: { o: Opk }) {
           <ChevronRight size={18} className="chev" aria-hidden="true" /><b>Details</b>
           <span className="hint">{[!kamp && fmtT(o.start) + '–' + fmtT(o.end), o.location.trim(), o.cats.length ? plural(o.cats.length, 'categorie', 'categorieën') : '', e && plural(present.length, 'leiding', 'leiding') + ' aanwezig'].filter(Boolean).join(' · ')}</span></button>
         {metaOpen && <div className="meta" id="om-meta">
-          <Field label="Korte beschrijving" htmlFor="om-short" className="wide"><textarea id="om-short" rows={2} value={o.short} readOnly={readOnly} onChange={ev => upd(() => { o.short = ev.target.value; })} placeholder="Waar gaat deze opkomst over? Komt op het dashboard en in de bank." /></Field>
-          <Field label={`Categorieën van de ${kamp ? 'activiteit' : 'opkomst'}`} className="wide">
+          <Field label="Korte beschrijving" htmlFor="om-short" className="wide"><textarea id="om-short" rows={2} value={o.short} readOnly={readOnly} onChange={ev => upd(() => { o.short = ev.target.value; })} placeholder={`Waar gaat ${kamp ? 'dit kamp' : 'deze opkomst'} over? Komt op het dashboard en in de bank.`} /></Field>
+          <Field label={`Categorieën van ${kamp ? 'het kamp' : 'de opkomst'}`} className="wide">
             <div className="row" style={{ gap: 6 }}>{opkCatList(settings).map(c => <Chip key={c.id} on={o.cats.includes(c.id)} disabled={readOnly} onClick={() => upd(() => { o.cats = o.cats.includes(c.id) ? o.cats.filter(x => x !== c.id) : [...o.cats, c.id]; })}><Dot color={c.color} />{c.label}</Chip>)}</div></Field>
           <Field label="Speltak / groep" htmlFor="om-group"><input id="om-group" value={o.group} readOnly={readOnly} onChange={ev => upd(() => { o.group = ev.target.value; })} placeholder="bijv. Scouts" /></Field>
           <Field label="Locatie" htmlFor="om-loc" className="loc"><input id="om-loc" value={o.location} readOnly={readOnly} onChange={ev => upd(() => { o.location = ev.target.value; })} placeholder="bijv. Clubhuis" /></Field>
@@ -298,7 +326,7 @@ function Builder({ o: stored }: { o: Opk }) {
     <div className="plan-main">
       <section className="card" aria-label="Tijdlijn">
         <div className="tl-top"><span className="eyebrow">Tijdlijn{kamp ? ' · ' + (D as Day).label : ''}</span>
-          {!readOnly && <button id="bf-add" className="btn sm" onClick={() => addAt(firstFree(D, 15) ?? firstFree(D, 5) ?? D.start)}><Plus size={14} />Onderdeel</button>}</div>
+          {!readOnly && <button ref={addRef} id="bf-add" className="btn sm" onClick={() => addAt(firstFree(D, 15) ?? firstFree(D, 5) ?? D.start)}><Plus size={14} />Onderdeel</button>}</div>
         <div className="tl-head"><span /><div className="cols3"><span>Programma-onderdeel</span><span className="cl">Locatie</span><span>{nn ? 'Minimaal leiding' : 'Verantwoordelijk'}</span></div></div>
         <div className="tl-scroll"><Timeline ctx={ctx} A={A} selId={selId} flashId={flashId} lanesRef={lanesRef} onSelect={select} onDelete={deleteBlock} onAdd={addAt} onChange={() => upd(() => {})} /></div>
         <div className="tl-foot">{readOnly ? 'Je kunt deze opkomst bekijken, maar niet aanpassen.' : 'Klik in de tijdlijn of gebruik + Onderdeel om iets toe te voegen.'}</div>
@@ -315,7 +343,7 @@ function Builder({ o: stored }: { o: Opk }) {
       <div className={'scrim' + (sel ? ' on' : '')} onClick={closeEditor} />
     </div>
     {/* telefoon: de activiteitenbank staat onder de tijdlijn; deze knop brengt je er in één tik heen (niet bij bewerken uit de bank: daar staat de opslaan-balk onderin) */}
-    {narrow && !readOnly && !sel && !sideSeen && !draft && <button className="btn primary plan-fab" onClick={() => toSide('bank')}><Plus size={16} />Activiteit</button>}
+    {narrow && !readOnly && !sel && !sideSeen && !addLow && !draft && <button className="btn primary plan-fab" onClick={() => toSide('bank')}><Plus size={16} />Activiteit</button>}
     {draft && !readOnly && <SaveBar sticky dirty={dirty} title={o.title} taken={(n, c) => nameTaken(bankOpks, n, c ? null : o.id)} suggest={freeName(bankOpks, o.title || stored.title)} onCancel={cancelBank} onSave={saveBank} onCopy={copyBank} />}
   </div>;
 }

@@ -93,7 +93,7 @@ function PlanRow({ r, today }: { r: Row; today: string }) {
   const { settings, opkOf, unlinkEntry, can, canLink, sid, latest } = useSpeltak();
   const nav = useNavigate();
   const e = r.e, d = rowDate(r), type = e ? e.type : 'opkomst', o = opkOf(e);
-  const [st, en] = entryTimes(settings, e, o || null), past = rowEnd(r) < today, moved = !!(e && e.slot && e.date !== e.slot);
+  const [st, en] = entryTimes(settings, e, o || null), past = rowEnd(r) < today, moved = !!(e && e.slot && (e.slot < e.date || e.slot > (e.endDate || e.date)));
   const sub = type === 'opkomst' ? `wk ${isoWeek(d)} · ${fmtT(st)}–${fmtT(en)}` : type === 'kamp' ? `wk ${isoWeek(d)} · kamp / weekend` : `wk ${isoWeek(d)}`;
   const plan = can('plan');
   // Ongedaan maken van ontkoppelen: dezelfde opkomst weer op dezelfde rij, met de nieuwste stand (de melding komt later)

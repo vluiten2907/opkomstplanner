@@ -15,7 +15,8 @@
   --paper: linear-gradient(165deg, #FFFFFF 0%, #F8F6F0 100%);
   --shadow: 0 0 0 2px var(--edge), 4px 4px 0 2px var(--hard);
   --shadow-up: 0 0 0 2px var(--edge), 8px 8px 0 2px var(--hard);
-  --hero-bg: var(--accent); --hero-ink: #FFFFFF; --hero-pill: rgba(0,0,0,.18);
+  /* kaart van de komende opkomst: het accent iets donkerder, zodat gedempte tekst en categoriekleuren bij elk accent leesbaar blijven */
+  --hero-bg: color-mix(in srgb, var(--accent) 75%, #0E1411); --hero-ink: #FFFFFF; --hero-pill: rgba(0,0,0,.18);
   --f-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --f-body: "Hanken Grotesk", "Segoe UI", system-ui, -apple-system, sans-serif;
   --f-mono: var(--f-body);
@@ -568,6 +569,9 @@ h3 { font-size: 16.5px; }
 .hero .hero-date span { text-transform: none; letter-spacing: 0; font-weight: 600; }
 .hero .prog li.band { background: rgba(255,214,140,.1); color: #FFF1DA; }
 .hero .strip span.gap { background: rgba(255,255,255,.14); }
+/* categoriekleuren op de accentkleur: een dunne lichte rand, anders verdwijnt bijv. bruin op oranje (strip: binnenrand, de segmenten raken elkaar niet) */
+.hero .strip span:not(.gap) { box-shadow: inset 0 0 0 1px rgba(255,255,255,.55); }
+.hero .dot { box-shadow: 0 0 0 1.5px rgba(255,255,255,.6); }
 /* labels op de kaart van de komende opkomst: wit op een donkere waas (licht) of lichte waas (donker), bij elk accent ≥ 4,5:1 */
 .hero .pchip, .hero .ocat { background: var(--hero-pill); color: #fff; }
 /* status op de kaart (Morgen, 5 min vrij, aandachtspunten, klaar): een donkere waas, zodat de tekst bij elk accent leesbaar is */
@@ -746,6 +750,8 @@ fieldset:disabled .btn, fieldset:disabled .acc, fieldset:disabled .sw, fieldset:
 /* Menubalk op telefoons: alles in beeld, geen horizontaal scrollen */
 body { padding-top: env(safe-area-inset-top, 0px); }
 .acct { position: relative; margin-bottom: 12px; }
+/* een lange naam bij het account: afkappen (de knop noemt de hele naam voor schermlezers), dan past de balk vaker op één regel */
+.acct-name { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 600px) {
   .bar {
     margin-inline: calc(-1 * max(16px, env(safe-area-inset-left, 0px))); padding-inline: max(16px, env(safe-area-inset-left, 0px));
@@ -762,12 +768,12 @@ body { padding-top: env(safe-area-inset-top, 0px); }
   .nl > span { display: none; }
   .nl::after { content: attr(data-short); }
 }
-/* Tablet en kleine laptop: past de kopbalk niet op één regel, dan naam en account boven en het menu eronder over de hele breedte
-   (niet het account alleen op een eigen regel, en het menu wordt niet afgekapt) */
-@media (min-width: 601px) and (max-width: 1279px) {
-  .brand { flex: 1 1 0; min-width: 0; }
-  .acct { order: 1; }
-  .nav { order: 2; flex-basis: 100%; }
+/* Tablet en laptop: past de kopbalk niet op één regel (Layout meet dat: data-wrap), dan naam en account boven en het menu eronder
+   over de hele breedte (niet het account alleen op een eigen regel, en het menu wordt niet afgekapt) */
+@media (min-width: 601px) {
+  .bar[data-wrap] .brand { flex: 1 1 0; min-width: 0; }
+  .bar[data-wrap] .acct { order: 1; }
+  .bar[data-wrap] .nav { order: 2; flex-basis: 100%; }
 }
 /* tablet staand en telefoon dwars: korte namen en iets minder ruimte, zodat alle zes de menuknoppen in beeld zijn
    (ook met de reservelettertypes, als de webfonts niet laden) */
@@ -841,6 +847,9 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
 .hero .time-edit select { background: rgba(255,255,255,.1); color: #fff; border: 0; border-radius: 6px; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.4); padding: 2px 4px; font: inherit; }
 .hero .time-edit select option { color: #14202E; }
 .hero .time-edit .btn.sm { padding: 2px 10px; }
+/* lege locatie en omschrijving: een knop die met één klik (of tik) het veld opent */
+.hero .hero-add-short { display: block; width: 100%; max-width: 62ch; text-align: left; cursor: pointer; background: transparent; color: var(--muted); border: 1.5px dashed rgba(255,255,255,.4); border-radius: 10px; padding: 8px 12px; }
+.hero .hero-add-short:hover { color: #fff; background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.6); }
 
 /* bankkaart met verwijderknop */
 .bwrap { position: relative; display: grid; }
@@ -870,6 +879,9 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
 /* Opkomstbouwer: komende opkomsten met datum en status boven de titel */
 .pick-kicker { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 2px; }
 .pk-when { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 13.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+/* koppelen: van welke speltak een opkomst uit de groep komt; inplannen: het onderwerp van de datum verandert */
+.pk-from { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 13px; color: var(--ink-2); }
+.pk-change { font-size: 13px; font-weight: 700; color: var(--signal-ink); }
 
 /* Aanraakscherm: grotere raakvlakken waar je snel mistikt, zonder het ontwerp te veranderen */
 @media (pointer: coarse) {
@@ -943,6 +955,11 @@ body:has(.toast.show) .plan-fab { bottom: calc(72px + env(safe-area-inset-bottom
    het bewerkpaneel heeft ook Verwijderen. De namen houden hun ruimte rechtsboven, dus er verspringt niets. */
 @media (pointer: coarse) {
   .blk:not(.sel) .bdel, .blk:not(.sel):hover .bdel, .blk:not(.sel):focus-visible .bdel { opacity: 0; pointer-events: none; }
+  /* jaarplanning: de kleine knoppen in een rij krijgen een onzichtbaar groter raakvlak (de rij blijft even compact). Niet verder
+     dan de helft van de ruimte naar de buren: Leiding indelen en Ontkoppelen liggen 4 px uit elkaar, de regels 6 px. */
+  .prow .iconbtn, .prow .addbtn, .prow .brief { position: relative; }
+  .prow .iconbtn::after, .prow .addbtn::after, .prow .brief::after { content: ""; position: absolute; inset: -3px -2px; }
+  .prow .iconbtn::after { inset: -5px -2px; }
 }
 
 /* Telefoon: een lange paginakop van één woord (Activiteitenbank) past op één regel, zonder midden in het woord af te breken */

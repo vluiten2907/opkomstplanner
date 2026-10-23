@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import * as F from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './auth';
-import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, copyOpk, isKamp, presentNames, relabelDays, kampStart, kampMismatchNote, planTimesDiffer, applyPlanTimes } from '../lib/model';
+import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, copyOpk, isKamp, presentNames, relabelDays, kampStart, kampMismatchNote, planTimesDiffer, applyPlanTimes, fixedBlocks, kampLength, newKamp, newOpk } from '../lib/model';
 import { isTeamleider, normPerms, normSpeltak, type Member, type PermKey, type Speltak, type Invite, type Perms } from '../lib/types';
 import { useRoles } from './roles';
 import { createInvite as mkInvite } from './beheer';
@@ -47,6 +47,8 @@ type Ctx = {
   presentForEntry: (e: Plan | null, o?: Opk | null) => string[];
   presentFor: (o: Opk) => string[];
   linkOpk: (src: Opk, e: Plan, copy: boolean, keepNames: boolean) => Opk;
+  /** Nieuwe, lege opkomst (of kamp) voor een rij in de jaarplanning: het onderwerp wordt de titel, eigen tijden gaan mee, en hij is meteen gekoppeld. Past `e` aan. */
+  newForEntry: (e: Plan, kamp: boolean) => Opk;
   /** Wijken de tijden in de jaarplanning af van de (net gekoppelde) opkomst? Dan een melding met de knop om ze over te nemen. Geeft true als die melding er staat. */
   offerPlanTimes: (o: Opk, e: Plan, prefix?: string) => boolean;
   unlinkEntry: (e: Plan) => void;
@@ -297,7 +299,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
     }
     if (!keepNames) allBlocks(o).forEach(b => b.names = []);
     // kamp: de jaarplanning gaat voor; dagen die een weekdag heten krijgen de weekdag van hun datum.
-    // Zonder "tot en met" begint een kamp vr–zo op de vaste zaterdag op de vrijdag ervoor (de vaste dag blijft staan: "verzet van za …").
+    // Zonder "tot en met" begint een kamp vr–zo op de vaste zaterdag op de vrijdag ervoor (de vaste dag valt binnen het kamp: niet "verzet").
     if (isKamp(o)) {
       e.type = 'kamp';
       if (!e.endDate) { e.date = kampStart(o, e.date); if (o.days.length > 1) e.endDate = addDays(e.date, o.days.length - 1); }
@@ -312,6 +314,17 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
     // kamp dat niet bij de rij past (bijv. vr–zo op een rij za–zo): de dagen tellen vanaf de datum, dus melden in plaats van stil laten schuiven
     const note = kampMismatchNote(o, e.date, e.endDate); if (note) toast(note, undefined, 8000);
     return o;
+  };
+  const newForEntry = (e: Plan, kamp: boolean) => {
+    let o: Opk;
+    // kamp: dagen vanaf de datum in de jaarplanning, zonder "tot en met" t/m zondag
+    if (kamp) o = newKamp(settings, kampLength(e.date, e.endDate), e.date, e.type === 'kamp' ? e.start : null, e.type === 'kamp' ? e.end : null);
+    else {
+      o = newOpk(settings);
+      // eigen tijden uit de jaarplanning (bijv. een ochtendopkomst) gaan mee; vaste blokken schuiven mee
+      if (e.type === 'opkomst' && e.start != null && e.end != null && e.end > e.start) { o.start = e.start; o.end = e.end; o.blocks = fixedBlocks(settings, e.start, e.end); }
+    }
+    o.title = e.topic; saveOpk(o); return linkOpk(o, e, false, true);
   };
   const offerPlanTimes = (o: Opk, e: Plan, prefix = '') => {
     if (!can('build') || !planTimesDiffer(settings, e, o)) return false;
@@ -381,7 +394,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
   const latestRef = useRef<Ctx>(null as any);
   const value: Ctx = { sid, sp, loading, denied: denied || missing, offline, loadError, flushAll, canLink, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
     saveOpk, deleteOpk, removeOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
-    getO, latestO, opkOf, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null, practiceFrom,
+    getO, latestO, opkOf, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, newForEntry, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null, practiceFrom,
     latest: () => latestRef.current };
   latestRef.current = value;
   return <C.Provider value={value}>{children}</C.Provider>;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { TentTree, ChevronDown, LogOut, Users, ShieldCheck, UserRound, RotateCcw, GraduationCap, Check, CloudOff, CloudUpload, TriangleAlert } from 'lucide-react';
 import { useRoles } from '../store/roles';
@@ -56,16 +56,33 @@ export default function Layout({ children }: { children: ReactNode }) {
   // Hoogte van de vaste kopbalk (op een telefoon twee regels) als --barh: de pagina schuift met Tab en scrollIntoView
   // dan nooit iets onder de balk (scroll-padding-top in styles.css). Alleen op pagina's met deze balk.
   const hasBar = !denied && !loading && !!sp;
-  useEffect(() => {
+  // vóór het tekenen, zodat de balk niet eerst even verkeerd staat
+  useLayoutEffect(() => {
     const bar = barRef.current; if (!hasBar || !bar) return;
     const root = document.documentElement;
-    // waar de balk vastzit (onder de inkeping van een telefoon) plus zijn hoogte
-    const set = () => root.style.setProperty('--barh', Math.ceil((parseFloat(getComputedStyle(bar).top) || 0) + bar.getBoundingClientRect().height) + 'px');
+    const set = () => {
+      // Tablet en laptop: past alles op één regel? Anders naam en account boven en het menu eronder over de hele breedte
+      // (data-wrap), niet het account alleen op een eigen regel. Gemeten, want het hangt af van de namen en het lettertype.
+      // (Telefoon: altijd twee regels, zie styles.css.)
+      const brand = bar.querySelector('.brand'), acct = bar.querySelector('.acct');
+      if (window.innerWidth > 600 && brand && acct) {
+        bar.removeAttribute('data-wrap');
+        if (acct.getBoundingClientRect().top - brand.getBoundingClientRect().top > 12) bar.setAttribute('data-wrap', '');
+      } else bar.removeAttribute('data-wrap');
+      // waar de balk vastzit (onder de inkeping van een telefoon) plus zijn hoogte
+      root.style.setProperty('--barh', Math.ceil((parseFloat(getComputedStyle(bar).top) || 0) + bar.getBoundingClientRect().height) + 'px');
+    };
     set();
-    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(set); ro?.observe(bar);
+    // het account (naam) en de menuknoppen kunnen breder worden, en de webfonts komen later binnen. Pas in het volgende beeld
+    // aanpassen: de balk van vorm veranderen binnen de ResizeObserver geeft een "ResizeObserver loop"-fout.
+    let raf = 0;
+    const later = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(set); };
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(later); ro?.observe(bar);
+    bar.querySelectorAll('.acct, nav a').forEach(x => ro?.observe(x));
+    document.fonts?.ready.then(later).catch(() => {});
     window.addEventListener('resize', set);
-    return () => { ro?.disconnect(); window.removeEventListener('resize', set); root.style.removeProperty('--barh'); };
-  }, [hasBar]);
+    return () => { cancelAnimationFrame(raf); ro?.disconnect(); window.removeEventListener('resize', set); root.style.removeProperty('--barh'); };
+  }, [hasBar, team]);
   if (denied) return <div className="auth-wrap"><div className="card pad stack auth-card"><h2>Geen toegang</h2><p className="hint">Je bent geen lid van deze speltak, of hij bestaat niet meer.</p><button className="btn primary" onClick={() => { lastSpeltak.clearIf(sid); nav('/speltakken'); }}>Mijn speltakken</button></div></div>;
   const reload = <button className="btn primary" onClick={() => window.location.reload()}>Opnieuw laden</button>;
   // nog geen verbinding en de speltak staat niet in de cache: niet "Geen toegang" (en de laatste speltak niet vergeten); laadt vanzelf zodra er verbinding is

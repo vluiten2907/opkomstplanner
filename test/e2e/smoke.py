@@ -733,7 +733,9 @@ with sync_playwright() as p:
     pg.click('nav >> text=Opkomstbouwer'); w(300); pg.click('text=Weekendkamp'); w(600)
     pg.fill('#om-title', 'Herfstkamp'); pg.click('.daytab >> nth=1'); w(300); pg.click('text=Maaltijden toevoegen'); w(400)
     check(pg.locator('.blk').count() == 3, 'weekendkamp: 3 maaltijden op zaterdag'); shot('06-kamp')
-    # kamp vr–zo inplannen op een zaterdag (5 juni 2027): vrijdag 4 t/m zondag 6 juni, de dagen kloppen, de vaste zaterdag blijft als "verzet van"
+    check(pg.locator('.meta .field:has-text("Categorieën van het kamp")').count() == 1 and pg.locator('#om-short').get_attribute('placeholder').startswith('Waar gaat dit kamp over?'),
+          'weekendkamp: details spreken van het kamp (categorieën, omschrijving), niet van een opkomst of activiteit')
+    # kamp vr–zo inplannen op een zaterdag (5 juni 2027): vrijdag 4 t/m zondag 6 juni, de dagen kloppen; de vaste zaterdag valt in het kamp, dus niet "verzet"
     pg.click('.plan-head >> text=Inplannen'); w(300)
     check(all(' t/m ' in t for t in pg.locator('.modal .pick .info b').all_inner_texts()[:3]), 'kamp inplannen: de lijst toont het hele bereik van het kamp')
     pg.fill('.modal input[placeholder^="Andere datum"]', '05-06-2027'); pg.click('.modal >> text=Op deze datum'); w(700)
@@ -742,7 +744,7 @@ with sync_playwright() as p:
     check([t.split('\n')[0] for t in pg.locator('.daytab:not(.add) b').all_inner_texts()] == ['Vrijdag 4 jun', 'Zaterdag 5 jun', 'Zondag 6 jun'], 'kamp op een zaterdag: dagtabs vr 4, za 5, zo 6 juni')
     pg.click('.plan-head >> button:has-text("Jaarplanning")'); w(900)
     kr = pg.locator('.prow:has(.plink:has-text("Herfstkamp")) .pdate').inner_text()
-    check('vr 4 – zo 6 jun' in kr and 'verzet van za 5 jun' in kr, f'jaarplanning: kamp vr 4 – zo 6 juni, verzet van de vaste zaterdag ({kr})')
+    check('vr 4 – zo 6 jun' in kr and 'verzet van' not in kr, f'jaarplanning: kamp vr 4 – zo 6 juni, niet "verzet van" (de vaste zaterdag valt in het kamp) ({kr})')
 
     # --- mobiel
     pg.set_viewport_size({'width': 390, 'height': 800}); pg.click('nav a[href$="/bouwer"]'); w(500)
@@ -774,6 +776,21 @@ with sync_playwright() as p:
         pg.set_viewport_size({'width': wd, 'height': 800}); w(150)
         if wd == 768: shot('07c-menu-tablet', False)
         check(pg.evaluate(NAVFIT) == [True, True, True], f'{wd}px: alle zes menuknoppen in beeld, account op de eerste regel ({pg.evaluate(NAVFIT)})')
+    # elke breedte (ook een kleine laptop, een lange naam of zonder de webfonts): het account rechts op de regel van de naam, nooit alleen
+    # op een eigen regel; past het niet op één regel, dan het menu eronder. Op een tablet blijft de vaste balk laag.
+    BARFIT = """(() => { const q = s => document.querySelector(s).getBoundingClientRect(), bar = q('header.bar'), b = q('header.bar .brand'), a = q('header.bar .acct'), n = document.querySelector('header.bar nav');
+      return [n.scrollWidth <= n.clientWidth + 1, Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) < 12, a.right >= bar.right - 2, Math.round(bar.height) < 120, document.documentElement.scrollWidth <= innerWidth + 1]; })()"""
+    bar_bad = {}
+    for nm in (None, 'Vincent van der Luiten'):
+        if nm: pg.evaluate("n => { document.querySelector('.acct-name').textContent = n; }", nm)
+        for wd in (601, 820, 1024, 1180, 1280, 1300, 1340, 1360, 1440):
+            pg.set_viewport_size({'width': wd, 'height': 800}); w(150)
+            r = pg.evaluate(BARFIT)
+            if r != [True] * 5: bar_bad[f'{nm or "eigen naam"} {wd}'] = r
+        if nm: pg.set_viewport_size({'width': 1340, 'height': 800}); w(150); shot('07d-kopbalk-lange-naam', False)
+    pg.set_viewport_size({'width': 820, 'height': 800}); w(150); bar820 = pg.evaluate("Math.round(document.querySelector('header.bar').getBoundingClientRect().height)")
+    check(not bar_bad and bar820 < 120, f'kopbalk 601–1440 px: account rechts naast de naam, menu past, balk lager dan 120 px (820 px: {bar820}) ({bar_bad})')
+    pg.reload(); w(900)
     pg.set_viewport_size({'width': 1360, 'height': 900})
 
     # --- uitnodiging accepteren als tweede persoon
@@ -965,6 +982,26 @@ with sync_playwright() as p:
     pg.evaluate("""([sid, gk, sp, g, ck]) => { const s = JSON.parse(localStorage.getItem('fake.firestore'));
       window.__fakeRemote(ck, null); window.__fakeRemote('speltakken/' + sid, sp); window.__fakeRemote(gk, { ...s[gk], catDefs: g.catDefs, opk: g.opk }); }""", [welpen, gk, sp0, g0, ck]); w(600)
     pg.click('.tabs.page >> text=Groep'); w(400)
+    # koppelen uit de groep: de eigen bank is leeg, dus "Uit de groep" staat bovenaan; Kiezen zet een kopie in de eigen bank en plant een kopie daarvan in (zonder namen)
+    pg.goto(f'{BASE}/s/{welpen}/dashboard'); w(1000)
+    pg.click('.hero >> text=Opkomst koppelen'); w(400)
+    heads = pg.locator('.modal h3').all_inner_texts()
+    gpick = pg.locator('.modal .pick:has-text("Sluipspel")')
+    check(heads[:2] == ['Uit de groep', 'Uit de opkomstenbank'] and gpick.count() == 1 and 'Scouts' in gpick.inner_text(), f'koppelen: eigen bank leeg → "Uit de groep" bovenaan, met de speltak ({heads})')
+    shot('12d-koppelen-uit-de-groep', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'koppelen uit de groep mobiel: geen horizontale scroll'); shot('12e-koppelen-uit-de-groep-mobiel', False)
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    gpick.locator('button:has-text("Kiezen")').click(); w(900)
+    gtoast = pg.locator('.toast').inner_text()
+    gl = pg.evaluate("""sid => { const s = JSON.parse(localStorage.getItem('fake.firestore')), P = 'speltakken/' + sid + '/opkomsten/';
+      const bank = Object.keys(s).filter(k => k.startsWith(P) && s[k] && s[k].state === 'bank' && s[k].title === 'Sluipspel').map(k => s[k]);
+      const rows = Object.entries(s).filter(([k, v]) => k.startsWith('speltakken/' + sid + '/planning/') && v && v.topic === 'Sluipspel' && v.opkId).map(([, v]) => v);
+      const o = bank[0] && rows.map(r => s[P + r.opkId]).find(x => x && x.srcId === bank[0].id);
+      return [bank.length, bank[0] && !!bank[0].fromShared, !!o && o.state === 'planned' && o.srcId === (bank[0] && bank[0].id), !!o && o.blocks.every(b => !b.names.length)]; }""", welpen)
+    check(gl == [1, True, True, True] and pg.locator('.modal h2:has-text("Opkomst overnemen")').count() == 1 and 'staat nu ook in jullie opkomstenbank' in gtoast,
+          f'koppelen uit de groep: kopie in de eigen bank, een kopie daarvan ingepland zonder namen, venster Opkomst overnemen ({gl}; {gtoast})')
+    pg.click('.modal >> text=Klaar'); w(300)
 
     # --- rol overdragen: de opvolger komt binnen als leiding met alle rechten, daarna draagt de teamleider zelf over
     no_hscroll = lambda: pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')
@@ -1880,6 +1917,56 @@ with sync_playwright() as p:
     pg.click('.toast.show button:has-text("Ongedaan maken")'); w(300)
     check(soon(lambda: slot_rows(d2) == [] and oefen_get(f"s['speltakken/oefen/planning/pl-3'].type === 'geen' && s['speltakken/oefen/planning/pl-3'].topic === {json.dumps(t3)}")),
           'geen opkomst voor een periode: Ongedaan maken haalt de nieuwe rij weg en zet de oude reden terug')
+    # inplannen vanuit de bouwer op een datum met een ander onderwerp: de lijst zegt wat het onderwerp wordt, en Ongedaan maken zet het terug
+    pg.goto(BASE + '/s/oefen/bouwer'); w(900); pg.click('main .btn:has-text("Nieuwe opkomst")'); w(700); pg.fill('#om-title', 'Speurtocht'); w(700)
+    sp_id = pg.url.rstrip('/').rsplit('/', 1)[-1]
+    pg.click('.plan-head >> text=Inplannen'); w(300)
+    sk = pg.locator('.modal .pick:has-text("Sinterklaas")').first
+    sk_change = sk.locator('.pk-change').all_inner_texts()
+    dates = pg.evaluate("[...document.querySelectorAll('.modal .pick .info > b')].map(b => b.textContent)")
+    check(sk_change == ['Onderwerp wordt Speurtocht (nu: Sinterklaas)'] and pg.locator('.modal .pick .pk-change').count() >= 1, f'inplannen: bij een datum met een ander onderwerp staat wat het onderwerp wordt ({sk_change})')
+    shot('29c-inplannen-onderwerp', False)
+    sk.locator('button:has-text("Hier inplannen")').click(); w(300)
+    tt = pg.locator('.toast').inner_text()
+    linked_ok = soon(lambda: oefen_get("s['speltakken/oefen/planning/pl-2'].topic === 'Speurtocht' && s['speltakken/oefen/planning/pl-2'].opkId === " + json.dumps(sp_id)))
+    pg.click('.toast.show button:has-text("Ongedaan maken")'); w(300)
+    check('Onderwerp was "Sinterklaas"' in tt and linked_ok and len(dates) > 3
+          and soon(lambda: oefen_get("s['speltakken/oefen/planning/pl-2'].topic === 'Sinterklaas' && !s['speltakken/oefen/planning/pl-2'].opkId && s['speltakken/oefen/opkomsten/" + sp_id + "'].state === 'draft'"))
+          and pg.locator('.pill:has-text("Concept")').count() == 1, f'inplannen: melding noemt het oude onderwerp; Ongedaan maken zet onderwerp en concept terug ({tt})')
+    pg.click('.plan-head >> button:has-text("Verwijderen")'); w(200); pg.click('.plan-head >> text=Klik nogmaals om te verwijderen'); w(700)
+    # startpagina van de bouwer: de komende datums met een onderwerp maar zonder programma, met één klik een programma maken
+    open_rows = pg.locator('section[aria-labelledby="bw-open"] .pick')
+    ot = open_rows.locator('.info > b').all_inner_texts()
+    sink = pg.locator('section[aria-labelledby="bw-open"] .pick:has-text("Sinterklaas")')
+    check(open_rows.count() == 3 and ot == ['Sinterklaas', 'Rond de wereld', 'Pannenkoekenopkomst']
+          and 'Past bij: Sinterklaasopkomst (concept)' in sink.inner_text() and sink.locator('button:has-text("Koppelen")').count() == 1,
+          f'bouwer: nog zonder programma de eerstvolgende 3 datums met een onderwerp; bij een passend concept ook Koppelen ({ot})')
+    shot('25b-bouwer-zonder-programma')
+    pg.set_viewport_size({'width': 390, 'height': 844}); w(200)
+    pg.locator('#bw-open').scroll_into_view_if_needed(); shot('25c-bouwer-zonder-programma-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'bouwer nog zonder programma mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    pg.locator('section[aria-labelledby="bw-open"] .pick:has-text("Pannenkoekenopkomst") button:has-text("Maken")').click(); w(900)
+    pk_id = pg.url.rstrip('/').rsplit('/', 1)[-1]
+    check(pg.input_value('#om-title') == 'Pannenkoekenopkomst' and pg.locator('.plan-head .pill:has-text("Ingepland")').count() == 1
+          and soon(lambda: oefen_get("s['speltakken/oefen/planning/pl-6'].opkId === " + json.dumps(pk_id))), 'bouwer: Maken maakt een opkomst met het onderwerp als titel, gekoppeld aan de datum')
+    # dashboard: lege locatie en omschrijving openen met één klik of tik (gevuld blijft het dubbelklikken)
+    jg = oefen_get("(({ location, short }) => ({ location, short }))(s['speltakken/oefen/opkomsten/opk-jungle'])")
+    oefen_set("const o = s['speltakken/oefen/opkomsten/opk-jungle']; o.location = ''; o.short = ''")
+    pg.set_viewport_size({'width': 390, 'height': 844}); pg.goto(BASE + '/s/oefen/dashboard'); w(1200)
+    shot('07e-dashboard-leeg-veld-mobiel', False)
+    pg.locator('.hero button:has-text("Locatie toevoegen")').click(); w(200)
+    loc_one = pg.locator('.hero input.inline-edit[aria-label="Locatie"]').count() == 1
+    pg.keyboard.type('Speelveld'); pg.keyboard.press('Enter'); w(300)
+    pg.locator('.hero button:has-text("Korte omschrijving toevoegen")').click(); w(200)
+    short_one = pg.locator('.hero textarea.inline-edit').count() == 1
+    pg.keyboard.press('Escape'); w(200)
+    pg.locator('.hero .facts span:text-is("Speelveld")').click(); w(600)
+    check(loc_one and short_one and 'Speelveld' in pg.locator('.hero .facts').inner_text() and pg.locator('.hero .inline-edit').count() == 0
+          and pg.locator('.hero button:has-text("Korte omschrijving toevoegen")').count() == 1,
+          'dashboard: lege locatie en omschrijving openen met één klik; een ingevulde locatie opent niet met één klik')
+    oefen_set("Object.assign(s['speltakken/oefen/opkomsten/opk-jungle'], " + json.dumps(jg) + ")")
+    pg.set_viewport_size({'width': 1360, 'height': 900}); pg.goto(BASE + '/s/oefen/jaarplanning'); w(900)
     # banken: de kop is de naam uit het menu, het aantal staat eronder
     pg.click('nav >> text=Activiteitenbank'); w(700)
     check(pg.locator('h1:text-is("Activiteitenbank")').count() == 1 and re.search(r'\d+ activiteiten', pg.locator('.subline').inner_text()) is not None, 'activiteitenbank: kop zoals in het menu, aantal eronder')
@@ -1908,6 +1995,14 @@ with sync_playwright() as p:
           f'bouwer mobiel: details ingeklapt, tellers op één regel, de tijdlijn begint op {lanes_top:.0f} px')
     shot('30-bouwer-mobiel', False)
     fab = pg.locator('.plan-fab')
+    # bij het openen staat + Onderdeel onderin, waar de knop Activiteit zweeft: die knop is dan weg (een tik op + Onderdeel raakt + Onderdeel)
+    COVER = """(() => { const a = document.getElementById('bf-add').getBoundingClientRect(), f = document.querySelector('.plan-fab'), r = f && f.getBoundingClientRect();
+      const hit = document.elementFromPoint(a.left + a.width / 2, a.top + a.height / 2);
+      return [a.bottom <= innerHeight, !!hit && !!hit.closest('#bf-add'), !r || r.bottom <= a.top || r.top >= a.bottom || r.right <= a.left || r.left >= a.right]; })()"""
+    cover0 = pg.evaluate(COVER); fab_low = fab.count()
+    pg.evaluate('window.scrollBy(0, 300)'); w(400)
+    cover1 = pg.evaluate(COVER)
+    check(cover0 == [True, True, True] and fab_low == 0 and cover1[1:] == [True, True], f'bouwer mobiel: de knop Activiteit ligt nooit over + Onderdeel ({cover0}, {cover1})')
     fab_ok = fab.is_visible(); fab.click(); w(900)
     side_top = pg.evaluate("document.querySelector('.side').getBoundingClientRect().top")
     check(fab_ok and 0 <= side_top < 250 and pg.locator('.side .tabs button[aria-selected="true"]:has-text("Activiteitenbank")').count() == 1 and fab.count() == 0,
@@ -2340,7 +2435,9 @@ with sync_playwright() as p:
           f'jaarplanning: herhaalde knoppen met de datum in de naam, brief met de zichtbare tekst erin ({ {k: v[:2] for k, v in jn.items()} })')
     a.goto(BASE + '/s/oefen/bouwer'); aw(1000)
     pk = a.evaluate("[...document.querySelectorAll('.picklist .pick > .btn, .picklist .pick > .row > .btn.primary')].map(b => b.getAttribute('aria-label'))")
-    check(len(pk) > 2 and all(x and x.startswith('Openen: ') and len(x) > 9 for x in pk), f'opkomstbouwer: elke knop Openen heeft de titel in de naam ({pk[:3]})')
+    # ook Maken en Koppelen bij de datums nog zonder programma noemen het onderwerp
+    check(len([x for x in pk if x and x.startswith('Openen: ')]) > 2 and all(x and re.fullmatch(r'(Openen|Programma maken|Koppelen): .+', x) for x in pk),
+          f'opkomstbouwer: elke knop Openen (en Maken, Koppelen) heeft de titel in de naam ({pk[:3]}, {[x for x in pk if not x.startswith("Openen")][:2]})')
     a.goto(BASE + '/s/oefen/instellingen'); aw(1000)
     a.locator('.catrow .sw.cur').first.click(); aw(200)
     swn = a.evaluate("[...document.querySelectorAll('.swatches .sw')].map(b => b.getAttribute('aria-label'))")
@@ -2417,6 +2514,16 @@ with sync_playwright() as p:
     check(len(fh) == 2 and min(fh) >= 30, f'aanraakscherm: tijden en locatie op het dashboard groter raakvlak ({fh})')
     # onderwerp typen in een lege zaterdag op de telefoon: de eerste letter maakt de rij aan; het veld (en het toetsenbord) blijft
     tq.goto(BASE + '/s/oefen/jaarplanning'); tq.wait_for_timeout(1200)
+    # kleine knoppen in de rij (Leiding indelen, Ontkoppelen, Planning door, Afwezig, brief): net erboven tikken raakt de knop nog;
+    # een tik op een knop ernaast raakt nooit de verkeerde, en de rijen blijven even hoog
+    hit = tq.evaluate("""(() => { const bad = [], small = [...document.querySelectorAll('.prow .iconbtn, .prow .addbtn, .prow .brief')].filter(e => e.getClientRects().length);
+      for (const row of document.querySelectorAll('.prow:not(.head)')) { row.scrollIntoView({ block: 'center' });
+        for (const e of row.querySelectorAll('button, input')) { const r = e.getBoundingClientRect(); if (!r.width) continue;
+          for (const [x, y] of [[r.left + r.width / 2, r.top + r.height / 2], [r.left + r.width / 2, r.top + 1], [r.left + r.width / 2, r.bottom - 1]]) {
+            const h = document.elementFromPoint(x, y), hb = h && h.closest('button, input'); if (hb && hb !== e) bad.push((e.getAttribute('aria-label') || e.className) + ' → ' + (hb.getAttribute('aria-label') || hb.className)); } } }
+      const big = small.filter(e => { e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(), h = document.elementFromPoint(r.left + r.width / 2, r.top - 2); return !!h && (h === e || e.contains(h)); });
+      return [small.length, big.length, bad.slice(0, 4)]; })()""")
+    check(hit[0] > 10 and hit[1] == hit[0] and not hit[2] and tq.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), f'aanraakscherm: kleine knoppen in de jaarplanning hebben een groter raakvlak, zonder de buren te raken ({hit})')
     tq.locator('.prow[id^="r-s-"] .ptopic').first.tap(); tq.keyboard.type('Pionieren', delay=40); tq.wait_for_timeout(700)
     ft = tq.evaluate("(() => { const a = document.activeElement; return [!!a && a.classList.contains('ptopic'), a && a.value]; })()")
     check(ft == [True, 'Pionieren'], f'aanraakscherm: onderwerp typen in een lege zaterdag houdt het hele woord en de focus ({ft})')

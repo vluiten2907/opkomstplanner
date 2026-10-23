@@ -158,7 +158,8 @@ function Hero({ r, today }: { r: Row; today: string }) {
   if (o && !isKamp(o) && (o.prep || o.post)) facts.push(<span key="l">leiding {fmtT(o.start - (o.prep || 0))}–{fmtT(o.end + (o.post || 0))}</span>);
   if (o && need) facts.push(<span key="n">minimaal {need} leiding{present.length < need ? ` (${present.length} aanwezig)` : ''}</span>);
   if (o && (o.location || canO)) facts.push(<InlineText key="loc" value={o.location} enabled={canO} label="Locatie" className="fact-edit" onSave={v => saveOpk({ ...o, location: v })}
-    render={tap => <span {...tap} className={o.location ? '' : 'muted'}>{o.location || 'Locatie toevoegen'}</span>} />);
+    // leeg: een echte knop (één klik), gevuld: dubbelklik om aan te passen
+    render={(tap, start) => o.location ? <span {...tap}>{o.location}</span> : start && <button className="linkbtn" onClick={start}>Locatie toevoegen</button>} />);
   const gotoRow = () => nav(`/s/${sid}/jaarplanning?focus=${encodeURIComponent(r.key)}`);
   const plannersTap = useDoubleTap(can('plan') ? () => openModal({ kind: 'people', keyId: r.key, field: 'planners' }) : null);
   const absentTap = useDoubleTap(can('plan') ? () => openModal({ kind: 'people', keyId: r.key, field: 'absent' }) : null);
@@ -176,7 +177,7 @@ function Hero({ r, today }: { r: Row; today: string }) {
         {o && <CatTags o={o} />}
         <div className="facts">{facts}</div>
         <InlineText value={short} enabled={canEdit} label="Korte omschrijving" className="hero-short" multiline onSave={saveShort}
-          render={tap => short ? <p className="hero-short" {...tap}>{short}</p> : canEdit ? <p className="hero-short muted" {...tap}>Korte omschrijving toevoegen</p> : null} />
+          render={(tap, start) => short ? <p className="hero-short" {...tap}>{short}</p> : start ? <button className="hero-short hero-add-short" onClick={start}>Korte omschrijving toevoegen</button> : null} />
       </div>
     </div>
     <div className="people">
