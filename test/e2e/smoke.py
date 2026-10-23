@@ -295,7 +295,10 @@ with sync_playwright() as p:
     pg.click('.presets >> text=Dit seizoen'); w(400)
     rows = pg.locator('.prow:not(.head)'); check(rows.count() > 20, 'jaarplanning toont opkomstdagen')
     first = rows.nth(1)
-    first.locator('.ptopic').fill('Pionieren'); w(700)
+    # echt typen (niet .fill): de eerste letter maakt de rij aan, daarna moet het veld blijven staan en de focus houden
+    first.locator('.ptopic').click(); pg.keyboard.type('Pionieren', delay=40); w(700)
+    typed = pg.evaluate("(() => { const a = document.activeElement; return [a && a.classList.contains('ptopic'), a && a.value]; })()")
+    check(first.locator('.ptopic').input_value() == 'Pionieren' and typed == [True, 'Pionieren'], f'jaarplanning: onderwerp typen in een lege rij houdt het hele woord en de focus ({typed})')
     first.locator('.addbtn').first.click(); w(300); pg.click('.modal .chip:has-text("Vincent Test")'); pg.click('.modal >> text=Klaar'); w(300)
     first.locator('.addbtn').nth(1).click(); w(300); pg.click('.modal .chip:has-text("Bram")'); pg.click('.modal >> text=Klaar'); w(300)
     first.locator('.brief').click(); w(300); pg.locator('.modal input[type=checkbox]').first.check(); pg.click('.modal >> text=Opslaan'); w(300)
@@ -518,6 +521,18 @@ with sync_playwright() as p:
     check('/bouwer/' in pg.url and pg.locator('.toast >> text=Weggooien').count() == 1, 'weggaan met niet-opgeslagen wijzigingen vraagt eerst')
     sb('Annuleren').click(); w(300)
     check(pg.locator('#om-title').input_value() == 'Sluipspel', 'annuleren zet de bank-versie terug')
+    # Weggooien bij een knop die de bouwer open laat (Inplannen): de wijzigingen zijn echt weg, niet alleen de vraag
+    pg.fill('#om-title', 'Sluipspel weg'); w(300)
+    pg.click('.plan-head button:has-text("Inplannen")'); w(300)
+    asked = pg.locator('.modal').count() == 0 and pg.locator('.toast.show button:has-text("Weggooien")').count() == 1
+    pg.click('.toast.show button:has-text("Weggooien")'); w(400)
+    opened = pg.locator('.modal h2:has-text("Inplannen")').count() == 1
+    pg.keyboard.press('Escape'); w(300)
+    check(asked and opened and pg.input_value('#om-title') == 'Sluipspel' and pg.locator('.savebar.on').count() == 0 and sb('Opslaan').is_disabled(),
+          'bouwer (bank): Inplannen → Weggooien zet de bank-versie terug, daarna niets meer te bewaren')
+    pg.click('nav >> text=Opkomstenbank'); w(500)
+    check(pg.url.rstrip('/').endswith('/opkomsten') and pg.locator('.toast.show button:has-text("Weggooien")').count() == 0, 'na Weggooien: weggaan zonder vraag (er is niets meer te bewaren)')
+    pg.click('.bcard:has-text("Sluipspel")'); w(300); pg.click('.side >> text=Bewerken'); w(700)
     pg.fill('#om-title', 'Nachtspel'); w(200); shot('13-opslaan-balk', False)
     sb('Opslaan als kopie').click(); w(200); pg.fill('#sb-name', 'sluipspel '); w(200)
     check(pg.locator('.savebar >> text=bestaat al').count() == 1 and sb('Kopie opslaan').is_disabled(), 'kopie met bestaande naam (hoofdletters/spaties) geweigerd')
@@ -530,7 +545,15 @@ with sync_playwright() as p:
     check(pg.locator('.bcard:has-text("Sluipspel")').count() == 1 and 'Spel in het donker' in pg.locator('.bcard:has-text("Nachtspel")').inner_text(), 'origineel en kopie staan in de bank, wijziging opgeslagen')
     pg.click('.bcard:has-text("Nachtspel")'); w(300); pg.fill('#tf-title', 'Sluipspel'); w(200)
     check(sb('Opslaan').is_disabled() and pg.locator('.side >> text=bestaat al').count() == 1, 'zijpaneel opkomstenbank: bestaande naam niet op te slaan')
-    sb('Annuleren').click(); w(200); pg.click('.side .closex'); w(200)
+    sb('Annuleren').click(); w(200)
+    # zijpaneel: Inplannen laat het paneel open; Weggooien zet de titel terug
+    pg.fill('#tf-title', 'Nachtspel X'); w(200); pg.click('.side button:has-text("Inplannen")'); w(300)
+    pg.click('.toast.show button:has-text("Weggooien")'); w(400)
+    opened = pg.locator('.modal h2:has-text("Inplannen")').count() == 1
+    pg.keyboard.press('Escape'); w(300)
+    check(opened and pg.input_value('#tf-title') == 'Nachtspel' and sb('Opslaan').is_disabled(), 'zijpaneel opkomstenbank: Inplannen → Weggooien zet de titel terug')
+    pg.click('.side .closex'); w(200)
+    check(pg.locator('.toast.show button:has-text("Weggooien")').count() == 0 and pg.locator('#tf-title').count() == 0, 'zijpaneel na Weggooien: sluiten zonder vraag')
     pg.click('nav >> text=Activiteitenbank'); w(400)
     n0 = pg.locator('.bcard').count()
     pg.click('text=Nieuwe activiteit'); w(300); pg.click('.side .closex'); w(300)
@@ -604,6 +627,18 @@ with sync_playwright() as p:
       window.__fakeRemote('speltakken/' + sid + '/opkomsten/' + oid, null); }"""); w(800)
     check(len(errors) == n_err and pg.locator('.modal').count() == 0 and pg.locator('.crash').count() == 0 and pg.locator('header.bar nav a').count() == 6
           and pg.locator('text=Deze opkomst bestaat niet (meer)').count() == 1, 'opkomst elders verwijderd terwijl Inplannen open staat: venster dicht, geen foutscherm, menu blijft')
+    # hetzelfde met Datum en soort open op een rij die elders wordt leeggemaakt
+    pg.click('nav >> text=Jaarplanning'); w(500); range0 = pg.evaluate("sessionStorage.getItem('opk.range')"); pg.click('button:has-text("Extra datum")'); w(300)
+    pg.fill('#xd-date', '03-03-2030'); pg.fill('#xd-topic', 'Rij verdwijnt'); pg.click('.modal button:has-text("Toevoegen")'); w(1200)
+    vrow = pg.locator('.prow:not(.head)').nth(pg.evaluate("[...document.querySelectorAll('.prow:not(.head)')].findIndex(r => r.querySelector('.ptopic')?.value === 'Rij verdwijnt')"))
+    vrow.locator('.pdate').click(); w(300)
+    check(pg.locator('.modal h2:has-text("Datum en soort")').count() == 1, 'extra datum: venster Datum en soort geopend')
+    n_err = len(errors)
+    pg.evaluate("""() => { const s = JSON.parse(localStorage.getItem('fake.firestore')), k = Object.keys(s).find(k => k.includes('/planning/') && s[k] && s[k].topic === 'Rij verdwijnt');
+      if (k) window.__fakeRemote(k, null); }"""); w(800)
+    check(len(errors) == n_err and pg.locator('.modal').count() == 0 and pg.locator('.crash').count() == 0 and pg.locator('header.bar nav a').count() == 6 and pg.locator('.ptopic').count() > 0,
+          'rij elders leeggemaakt terwijl Datum en soort open staat: venster weg, jaarplanning werkt door')
+    pg.evaluate("r => r === null ? sessionStorage.removeItem('opk.range') : sessionStorage.setItem('opk.range', r)", range0)
 
     # --- dashboard, banken, kamp
     pg.click('nav >> text=Dashboard'); w(700); check(pg.locator('.hero').count() == 1, 'dashboard toont komende opkomst'); shot('05-dashboard')
@@ -660,6 +695,14 @@ with sync_playwright() as p:
         check(inview, f'mobiel {wd}px: alle menu-items en account in beeld')
     pg.click('header.bar .acct .btn'); w(200); check(pg.locator('.menu >> text=Uitloggen').is_visible(), 'mobiel: accountmenu opent')
     pg.mouse.click(5, 600); w(200)
+    # tablet en telefoon dwars: het hele menu in beeld (niet afgekapt achter een onzichtbare schuifbalk), het account boven bij de naam
+    NAVFIT = """(() => { const n = document.querySelector('header.bar nav'), nb = n.getBoundingClientRect(), a = document.querySelector('header.bar .acct').getBoundingClientRect();
+      return [n.scrollWidth <= n.clientWidth + 1 && [...n.querySelectorAll('a')].every(x => { const r = x.getBoundingClientRect(); return r.left >= nb.left - 1 && r.right <= nb.right + 1; }),
+        a.bottom <= nb.top + 1, document.documentElement.scrollWidth <= innerWidth + 1]; })()"""
+    for wd in (601, 640, 768, 820, 900, 901, 1100, 1200):
+        pg.set_viewport_size({'width': wd, 'height': 800}); w(150)
+        if wd == 768: shot('07c-menu-tablet', False)
+        check(pg.evaluate(NAVFIT) == [True, True, True], f'{wd}px: alle zes menuknoppen in beeld, account op de eerste regel ({pg.evaluate(NAVFIT)})')
     pg.set_viewport_size({'width': 1360, 'height': 900})
 
     # --- uitnodiging accepteren als tweede persoon
@@ -1096,9 +1139,21 @@ with sync_playwright() as p:
     shot('19-terug-vraagt', False)
     pg.click('.toast >> text=Weggooien'); w(800)
     check(pg.url.rstrip('/').endswith('/opkomsten') and pg.locator('.bcard:has-text("Knopen en pionieren XL")').count() == 0, 'weggooien: alsnog terug, bank ongewijzigd')
+    # Kopie met niet-opgeslagen wijzigingen → Weggooien: de kopie is van de bank-versie, zonder de weggegooide wijzigingen
+    pg.goto(BASE + '/s/oefen/bouwer/opk-bank-vlag'); w(1000); pg.fill('#om-title', 'Grote vlaggenroof AANGEPAST'); w(300)
+    pg.click('.plan-head button:has-text("Kopie")'); w(300); pg.click('.toast.show button:has-text("Weggooien")'); w(900)
+    kt = pg.input_value('#om-title') if pg.locator('#om-title').count() else ''
+    check(kt == 'Grote vlaggenroof (kopie)' and pg.locator('.pill:has-text("Concept")').count() == 1 and oefen_get("s['speltakken/oefen/opkomsten/opk-bank-vlag'].title") == 'Grote vlaggenroof',
+          f'bank-opkomst: Kopie → Weggooien kopieert de bank-versie, niet de weggegooide wijzigingen ({kt})')
+    pg.click('.plan-head >> button:has-text("Verwijderen")'); w(200); pg.click('.plan-head >> text=Klik nogmaals om te verwijderen'); w(700)
     # alleen recht Jaarplanning: wel onderwerp en afwezigheid, niet koppelen (dat schrijft ook de opkomst)
     oefen_set("const sp = s['speltakken/oefen']; sp.tlIds = []; sp.members['oefen-jij'].role = 'leiding'; sp.members['oefen-jij'].perms = { plan: true, build: false, bank: false, settings: false }")
     pg.goto(BASE + '/s/oefen/jaarplanning'); w(1200); pg.click('.presets >> text=Komende 3 maanden'); w(400)
+    # zonder Team: "Instellingen" is breder dan "Team"; toch het hele menu in beeld op een smalle tablet
+    for wd in (601, 640):
+        pg.set_viewport_size({'width': wd, 'height': 800}); w(150)
+        check(pg.evaluate(NAVFIT) == [True, True, True] and pg.locator('header.bar nav a:text-is("Instellingen")').count() == 1, f'leiding {wd}px: alle zes menuknoppen in beeld ({pg.evaluate(NAVFIT)})')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(150)
     vr = pg.locator('.prow:has(.plink:has-text("Vuur en kompas"))')
     check(pg.locator('.prow .btn:has-text("Koppelen")').count() == 0 and pg.locator('.prow [aria-label="Opkomst ontkoppelen"]').count() == 0, 'alleen recht Jaarplanning: geen Koppelen of Ontkoppelen')
     check(vr.locator('.ptopic').is_disabled() and pg.locator('.prow:not(:has(.plink)):not(.geen) .ptopic:enabled').count() > 0, 'alleen recht Jaarplanning: onderwerp van een gekoppelde opkomst vast, andere aan te passen')
@@ -1120,6 +1175,11 @@ with sync_playwright() as p:
     check(pg.locator('.catrow .sw.cur').count() > 0 and all(pg.locator('.catrow .sw.cur').nth(i).is_disabled() for i in range(pg.locator('.catrow .sw.cur').count())),
           'zonder recht Instellingen: kleurstip van een categorie gaat niet open')
     oefen_set("s['speltakken/oefen'].members['oefen-jij'].perms = { plan: false, build: false, bank: true, settings: false }")
+    # brief op het dashboard: op Verstuurd zetten is een wijziging in de jaarplanning; zonder dat recht alleen Bekijken
+    pg.goto(BASE + '/s/oefen/dashboard'); w(1200)
+    nt = pg.locator('.notice:has-text("Winterweekend")')
+    check(nt.count() == 1 and nt.locator('button:has-text("Bekijken")').count() == 1 and nt.locator('button:has-text("Verstuurd")').count() == 0,
+          'dashboard zonder recht Jaarplanning: brief alleen Bekijken, geen knop Verstuurd')
     pg.goto(BASE + '/s/oefen/opkomsten'); w(1000); pg.click('.bcard:has-text("Rond de wereld")'); w(300); pg.click('.side >> text=Bewerken'); w(800)
     check(pg.locator('.plan-head button:has-text("Kopie")').count() == 0 and pg.locator('.plan-head button:has-text("Verwijderen")').count() == 1,
           'alleen recht Banken: bank-opkomst wel verwijderen, geen kopie als concept (dat hoort bij Opkomsten)')
@@ -1168,6 +1228,14 @@ with sync_playwright() as p:
     pg.set_input_files('input[type=file][accept=".json,application/json"]', files=[{'name': 'backup.json', 'mimeType': 'application/json', 'buffer': backup}]); w(900)
     check('Activiteiten overgeslagen' in pg.locator('.toast').inner_text() and oefen_get("!s['speltakken/oefen/activiteiten/lib-backup']"), 'back-up terugzetten zonder recht Banken: activiteiten overgeslagen')
     oefen_set("const sp = s['speltakken/oefen']; sp.tlIds = ['oefen-jij']; sp.members['oefen-jij'].role = 'teamleider'; sp.members['oefen-jij'].perms = { plan: true, build: true, bank: true, settings: true }")
+    # met dat recht wel Verstuurd; Ongedaan maken zet alleen "verstuurd" terug, op de nieuwste stand van de rij
+    pg.goto(BASE + '/s/oefen/dashboard'); w(1200)
+    nt = pg.locator('.notice:has-text("Winterweekend")')
+    nt.locator('button:has-text("Verstuurd")').click(); w(300)
+    gone = nt.count() == 0 and soon(lambda: oefen_get("s['speltakken/oefen/planning/pl-kamp'].letter.sent === true"))
+    pg.click('.toast.show button:has-text("Ongedaan maken")'); w(300)
+    check(gone and soon(lambda: oefen_get("s['speltakken/oefen/planning/pl-kamp'].letter.sent === false && s['speltakken/oefen/planning/pl-kamp'].letter.needed === true")) and nt.count() == 1,
+          'dashboard: brief op Verstuurd zetten en met Ongedaan maken terug')
     # concept verwijderen kan terug
     pg.goto(BASE + '/s/oefen/opkomsten'); w(1000)
     sint = pg.locator('.pick:has-text("Sinterklaasopkomst")')
@@ -1590,7 +1658,12 @@ with sync_playwright() as p:
     check(loose and vk().count() == 1 and soon(lambda: oefen_get("s['speltakken/oefen/planning/pl-1'].opkId === 'opk-vuur' && s['speltakken/oefen/opkomsten/opk-vuur'].state === 'planned'")),
           'ontkoppelen: Ongedaan maken zet de opkomst terug op dezelfde datum')
     # geen opkomst voor een hele periode (bijv. een vakantie), datums met alleen cijfers (cijferpad op een iPhone)
-    d1, d2 = oefen_get("s['speltakken/oefen/planning/pl-1'].date"), oefen_get("s['speltakken/oefen/planning/pl-2'].date")
+    # van de zaterdag met een opkomst (pl-1) t/m een vrije zaterdag 7 weken later: daartussen een zaterdag met alleen een onderwerp
+    # (pl-2, Sinterklaas), een die al Geen opkomst is (pl-3) en het kamp
+    d1 = oefen_get("s['speltakken/oefen/planning/pl-1'].date")
+    d2 = (date.fromisoformat(oefen_get("s['speltakken/oefen/planning/pl-1'].slot")) + timedelta(days=49)).isoformat()
+    slot_rows = lambda d: oefen_get(f"Object.entries(s).filter(([k, v]) => k.startsWith('speltakken/oefen/planning/') && v && v.slot === '{d}').map(([k, v]) => v.type + '|' + v.topic)")
+    t3, free0 = oefen_get("s['speltakken/oefen/planning/pl-3'].topic"), slot_rows(d2)
     dd = lambda iso, f: date.fromisoformat(iso).strftime(f)
     pg.click('button:has-text("Extra datum")'); w(300); pg.click('.modal .chip:has-text("Geen opkomst")')
     pg.fill('#xd-date', dd(d1, '%d%m%Y')); pg.press('#xd-date', 'Tab'); tidy = pg.input_value('#xd-date')
@@ -1601,9 +1674,15 @@ with sync_playwright() as p:
     pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     check(tidy == dd(d1, '%d-%m-%Y') and pg.input_value('#xd-end') == dd(d2, '%d-%m-%Y'), f'datum met alleen cijfers: na wegklikken netjes als dd-mm-jjjj ({tidy})')
     pg.click('.modal button:has-text("Toevoegen")'); w(500); msg = pg.locator('.toast').inner_text()
-    check(soon(lambda: oefen_get("s['speltakken/oefen/planning/pl-2'].type === 'geen' && s['speltakken/oefen/planning/pl-2'].topic === 'Testvakantie' && s['speltakken/oefen/planning/pl-1'].type === 'opkomst' && s['speltakken/oefen/planning/pl-1'].opkId === 'opk-vuur'")),
-          'geen opkomst voor een periode: vrije zaterdag op Geen opkomst met de reden, een zaterdag met een opkomst blijft staan')
-    check('1 zaterdag op Geen opkomst gezet' in msg and '1 datum met een opkomst of kamp overgeslagen' in msg, f'geen opkomst voor een periode: de melding zegt wat er gebeurde ({msg})')
+    check(free0 == [] and soon(lambda: slot_rows(d2) == ['geen|Testvakantie'] and oefen_get("s['speltakken/oefen/planning/pl-3'].type === 'geen' && s['speltakken/oefen/planning/pl-3'].topic === 'Testvakantie' && s['speltakken/oefen/planning/pl-1'].type === 'opkomst' && s['speltakken/oefen/planning/pl-1'].opkId === 'opk-vuur'")),
+          'geen opkomst voor een periode: vrije zaterdag op Geen opkomst met de reden (ook een al vrije dag), een zaterdag met een opkomst blijft staan')
+    check(oefen_get("s['speltakken/oefen/planning/pl-2'].type === 'opkomst' && s['speltakken/oefen/planning/pl-2'].topic === 'Sinterklaas'"),
+          'geen opkomst voor een periode: een zaterdag met alleen een onderwerp blijft staan (onderwerp niet overschreven)')
+    check('2 zaterdagen op Geen opkomst gezet' in msg and 'met een opkomst, onderwerp of kamp overgeslagen' in msg and pg.locator('.toast.show button:has-text("Ongedaan maken")').count() == 1,
+          f'geen opkomst voor een periode: de melding zegt wat er gebeurde, met Ongedaan maken ({msg})')
+    pg.click('.toast.show button:has-text("Ongedaan maken")'); w(300)
+    check(soon(lambda: slot_rows(d2) == [] and oefen_get(f"s['speltakken/oefen/planning/pl-3'].type === 'geen' && s['speltakken/oefen/planning/pl-3'].topic === {json.dumps(t3)}")),
+          'geen opkomst voor een periode: Ongedaan maken haalt de nieuwe rij weg en zet de oude reden terug')
     # banken: de kop is de naam uit het menu, het aantal staat eronder
     pg.click('nav >> text=Activiteitenbank'); w(700)
     check(pg.locator('h1:text-is("Activiteitenbank")').count() == 1 and re.search(r'\d+ activiteiten', pg.locator('.subline').inner_text()) is not None, 'activiteitenbank: kop zoals in het menu, aantal eronder')
@@ -1890,9 +1969,28 @@ with sync_playwright() as p:
     check(tq.locator('.modal .tk-tl .blk.sel.tiny').count() == 1 and not tq.locator('.modal .tk-tl .blk.sel .bdel').is_visible() and tq.locator('.tk-sel button:has-text("Verwijderen")').is_visible(),
           'aanraakscherm: geen prullenbak op een blokje van 5 minuten, wel Verwijderen eronder')
     tq.screenshot(path=f'{OUT}/27-indelen-aanraken.png')
+    # kort onderdeel (Ranja drinken, 15 min): niet alle namen passen in het blokje; het paneel eronder komt in beeld met alle aanwezige leiding
+    rj = tq.locator('.modal .tk-tl .blk:has(.t:text-is("Ranja drinken"))')
+    rj.tap(); tq.wait_for_timeout(800)
+    panel = tq.locator('.modal .tk-sel')
+    pnames = panel.locator('.tk-who .chip').all_inner_texts(); pb = panel.bounding_box()
+    clipped = tq.evaluate("""(() => { const b = [...document.querySelectorAll('.modal .tk-tl .blk')].find(x => x.querySelector('.t')?.textContent === 'Ranja drinken'), c = b.querySelector('.c2').getBoundingClientRect();
+      return [...b.querySelectorAll('.tk-names .nm')].filter(n => n.getBoundingClientRect().bottom > c.bottom + 1).map(n => n.textContent); })()""")
+    check(pnames == ['Akela', 'Baloe', 'Bagheera', 'Kaa', 'Raksha'] and pb and 0 <= pb['y'] < 844 - 40, f'aanraakscherm: kort onderdeel gekozen → paneel in beeld met alle aanwezige leiding ({pnames}; in het blokje afgekapt: {clipped})')
+    panel.locator('.chip:text-is("Raksha")').tap(); tq.wait_for_timeout(500)
+    check(panel.locator('.chip:text-is("Raksha")').get_attribute('aria-pressed') == 'true' and rj.locator('.nm.on:text-is("Raksha")').count() == 1,
+          'aanraakscherm: laatste naam via het paneel ingedeeld (ook in de tijdlijn aan)')
+    tq.screenshot(path=f'{OUT}/27b-indelen-paneel-aanraken.png')
+    panel.locator('.chip:text-is("Raksha")').tap(); tq.wait_for_timeout(300)
+    check(rj.locator('.nm.on:text-is("Raksha")').count() == 0, 'aanraakscherm: naam via het paneel weer weggehaald')
     tq.goto(BASE + '/s/oefen/dashboard'); tq.wait_for_timeout(1200)
     fh = tq.evaluate("[...document.querySelectorAll('.hero .facts > [data-editable]')].map(e => e.getBoundingClientRect().height)")
     check(len(fh) == 2 and min(fh) >= 30, f'aanraakscherm: tijden en locatie op het dashboard groter raakvlak ({fh})')
+    # onderwerp typen in een lege zaterdag op de telefoon: de eerste letter maakt de rij aan; het veld (en het toetsenbord) blijft
+    tq.goto(BASE + '/s/oefen/jaarplanning'); tq.wait_for_timeout(1200)
+    tq.locator('.prow[id^="r-s-"] .ptopic').first.tap(); tq.keyboard.type('Pionieren', delay=40); tq.wait_for_timeout(700)
+    ft = tq.evaluate("(() => { const a = document.activeElement; return [!!a && a.classList.contains('ptopic'), a && a.value]; })()")
+    check(ft == [True, 'Pionieren'], f'aanraakscherm: onderwerp typen in een lege zaterdag houdt het hele woord en de focus ({ft})')
     tc.close()
 
     # --- seizoen rond de zomerpauze (klok verzet) en een datum in de pauze openen

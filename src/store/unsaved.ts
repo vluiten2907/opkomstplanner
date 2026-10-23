@@ -3,20 +3,38 @@ import { useBlocker } from 'react-router-dom';
 import { create } from 'zustand';
 import { toast, useToast } from './toast';
 
-/** Onthoudt of er een bank-opkomst of -activiteit open staat met wijzigingen die nog niet zijn opgeslagen. */
-export const useUnsaved = create<{ dirty: boolean }>(() => ({ dirty: false }));
+/**
+ * Onthoudt of er een bank-opkomst of -activiteit open staat met wijzigingen die nog niet zijn opgeslagen,
+ * en hoe die bewerking ze weggooit (`discard`, bijv. Annuleren van de onderbalk).
+ */
+export const useUnsaved = create<{ dirty: boolean; discard: (() => void) | null }>(() => ({ dirty: false, discard: null }));
 export const setUnsaved = (dirty: boolean) => useUnsaved.setState({ dirty });
 
 const ASK = 'Je wijzigingen zijn nog niet opgeslagen. Sla op of annuleer eerst.';
 
+/** Weggooien: de bewerking zet zijn kladversie terug (blijft hij open staan, dan klopt hij weer), daarna is er niets meer te bewaren. */
+function discardAll() {
+  const d = useUnsaved.getState().discard;
+  try { d?.(); } finally { setUnsaved(false); }
+}
+
 /** Voert `fn` uit, of vraagt eerst of de wijzigingen weg mogen. */
 export function guardLeave(fn: () => void) {
   if (!useUnsaved.getState().dirty) { fn(); return; }
-  toast(ASK, { label: 'Weggooien', fn: () => { setUnsaved(false); fn(); } });
+  toast(ASK, { label: 'Weggooien', fn: () => { discardAll(); fn(); } });
 }
 
-/** Zet de vlag zolang dit onderdeel open is (en waarschuwt bij het sluiten van het tabblad). */
-export function useDirty(dirty: boolean) {
+/**
+ * Zet de vlag zolang dit onderdeel open is (en waarschuwt bij het sluiten van het tabblad).
+ * `onDiscard` zet de wijzigingen terug als iemand in de melding op Weggooien klikt.
+ */
+export function useDirty(dirty: boolean, onDiscard?: () => void) {
+  const ref = useRef(onDiscard); ref.current = onDiscard;
+  useEffect(() => {
+    const mine = () => ref.current?.();
+    useUnsaved.setState({ discard: mine });
+    return () => { if (useUnsaved.getState().discard === mine) useUnsaved.setState({ discard: null }); };
+  }, []);
   useEffect(() => { setUnsaved(dirty); }, [dirty]);
   useEffect(() => () => setUnsaved(false), []);
   useEffect(() => {
@@ -36,7 +54,7 @@ export function LeaveGuard() {
   useEffect(() => {
     if (blocker.state !== 'blocked') return;
     let open = true;
-    const go = () => { open = false; setUnsaved(false); try { if (ref.current.state === 'blocked') ref.current.proceed(); } catch { /* al door een andere navigatie vervangen */ } };
+    const go = () => { open = false; discardAll(); try { if (ref.current.state === 'blocked') ref.current.proceed(); } catch { /* al door een andere navigatie vervangen */ } };
     toast(ASK, { label: 'Weggooien', fn: go });
     const n = useToast.getState().n;
     // melding verlopen of vervangen: niet weggaan (na de klik op Weggooien, die direct volgt, niets doen)

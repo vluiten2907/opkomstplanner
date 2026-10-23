@@ -61,14 +61,15 @@ function LibEditor({ l, isNew, lib, readOnly, onClose, onCancelNew, onSave, onCo
   // Je bewerkt een kladversie; pas bij Opslaan gaat hij naar de bank.
   const [d, setD] = useState<Lib>(() => clone(l));
   const [dirty, setDirty] = useState(false);
-  // een nieuwe, nog lege activiteit telt pas als gewijzigd na de eerste invoer: zo sluit je hem zonder vraag
-  useDirty(dirty);
   const upd = (fn: () => void) => { if (readOnly) return; fn(); setD({ ...d }); setDirty(true); };
   const durs: number[] = []; for (let x = 5; x <= 240; x += 5) durs.push(x);
   if (!durs.includes(d.dur)) durs.push(d.dur);
   const taken = (n: string, copy: boolean) => nameTaken(lib, n, copy ? null : l.id);
   const save = () => { const x = { ...clone(d), title: d.title.trim() }; onSave(x); setD(clone(x)); setDirty(false); };
   const cancel = () => { if (isNew) { setDirty(false); onCancelNew(); return; } setD(clone(l)); setDirty(false); };
+  // een nieuwe, nog lege activiteit telt pas als gewijzigd na de eerste invoer: zo sluit je hem zonder vraag.
+  // Weggooien in de melding zet de kladversie terug, net als Annuleren.
+  useDirty(dirty, cancel);
   const copy = (name: string) => { const x = { ...clone(d), id: uid(), title: name }; setD(clone(l)); setDirty(false); onCopy(x); };
   return <div className="pad stack">
     <div className="row between" style={{ alignItems: 'flex-start' }}><span className="eyebrow">{isNew ? 'Nieuwe activiteit' : 'Activiteit'}</span><button className="closex" onClick={onClose} aria-label="Sluiten"><X size={18} /></button></div>

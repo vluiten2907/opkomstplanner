@@ -110,7 +110,8 @@ function Builder({ o: stored }: { o: Opk }) {
   const bankEdit = stored.state === 'bank';
   const [draft, setDraft] = useState<Opk | null>(() => bankEdit ? normOpk(clone(stored)) : null);
   const [dirty, setDirty] = useState(false);
-  useDirty(dirty);
+  // Weggooien in de melding (bijv. bij Inplannen of Kopie): de kladversie terug naar de bank-versie, net als Annuleren
+  useDirty(dirty, () => { if (bankEdit) cancelBank(); });
   useEffect(() => { if (bankEdit && !draft) setDraft(normOpk(clone(stored))); if (!bankEdit && draft) { setDraft(null); setDirty(false); } }, [bankEdit]);
   const o = (bankEdit && draft) || stored;
   const bankOpks = opks.filter(x => x.state === 'bank');
@@ -218,7 +219,8 @@ function Builder({ o: stored }: { o: Opk }) {
       const b = toBank(o, name); saveOpk(b); upd(() => { o.srcId = b.id; }); toast('Kopie opgeslagen in de opkomstenbank, zonder leiding');
     } });
   };
-  const dup = () => guardLeave(() => { const c = copyOpk(o); c.state = 'draft'; c.srcId = null; c.title = (o.title || 'Opkomst') + ' (kopie)'; saveOpk(c); nav(`/s/${sid}/bouwer/${c.id}`); toast('Kopie gemaakt'); });
+  // kopie van de opgeslagen bank-versie: na Weggooien is `o` in deze functie nog de kladversie met de weggegooide wijzigingen
+  const dup = () => guardLeave(() => { const c = copyOpk(stored); c.state = 'draft'; c.srcId = null; c.title = (stored.title || 'Opkomst') + ' (kopie)'; saveOpk(c); nav(`/s/${sid}/bouwer/${c.id}`); toast('Kopie gemaakt'); });
   const updBank = () => {
     if (!src) return;
     if (nameTaken(bankOpks, o.title, src.id)) { toast(`"${o.title.trim()}" bestaat al in de opkomstenbank. Geef deze opkomst eerst een andere titel.`); return; }

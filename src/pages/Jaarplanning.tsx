@@ -66,7 +66,7 @@ export default function Jaarplanning() {
     </div>
     {rows.length ? <div className="ptable">
       <div className="prow head"><span>Datum</span><span>Onderwerp</span><span>Opkomst</span><span>Planning door</span><span>Afwezig</span><span>Brief</span></div>
-      {Object.entries(groups).map(([k, rs]) => <Fragment key={k}><div className="pmonth">{MONTHS[+k.slice(5) - 1]} {k.slice(0, 4)}</div>{rs.map(r => <PlanRow key={r.key} r={r} today={today} />)}</Fragment>)}
+      {Object.entries(groups).map(([k, rs]) => <Fragment key={k}><div className="pmonth">{MONTHS[+k.slice(5) - 1]} {k.slice(0, 4)}</div>{rs.map(r => <PlanRow key={r.rk} r={r} today={today} />)}</Fragment>)}
     </div> : <div className="empty">Er vallen geen {dayPlural} in dit tijdbereik.</div>}
   </div>;
 }

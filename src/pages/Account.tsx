@@ -45,7 +45,7 @@ export default function AccountPage() {
           <Field label="Voornaam" htmlFor="ac-first"><input id="ac-first" value={first} onChange={e => setFirst(e.target.value)} autoComplete="given-name" /></Field>
           <Field label="Achternaam" htmlFor="ac-last"><input id="ac-last" value={last} onChange={e => setLast(e.target.value)} autoComplete="family-name" /></Field>
         </div>
-        <p className="hint">Je voor- en achternaam zien alleen de beheerders van je groep.</p>
+        <p className="hint">Zo weten de beheerders van je groep wie je bent. Je naam is niet geheim: andere leiding kan hem ook zien.</p>
         <div className="row"><button className="btn primary" disabled={busy} onClick={save}><Save size={16} />Opslaan</button><button className="btn ghost" disabled={pwBusy} onClick={newPw}><KeyRound size={16} />{pwBusy ? 'Versturen…' : 'Wachtwoord wijzigen'}</button></div>
       </section>
     </div>

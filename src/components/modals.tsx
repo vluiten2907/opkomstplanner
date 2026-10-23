@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Tent, Trash2, SquarePen } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
@@ -66,7 +66,7 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
 
 /* ---------- Extra datum ---------- */
 export function ExtraModal({ onClose, onCreated }: { onClose: () => void; onCreated: (e: Plan) => void }) {
-  const { settings, savePlan, peekEntry, entryFor } = useSpeltak();
+  const { settings, savePlan, peekEntry, entryFor, latest } = useSpeltak();
   const [type, setType] = useState<Plan['type']>('opkomst'); const [date, setDate] = useState(''); const [end, setEnd] = useState(''); const [topic, setTopic] = useState('');
   const geen = type === 'geen', day = DAYS[settings.opkDay];
   const save = () => {
@@ -74,21 +74,33 @@ export function ExtraModal({ onClose, onCreated }: { onClose: () => void; onCrea
     if ('error' in r) { toast(r.error); return; }
     const { iso, endIso } = r;
     // Geen opkomst (bijv. een vakantie): de vaste opkomstdagen in die periode zelf op Geen opkomst, geen aparte rij ernaast.
-    // Een dag met een opkomst of kamp blijft zoals hij is (nooit vanzelf ontkoppelen); een opkomst die naar een datum
-    // buiten de periode is verzet, valt er niet onder.
+    // Een dag met een opkomst, kamp of onderwerp blijft zoals hij is (nooit vanzelf ontkoppelen of een onderwerp overschrijven);
+    // een dag die al Geen opkomst is, krijgt wel de nieuwe reden. Een opkomst die naar een datum buiten de periode is verzet, valt er niet onder.
     const to = endIso || iso, slots = geen ? opkDaysIn(settings, iso, to) : [];
     if (slots.length) {
-      const done: Plan[] = []; let skipped = 0;
+      const done: Plan[] = [], before: (Plan | null)[] = []; let skipped = 0;
       slots.forEach(d => {
         const cur = peekEntry('s:' + d);
         if (cur && (cur.date < iso || cur.date > to)) return;
-        if (cur && (cur.opkId || cur.type === 'kamp')) { skipped++; return; }
+        if (cur && (cur.opkId || cur.type === 'kamp' || (cur.type !== 'geen' && cur.topic.trim()))) { skipped++; return; }
         const en = { ...entryFor('s:' + d), type: 'geen' as const };
         if (topic.trim()) en.topic = topic.trim();
-        savePlan(en); done.push(en);
+        savePlan(en); done.push(en); before.push(cur ? clone(cur) : null);
       });
+      // Ongedaan maken: soort en reden terug zoals ze waren; een rij die hiervoor nog niet bestond, weer weg.
+      // Met de nieuwste stand van elke rij, en alleen als hij intussen niet opnieuw is aangepast.
+      const undo = () => {
+        const L = latest();
+        done.forEach((en, i) => {
+          const now = L.plans.find(p => p.id === en.id), was = before[i];
+          if (!now || now.type !== 'geen' || now.topic !== en.topic) return;
+          if (was) L.savePlan({ ...now, type: was.type, topic: was.topic });
+          else if (!now.opkId && !now.planners.length && !now.absent.length && !now.note.trim() && !now.letter.needed) L.deletePlan(now.id);
+          else L.savePlan({ ...now, type: 'opkomst', topic: '' });
+        });
+      };
       const msg = done.length ? `${plural(done.length, day, day + 'en')} op Geen opkomst gezet` : 'Niets aangepast';
-      toast(msg + (skipped ? `. ${plural(skipped, 'datum', 'data')} met een opkomst of kamp overgeslagen.` : ''), undefined, skipped ? 6000 : undefined);
+      toast(msg + (skipped ? `. ${plural(skipped, 'datum', 'data')} met een opkomst, onderwerp of kamp overgeslagen.` : ''), done.length ? { label: 'Ongedaan maken', fn: undo } : undefined, skipped ? 8000 : undefined);
       if (done.length) onCreated(done[0]);
       onClose(); return;
     }
@@ -99,7 +111,7 @@ export function ExtraModal({ onClose, onCreated }: { onClose: () => void; onCrea
     <Field label="Soort"><div className="seg">{([['opkomst', 'Opkomst'], ['kamp', 'Kamp / weekend'], ['geen', 'Geen opkomst']] as const).map(([v, l]) => <Chip key={v} on={type === v} onClick={() => setType(v)}>{l}</Chip>)}</div></Field>
     <div className="two"><Field label={geen ? 'Van' : 'Datum'} htmlFor="xd-date"><input id="xd-date" value={date} onChange={e => setDate(e.target.value)} onBlur={() => setDate(tidyNL(date))} placeholder="dd-mm-jjjj" inputMode="numeric" /></Field>
       <Field label="Tot en met" htmlFor="xd-end"><input id="xd-end" value={end} onChange={e => setEnd(e.target.value)} onBlur={() => setEnd(tidyNL(end))} placeholder="leeg = één dag" inputMode="numeric" /></Field></div>
-    {geen && <p className="hint">Alle {day}en in deze periode worden Geen opkomst. Een {day} met een opkomst of kamp blijft staan.</p>}
+    {geen && <p className="hint">Alle {day}en in deze periode worden Geen opkomst. Een {day} met een opkomst, onderwerp of kamp blijft staan.</p>}
     <Field label={geen ? 'Reden' : 'Onderwerp'} htmlFor="xd-topic"><input id="xd-topic" value={topic} onChange={e => setTopic(e.target.value)} placeholder={geen ? 'bijv. Herfstvakantie' : 'bijv. Groepsweekend'} /></Field>
     <div className="row"><button className="btn primary" onClick={save}>Toevoegen</button><button className="btn ghost" onClick={onClose}>Annuleren</button></div>
   </Modal>;
@@ -247,6 +259,13 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
   const [selId, setSelId] = useState<string | null>(null);
   // aanraakscherm: de namen zijn daar groter (beter te raken), dus de tijdlijn iets hoger zodat er evenveel in een onderdeel passen
   const coarse = useMedia('(pointer: coarse)');
+  // gekozen onderdeel: het paneel eronder in beeld brengen (op een telefoon staat het anders ver onder het onderdeel)
+  const selRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!selId) return;
+    const t = setTimeout(() => selRef.current?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }), 30);
+    return () => clearTimeout(t);
+  }, [selId]);
   const o = getO(oid); if (!o) return null;
   const e = entryOfOpk(o), present = e ? presentForEntry(e, o) : [...leaders];
   const A = analyze(o, present, leaders), need = minNeed(o);
@@ -300,16 +319,21 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
       </div>
     </div>;
   };
-  const selEdit = () => {
-    for (const C of containers) {
-      const b = C.d.blocks.find(x => x.id === selId); if (!b) continue;
-      const durs: number[] = []; for (let d = 5; d <= Math.max(C.hi - b.start, b.dur); d += 5) durs.push(d);
-      return <div className="tk-sel"><b>{b.title || 'Naamloos onderdeel'}</b>
-        <Field label="Begin"><TimePicker value={b.start} onChange={v => upd(() => { b.start = v; b.dur = Math.max(5, Math.min(b.dur, C.hi - b.start)); })} from={C.lo} to={C.hi - 5} extra /></Field>
-        <Field label="Duur"><select className="inp" value={b.dur} onChange={ev => upd(() => { b.dur = +ev.target.value; })}>{durs.map(d => <option key={d} value={d}>{fmtDur(d)}</option>)}</select></Field>
-        <div className="row"><button className="btn sm ghost" onClick={() => delBlock(C, b)}><Trash2 size={14} />Verwijderen</button><button className="btn sm ghost" onClick={() => setSelId(null)}>Sluiten</button></div></div>;
-    }
-    return null;
+  // Paneel van het gekozen onderdeel, direct onder de tijdlijn (of de dag) waar het in staat. Hier staat alle aanwezige leiding:
+  // in een kort onderdeel passen niet alle namen (zeker op een telefoon), hier is elke naam te raken.
+  const selEdit = (C: typeof containers[0]) => {
+    const b = C.d.blocks.find(x => x.id === selId); if (!b) return null;
+    const durs: number[] = []; for (let d = 5; d <= Math.max(C.hi - b.start, b.dur); d += 5) durs.push(d);
+    const who = leaders.filter(n => present.includes(n) || b.names.includes(n)), extra = b.names.filter(n => !leaders.includes(n));
+    return <div className="tk-sel" ref={selRef}><b>{b.title || 'Naamloos onderdeel'} <span className="hint">{fmtT(b.start)}–{fmtT(b.start + b.dur)}</span></b>
+      <div className="field tk-who"><span className="lbl">Leiding bij dit onderdeel</span>
+        {who.length ? <div className="row" style={{ gap: 6 }}>{who.map(n => { const away = !present.includes(n);
+          return <Chip key={n} className={away || A.clashes.has(b.id + '|' + n) ? 'clash' : ''} on={b.names.includes(n)} title={away ? 'Afwezig: tik om weg te halen' : undefined} onClick={() => toggle(b, n)}>{n}{away ? ' (afwezig)' : ''}</Chip>; })}</div>
+          : <p className="hint">Nog geen leidingteam.</p>}
+        {extra.length > 0 && <p className="hint">Ook ingedeeld: {extra.join(', ')}</p>}</div>
+      <Field label="Begin"><TimePicker value={b.start} onChange={v => upd(() => { b.start = v; b.dur = Math.max(5, Math.min(b.dur, C.hi - b.start)); })} from={C.lo} to={C.hi - 5} extra /></Field>
+      <Field label="Duur"><select className="inp" value={b.dur} onChange={ev => upd(() => { b.dur = +ev.target.value; })}>{durs.map(d => <option key={d} value={d}>{fmtDur(d)}</option>)}</select></Field>
+      <div className="row"><button className="btn sm ghost" onClick={() => delBlock(C, b)}><Trash2 size={14} />Verwijderen</button><button className="btn sm ghost" onClick={() => setSelId(null)}>Sluiten</button></div></div>;
   };
   const addLib = () => {
     const l = lib.find(x => x.id === libId) || lib[0]; if (!l) return;
@@ -343,12 +367,12 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
     {e && <div className="field"><span className="lbl">Planning door</span><div className="row" style={{ gap: 6 }}>{[...new Set([...present, ...plannersOf(e, o)])].map(n => <Chip key={n} on={plannersOf(e, o).includes(n)} disabled={ro} onClick={() => togglePlanner(n)}>{n}</Chip>)}</div></div>}
     <div className="row statrow"><span className="stat">Minimaal leiding<b>{need}</b></span><span className={'stat' + (need > present.length ? ' warnc' : '')}>Aanwezig<b>{present.length}</b></span><span className={'stat' + (A.warn ? ' warnc' : '')}>Aandachtspunten<b>{A.warn}</b></span></div>
     {A.warn > 0 && <ul className="issues">{A.issues.filter(i => i.lvl === 'warn').slice(0, 6).map((i, k) => <li key={k} className="warn"><i /><span>{i.text}</span></li>)}</ul>}
-    <p className="hint">{ro ? 'Alleen bekijken: leiding indelen en het programma aanpassen kan met het recht Opkomsten.' : 'Klik op een naam om die in te delen. Klik op een onderdeel om de tijd aan te passen of het weg te halen.'}</p>
+    <p className="hint">{ro ? 'Alleen bekijken: leiding indelen en het programma aanpassen kan met het recht Opkomsten.' : 'Klik op een naam om die in te delen. Klik op een onderdeel voor alle leiding, de tijd of om het weg te halen.'}</p>
     <div className="tk-prog">{containers.map(C => <div key={C.d.id} className="stack" style={{ gap: 8 }}>
       {C.label && <h3 className="tk-day">{C.label} <span className="hint">{fmtT(C.d.start)}–{fmtT(C.d.end)}</span></h3>}
       {C.d.blocks.length ? timeline(C) : <p className="hint">Nog geen onderdelen.</p>}
+      {selEdit(C)}
     </div>)}</div>
-    {selEdit()}
     {lib.length > 0 && !ro && <div className="row"><select className="inp" aria-label="Activiteit om toe te voegen" value={libId || lib[0].id} onChange={e => setLibId(e.target.value)} style={{ flex: '1 1 220px' }}>{[...lib].sort(byTitle).map(l => <option key={l.id} value={l.id}>{l.title || 'Naamloos'} · {fmtDur(l.dur)}</option>)}</select>
       {isKamp(o) && <select className="inp" aria-label="Dag" value={libDay} onChange={e => setLibDay(+e.target.value)} style={{ flex: '0 1 160px' }}>{o.days.map((d, i) => <option key={d.id} value={i}>{d.label}</option>)}</select>}
       <button className="btn" onClick={addLib}><Plus size={16} />Activiteit toevoegen</button></div>}

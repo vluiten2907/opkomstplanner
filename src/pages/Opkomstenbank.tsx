@@ -150,10 +150,11 @@ function TplEditor({ t, own, groupOn, onClose, onDelete, onCopied }: { t: Opk; o
   // titel, beschrijving en delen eerst in een kladversie; pas bij Opslaan naar de bank
   const [d, setD] = useState(() => ({ title: t.title, short: t.short, shared: t.shared }));
   const [dirty, setDirty] = useState(false);
-  useDirty(dirty);
+  const cancel = () => { setD({ title: t.title, short: t.short, shared: t.shared }); setDirty(false); };
+  // Weggooien in de melding (bijv. bij Inplannen, dat het paneel open laat): de kladversie terug, net als Annuleren
+  useDirty(dirty, cancel);
   const upd = (p: Partial<typeof d>) => { if (ro) return; setD({ ...d, ...p }); setDirty(true); };
   const save = () => { saveOpk({ ...t, ...d, title: d.title.trim() }); setDirty(false); toast('Opkomst opgeslagen'); };
-  const cancel = () => { setD({ title: t.title, short: t.short, shared: t.shared }); setDirty(false); };
   const copy = (name: string) => { const c = copyOpk({ ...t, ...d }); c.title = name; c.srcId = null; c.fromShared = null; saveOpk(c); setDirty(false); onCopied(c.id); toast(`Kopie "${name}" opgeslagen`); };
   const src = t.fromShared ? (shared || []).find(x => x.id === t.fromShared) : undefined;
   return <div className="pad stack">

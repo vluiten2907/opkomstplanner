@@ -276,6 +276,8 @@ test('rowsIn: vaste opkomstdagen plus extra data, op datum', () => {
     plan({ id: 'k', slot: null, date: '2026-10-09', endDate: '2026-10-11', type: 'kamp' }), plan({ id: 'weg', slot: null, date: '2026-12-01' })];
   const rows = M.rowsIn(s, plans, '2026-10-10', '2026-10-31');
   assert.deepEqual(rows.map(r => r.key), ['k', 's:2026-10-10', 'p1', 'x', 's:2026-10-24', 's:2026-10-31']);
+  // de React-key van een vaste dag blijft gelijk als er een rij voor wordt aangemaakt (anders verdwijnt het veld waarin je typt)
+  assert.deepEqual(rows.map(r => r.rk), ['k', 's:2026-10-10', 's:2026-10-17', 'x', 's:2026-10-24', 's:2026-10-31']);
   assert.equal(rows[2].e!.topic, 'Bosspel');
   assert.equal(M.rowEnd(rows[0]), '2026-10-11');
   assert.deepEqual(M.opkDaysIn(s, 'kapot', '2026-10-31'), [], 'foute datum: geen eindeloze lus');

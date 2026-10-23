@@ -393,16 +393,17 @@ export function opkDaysIn(s: Settings, from: string, to: string) {
   while (d <= to) { out.push(d); d = addDays(d, 7); }
   return out;
 }
-export type Row = { key: string; e: Plan | null; slot: string | null };
+/** `key` wijst de rij aan (voor entryFor, vensters en focus); `rk` blijft gelijk als er voor een lege dag een rij wordt aangemaakt (React-key). */
+export type Row = { key: string; rk: string; e: Plan | null; slot: string | null };
 export const rowDate = (r: Row) => r.e ? r.e.date : (r.slot as string);
 export const rowEnd = (r: Row) => (r.e && r.e.endDate) || rowDate(r);
 export function rowsIn(s: Settings, plans: Plan[], from: string, to: string): Row[] {
   const sats = opkDaysIn(s, from, to), satSet = new Set(sats), rows: Row[] = [];
-  sats.forEach(sl => { const e = plans.find(p => p.slot === sl); rows.push(e ? { key: e.id, e, slot: sl } : { key: 's:' + sl, e: null, slot: sl }); });
+  sats.forEach(sl => { const e = plans.find(p => p.slot === sl); rows.push(e ? { key: e.id, rk: 's:' + sl, e, slot: sl } : { key: 's:' + sl, rk: 's:' + sl, e: null, slot: sl }); });
   plans.forEach(p => {
     if (p.slot && satSet.has(p.slot)) return;
     const end = p.endDate || p.date;
-    if (end >= from && p.date <= to) rows.push({ key: p.id, e: p, slot: p.slot });
+    if (end >= from && p.date <= to) rows.push({ key: p.id, rk: p.id, e: p, slot: p.slot });
   });
   rows.sort((a, b) => rowDate(a).localeCompare(rowDate(b)));
   return rows;

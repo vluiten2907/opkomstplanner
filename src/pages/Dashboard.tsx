@@ -57,15 +57,18 @@ export default function Dashboard() {
 }
 
 function Notice({ e, due, today }: { e: Plan; due: string; today: string }) {
-  const { opkOf, savePlan, sid } = useSpeltak();
+  const { opkOf, savePlan, sid, can, latest } = useSpeltak();
   const nav = useNavigate();
   const left = dayDiff(today, due), o = opkOf(e);
   const title = (o && o.title) || e.topic || 'opkomst';
   const msg = left < 0 ? `${plural(-left, 'dag', 'dagen')} te laat` : left === 0 ? 'Vandaag versturen' : `Vóór ${fmtShort(due)}, nog ${plural(left, 'dag', 'dagen')}`;
-  const sent = () => { savePlan({ ...e, letter: { ...e.letter, sent: true } }); toast('Brief gemarkeerd als verstuurd', { label: 'Ongedaan maken', fn: () => savePlan({ ...e, letter: { ...e.letter, sent: false } }) }); };
+  // Ongedaan maken met de nieuwste stand van de rij: alleen "verstuurd" gaat terug, de rest blijft zoals hij nu is
+  const unsent = () => { const cur = latest().plans.find(p => p.id === e.id); if (cur) latest().savePlan({ ...cur, letter: { ...cur.letter, sent: false } }); };
+  const sent = () => { savePlan({ ...e, letter: { ...e.letter, sent: true } }); toast('Brief gemarkeerd als verstuurd', { label: 'Ongedaan maken', fn: unsent }); };
+  // de brief op verstuurd zetten is een wijziging in de jaarplanning (zoals de briefknop daar): alleen met dat recht
   return <div className={'notice' + (left < 0 ? ' late' : '')}><Mail size={18} />
     <div className="ntext"><b>Brief: {title}</b><span>{msg} · opkomst {fmtShort(e.date)}</span></div>
-    <div className="row"><button className="btn sm ghost" onClick={() => nav(`/s/${sid}/jaarplanning?focus=${e.id}`)}>Bekijken</button><button className="btn sm primary" onClick={sent}>Verstuurd</button></div></div>;
+    <div className="row"><button className="btn sm ghost" onClick={() => nav(`/s/${sid}/jaarplanning?focus=${e.id}`)}>Bekijken</button>{can('plan') && <button className="btn sm primary" onClick={sent}>Verstuurd</button>}</div></div>;
 }
 
 /** Dubbelklik (of dubbel tikken op de telefoon) om iets op de kaart aan te passen. */

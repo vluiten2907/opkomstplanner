@@ -13,8 +13,9 @@ export type ModalSpec =
 /** Om een (unieke) naam vragen, bijv. bij in de bank zetten. */
 export type NameSpec = { kind: 'name'; title: string; sub?: string; label: string; initial: string; okLabel: string; taken: (name: string) => boolean; ok: (name: string) => void };
 
-type S = { modal: ModalSpec | null; open: (m: ModalSpec) => void; close: () => void };
-export const useModal = create<S>(set => ({ modal: null, open: m => set({ modal: m }), close: () => set({ modal: null }) }));
+/** `seq` telt elk geopend venster (een fout in het ene venster blokkeert het volgende niet). */
+type S = { modal: ModalSpec | null; seq: number; open: (m: ModalSpec) => void; close: () => void };
+export const useModal = create<S>(set => ({ modal: null, seq: 0, open: m => set(s => ({ modal: m, seq: s.seq + 1 })), close: () => set({ modal: null }) }));
 export const openModal = (m: ModalSpec) => useModal.getState().open(m);
 
 /** Gebruik `title` als die vrij is; anders vragen om een andere naam. */
