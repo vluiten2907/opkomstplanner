@@ -976,6 +976,11 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
   .prow:not(.geen)::after { content: ""; flex: 0 0 100%; order: 1; margin-top: -6px; }
   .prow .f-plan, .prow .f-abs, .prow .f-brief { order: 2; }
 }
+/* telefoon, dag zonder opkomst: "Geen opkomst" boven de reden, zodat de reden de hele breedte naast de datum krijgt (niet afgekapt) */
+@media (max-width: 600px) {
+  .prow.geen .f-topic > .pcell.nowrap { flex-wrap: wrap; row-gap: 2px; }
+  .prow.geen .f-topic .ptopic { flex: 1 1 100%; }
+}
 
 /* Opkomstbouwer op de telefoon: details inklapbaar, tellers op één regel, knop naar de activiteitenbank */
 .metatoggle { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; border: 0; background: transparent; padding: 14px 18px; text-align: left; cursor: pointer; font: inherit; color: var(--ink); border-radius: 14px; }

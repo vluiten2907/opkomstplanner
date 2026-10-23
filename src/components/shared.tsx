@@ -101,8 +101,8 @@ export function PickOpk({ o, label, onPick, primary = true, extra, kicker, cats,
 }
 
 /** Onderbalk bij het bewerken van iets uit een bank: Annuleren / Opslaan / Opslaan als kopie (met nieuwe naam). */
-export function SaveBar({ dirty, isNew, title, taken, suggest, onCancel, onSave, onCopy, sticky }: {
-  dirty: boolean; isNew?: boolean; title: string; taken: (name: string, copy: boolean) => boolean; suggest: string;
+export function SaveBar({ dirty, isNew, newHint = 'Geef eerst een titel op.', title, taken, suggest, onCancel, onSave, onCopy, sticky }: {
+  dirty: boolean; isNew?: boolean; newHint?: string; title: string; taken: (name: string, copy: boolean) => boolean; suggest: string;
   onCancel: () => void; onSave: () => void; onCopy: (name: string) => void; sticky?: boolean;
 }) {
   const [copying, setCopying] = useState(false);
@@ -118,7 +118,10 @@ export function SaveBar({ dirty, isNew, title, taken, suggest, onCancel, onSave,
     return () => { ro?.disconnect(); root.style.removeProperty('--saveh'); };
   }, []);
   const why = (n: string, copy = false) => !n.trim() ? 'Geef een titel op.' : taken(n, copy) ? 'Deze naam bestaat al in de bank. Kies een andere naam.' : '';
-  const saveErr = dirty || isNew ? why(title) : '';
+  // net aangemaakt en nog niets ingevuld: geen rode fout (je hebt nog niets fout gedaan), alleen een gewone aanwijzing; Opslaan kan nog niet.
+  // Na de eerste invoer (ook weer leeggemaakt) wel de fout, en die leest een schermlezer dan voor.
+  const pristine = !!isNew && !dirty && !title.trim();
+  const saveErr = pristine ? '' : dirty || isNew ? why(title) : '';
   const copyErr = why(name, true);
   // voorstel: de (aangepaste) titel als die nog vrij is, anders een vrije naam met (kopie)
   const startCopy = () => { setName(title.trim() && !taken(title, true) ? title.trim() : suggest); setCopying(true); };
@@ -142,10 +145,10 @@ export function SaveBar({ dirty, isNew, title, taken, suggest, onCancel, onSave,
       <div className="row"><button className="btn ghost" onClick={endCopy}>Terug</button><button className="btn primary" disabled={!!copyErr} onClick={doCopy}>Kopie opslaan</button></div>
     </> : <>
       <span className="sb-err" id={errId} aria-live="polite">{saveErr}</span>
-      {(dirty || isNew) && !saveErr ? <span className="sb-msg">{isNew ? 'Nog niet in de bank.' : 'Niet opgeslagen wijzigingen.'}</span> : null}
+      {(dirty || isNew) && !saveErr ? <span className="sb-msg">{pristine ? newHint : isNew ? 'Nog niet in de bank.' : 'Niet opgeslagen wijzigingen.'}</span> : null}
       <div className="row">
         <button className="btn ghost" disabled={!dirty && !isNew} onClick={onCancel}>Annuleren</button>
-        <button className="btn primary" disabled={(!dirty && !isNew) || !!saveErr} onClick={onSave}>Opslaan</button>
+        <button className="btn primary" disabled={(!dirty && !isNew) || pristine || !!saveErr} onClick={onSave}>Opslaan</button>
         {!isNew && <button ref={copyBtn} className="btn sb-copy" onClick={startCopy}>Opslaan als kopie</button>}
       </div>
     </>}

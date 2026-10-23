@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Tent, Trash2, SquarePen, Users } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast, undoAction } from '../store/toast';
@@ -9,6 +9,7 @@ import { addDays, clone, fmtLong, fmtNL, fmtRange, fmtShort, parseNL, parseRange
 import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, defaultTimes, entryTimes, ownTimes, firstFree, fitsTopic, isBlankPlan, isKamp, kampMismatch, kampMismatchNote, kampStart, lanesLayout, minNeed, newEntry, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from './timeline';
 import { openModal, type NameSpec } from '../store/modal';
+import { makeForEntry } from '../store/fresh';
 import type { Gedeeld } from '../store/groepsbank';
 
 const NO_UNLINK = 'Hier hangt een opkomst aan. Ontkoppelen kan alleen met het recht Opkomsten of Banken.';
@@ -199,8 +200,8 @@ export function LetterModal({ keyId, onClose }: { keyId: string; onClose: () => 
 /* ---------- Opkomst koppelen aan een datum ---------- */
 export function LinkModal({ keyId, q0, back, onClose, onTakeover }: { keyId: string; q0?: string; back?: string; onClose: () => void; onTakeover: (oid: string, fresh: boolean) => void }) {
   const S = useSpeltak();
-  const { opks, peekEntry, entryFor, newForEntry, sid, sp, can, canLink, shared, latest } = S;
-  const nav = useNavigate();
+  const { opks, peekEntry, sid, sp, can, canLink, shared, latest } = S;
+  const nav = useNavigate(), loc = useLocation();
   const e = peekEntry(keyId); const d = e ? e.date : keyId.slice(2);
   const [q, setQ] = useState(q0 || '');
   // terug uit Andere naam kiezen: de focus op Kiezen bij de groepsopkomst waar je vandaan kwam (staat hij er niet meer, dan het zoekveld)
@@ -222,7 +223,8 @@ export function LinkModal({ keyId, q0, back, onClose, onTakeover }: { keyId: str
     ...groupHits.filter(g => fit(g.opk)).map(g => ({ o: g.opk, from: 'group' as const, g }))];
   const fitsGroup = fits.some(f => f.from === 'group');
   const isKampRow = e && e.type === 'kamp';
-  const newOne = (kamp: boolean) => { const o = newForEntry({ ...entryFor(keyId) }, kamp); onClose(); nav(`/s/${sid}/bouwer/${o.id}`); };
+  // net als Maken in de opkomstbouwer: details open, en een melding met Ongedaan maken
+  const newOne = (kamp: boolean) => { onClose(); makeForEntry(S, keyId, kamp, nav, loc.pathname + loc.search); };
   // een nieuwe (lege) opkomst maken en die in de bouwer uitwerken hoort bij Opkomsten; uit de bank of een concept koppelen kan ook zonder
   const build = can('build');
   const openOpk = (id: string) => () => nav(`/s/${sid}/bouwer/${id}`);

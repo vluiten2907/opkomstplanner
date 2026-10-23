@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react';
-import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
+import { lazy, Suspense, useLayoutEffect } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigationType, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './store/auth';
 import { RolesProvider, useRoles } from './store/roles';
 import { SpeltakProvider } from './store/speltak';
@@ -37,6 +37,27 @@ function Home() {
   if (!ready) return <Loading />;
   return <Navigate to={isAdmin ? '/beheer' : '/speltakken'} replace />;
 }
+/**
+ * Naar een andere pagina: bovenaan beginnen (de browser houdt anders de oude scrollpositie, bijv. midden in de tijdlijn).
+ * Niet bij Terug/Vooruit (de browser zet je dan terug waar je was) en niet met ?focus= (de jaarplanning scrolt zelf naar die rij).
+ * Was de focus weg (de knop waarmee je ging bestaat niet meer of is verborgen), dan naar de inhoud, zodat een schermlezer daar verder leest
+ * en Tab niet bij het begin van de pagina begint. Een veld met autoFocus op de nieuwe pagina houdt de focus.
+ */
+function ScrollTop() {
+  const { pathname, search } = useLocation(), type = useNavigationType();
+  useLayoutEffect(() => {
+    if (type === 'POP' || new URLSearchParams(search).has('focus')) return;
+    window.scrollTo(0, 0);
+    // (weg = niet meer in de pagina, of verborgen omdat de nieuwe pagina nog laadt). Pas na de effecten: een venster dat net
+    // dichtging, zet de focus eerst nog terug (en houdt de pagina tot dan onbereikbaar).
+    const t = setTimeout(() => {
+      const a = document.activeElement;
+      if (!a || a === document.body || !a.isConnected || !a.getClientRects().length) document.getElementById('inhoud')?.focus({ preventScroll: true });
+    }, 0);
+    return () => clearTimeout(t);
+  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
 export default function App() {
   const { pathname } = useLocation();
   if (!configured) return <div className="auth-wrap"><div className="card pad stack auth-card"><h2>Firebase nog niet ingesteld</h2><p className="hint">Kopieer <code>.env.example</code> naar <code>.env</code>, vul de gegevens van je Firebase-webapp in en start opnieuw.</p></div></div>;
@@ -55,6 +76,7 @@ export default function App() {
       <Route path="/" element={<Gate><Home /></Gate>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes></Suspense></ErrorBoundary>
+    <ScrollTop />
     <Toast />
     <LeaveGuard />
   </RolesProvider></AuthProvider>;

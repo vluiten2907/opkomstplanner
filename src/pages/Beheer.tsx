@@ -7,7 +7,7 @@ import { useAuth } from '../store/auth';
 import { useRoles } from '../store/roles';
 import { toast } from '../store/toast';
 import PageHead from '../components/PageHead';
-import { ConfirmBtn, Field } from '../components/ui';
+import { ConfirmBtn, Field, announce } from '../components/ui';
 import { InviteLink, InviteList, useOpenInvites, type InviteScope } from '../components/Invites';
 import { addMember, setPerms, claimName, releaseName, syncNames, createGroep, newGroepId, createInvite, inviteOnce, renewInvite, revokeInvite, createSpeltakInGroep, deleteSpeltak, deleteGroep, countOpkomsten, ensureTlIds, findAccount, readAccounts, removeFromTeam, type AccountInfo, transferTeamleider, type Person, isEmail, linkSpeltak, removeGroupAdmin, removeRootPerson, renameGroep, setGroupAdmin, setTeamleider, type Me } from '../store/beheer';
 import { DEFAULT_LEIDING_PERMS, PERM_LABELS, normPerms, normSpeltak, isTeamleider, type Admin, type Member, type PermKey, type Groep, type Invite, type Speltak } from '../lib/types';
@@ -353,20 +353,26 @@ function releaseIfGone(g: Groep, all: Speltak[], exceptSid: string, uid: string,
   releaseName(g.id, uid, name).catch(() => {});
 }
 
-/** Iemand kiezen die al een account heeft: uit de bekende mensen van de groep, of op e-mailadres.
+/** Iemand kiezen: uit de bekende mensen van de groep, of op e-mailadres. Heeft dat e-mailadres (nog) geen account, dan volgt
+ *  `onNoAccount` (een uitnodiging maken; true = gelukt, het veld gaat leeg).
  *  Is de naam van die persoon al van iemand anders in de groep (onPick gooit 'name-taken'), dan kies je hier een andere naam. */
-function PersonPicker({ pool, exclude, label, button, groupName, onPick, children }: { pool: Person[]; exclude: string[]; label: string; button: string; groupName: string; onPick: (p: Person) => Promise<unknown>; children?: ReactNode }) {
+function PersonPicker({ pool, exclude, label, emailLabel, button, groupName, onPick, onNoAccount, children }: { pool: Person[]; exclude: string[]; label: string; emailLabel: string; button: string; groupName: string;
+  onPick: (p: Person) => Promise<unknown>; onNoAccount: (email: string) => Promise<boolean>; children?: ReactNode }) {
   const [sel, setSel] = useState(''); const [email, setEmail] = useState(''); const [busy, setBusy] = useState(false);
   const [taken, setTaken] = useState<{ p: Person; tried: string; name: string } | null>(null);
   const list = pool.filter(p => !exclude.includes(p.uid));
   const go = async () => {
     let p = list.find(x => x.uid === sel) || null;
     if (!p) {
-      if (!isEmail(email)) { toast('Kies iemand of vul een e-mailadres in.'); return; }
+      if (!isEmail(email)) { toast(list.length ? 'Kies iemand of vul een e-mailadres in.' : 'Vul een geldig e-mailadres in.'); return; }
       setBusy(true);
-      p = await findAccount(email).catch(() => null);
+      // opzoeken mislukt (bijv. geen verbinding): niet zomaar een uitnodiging maken
+      const found = await findAccount(email).then(x => x, () => undefined);
+      if (found === undefined) { setBusy(false); toast('Opzoeken lukt nu niet. Controleer de verbinding en probeer het opnieuw.'); return; }
+      // nog geen (bevestigd) account: meteen een uitnodiging; wie al een account heeft maar nog niet bevestigde, logt met de link in
+      if (!found) { try { if (await onNoAccount(email)) setEmail(''); } finally { setBusy(false); } return; }
       setBusy(false);
-      if (!p) { toast('Geen account gevonden met dit e-mailadres. Stuur een uitnodiging, of laat die persoon eerst inloggen en zijn e-mailadres bevestigen.'); return; }
+      p = found;
       if (exclude.includes(p.uid)) { toast('Deze persoon zit al in het team.'); return; }
       // al bekend in de groep (bijv. als Akela Welpen): die naam, niet de accountnaam
       const known = pool.find(x => x.uid === p!.uid);
@@ -391,7 +397,7 @@ function PersonPicker({ pool, exclude, label, button, groupName, onPick, childre
         <option value="">{email ? 'Iemand uit de groep kiezen…' : 'Kies iemand uit de groep…'}</option>
         {list.map(p => <option key={p.uid} value={p.uid}>{p.name}{p.email ? ` · ${p.email}` : ''}</option>)}
       </select>}
-      {!sel && <input className="inp" type="email" value={email} onChange={e => { setEmail(e.target.value); setTaken(null); }} onKeyDown={e => { if (e.key === 'Enter') go(); }} placeholder={list.length ? 'of e-mailadres van een account' : 'e-mailadres van een account'} aria-label="E-mailadres van een account" style={{ flex: '1 1 200px' }} />}
+      {!sel && <input className="inp" type="email" value={email} onChange={e => { setEmail(e.target.value); setTaken(null); }} onKeyDown={e => { if (e.key === 'Enter') go(); }} placeholder={list.length ? 'of e-mailadres' : 'e-mailadres'} aria-label={emailLabel} autoComplete="off" style={{ flex: '1 1 200px' }} />}
       {children}
       <button className="btn" disabled={busy} onClick={go}><UserPlus size={16} />{button}</button>
     </div>
@@ -406,29 +412,28 @@ function SpeltakRow({ sp, g, me, pool, all, names, open: openInv }: { sp: Spelta
   // Standaard ingeklapt; per speltak onthouden in deze browser.
   const [open, toggle] = useStoredToggle('opk.speltak.open.' + sp.id);
   const members = Object.entries(sp.members).sort((a, b) => Number(isTeamleider(sp, b[0])) - Number(isTeamleider(sp, a[0])) || a[1].name.localeCompare(b[1].name, 'nl'));
-  const [email, setEmail] = useState(''); const [inv, setInv] = useState<Invite | null>(null); const [busy, setBusy] = useState(false);
-  const [kind, setKind] = useState<'leiding' | 'teamleider'>('leiding');
-  const [addRole, setAddRole] = useState<'leiding' | 'teamleider'>('leiding');
+  const [inv, setInv] = useState<Invite | null>(null), [invLead, setInvLead] = useState('');
+  const [role, setRole] = useState<'leiding' | 'teamleider'>('leiding');
   const [showDel, setShowDel] = useState(false); const [del, setDel] = useState(''); const [deleting, setDeleting] = useState(false);
   const word = sp.name || 'verwijderen';
   const tl = teamleiders(sp);
-  const send = async () => {
-    if (!isEmail(email)) { toast('Vul een geldig e-mailadres in.'); return; }
-    if (Object.values(sp.members).some(m => m.email === email.trim().toLowerCase())) { toast('Deze persoon zit al in het team.'); return; }
-    setBusy(true);
-    const k = tl ? kind : 'teamleider';
+  // Toevoegen met een e-mailadres zonder account: meteen een uitnodiging (met de gekozen rol); de link staat dan hieronder
+  const invite = async (email: string) => {
+    if (Object.values(sp.members).some(m => (m.email || '').toLowerCase() === email.trim().toLowerCase())) { toast('Deze persoon zit al in het team.'); return false; }
+    const k = tl ? role : 'teamleider';
     try {
       if (k === 'teamleider') await ensureTlIds(sp);
       const inp = { kind: k, email, gid: g.id, groupName: g.name, sid: sp.id, speltakName: sp.name, perms: DEFAULT_LEIDING_PERMS };
       const r = await inviteOnce(inp, me.uid, openInv, () => createInvite(inp, me));
-      setInv(r.inv); setEmail(''); if (r.reused) reusedNote(r.inv.email);
-    } catch (e) { err(e, 'Uitnodiging maken mislukt.'); }
-    setBusy(false);
+      const lead = `Nog geen account met ${r.inv.email}: ${r.reused ? 'er stond al een uitnodiging, dit is dezelfde link.' : 'uitnodiging gemaakt.'}`;
+      setInv(r.inv); setInvLead(lead); if (r.reused) reusedNote(r.inv.email); else announce(lead + ' De link staat hieronder.');
+      return true;
+    } catch (e) { err(e, 'Uitnodiging maken mislukt.'); return false; }
   };
   const add = async (p: Person) => {
-    const role = tl ? addRole : 'teamleider';
+    const as = tl ? role : 'teamleider';
     try {
-      await claimName(g.id, p.uid, p.name); await addMember(sp, p, role, DEFAULT_LEIDING_PERMS); toast(`${p.name} is toegevoegd als ${role}`);
+      await claimName(g.id, p.uid, p.name); await addMember(sp, p, as, DEFAULT_LEIDING_PERMS); toast(`${p.name} is toegevoegd als ${as}`);
       // een openstaande uitnodiging voor deze persoon en deze speltak is nu overbodig (opruimen mag mislukken)
       const em = (p.email || '').toLowerCase();
       if (em) openInv.filter(i => i.email === em).forEach(i => { revokeInvite(i.id).catch(() => {}); if (inv?.id === i.id) setInv(null); });
@@ -458,17 +463,14 @@ function SpeltakRow({ sp, g, me, pool, all, names, open: openInv }: { sp: Spelta
         {members.map(([uid, m]) => <LeidingRow key={uid} sp={sp} g={g} me={me} uid={uid} m={m} all={all} full={fullName(names[(m.email || '').toLowerCase()])} />)}
         {!members.length && <p className="hint">Nog niemand in deze speltak.</p>}
       </div>
-      <b>Iemand met een account toevoegen</b>
-      <PersonPicker pool={pool} exclude={sp.memberIds} label="Persoon kiezen voor de speltak" button="Toevoegen" groupName={g.name || 'de groep'} onPick={add}>
-        {tl ? <select className="inp" value={addRole} onChange={e => setAddRole(e.target.value as 'leiding' | 'teamleider')} aria-label="Toevoegen als" style={{ width: 'auto', flex: 'none' }}><option value="leiding">als leiding</option><option value="teamleider">als teamleider</option></select> : null}
+      {/* één formulier: iemand uit de groep of een e-mailadres. Met een account komt die persoon er meteen bij, anders volgt een uitnodiging */}
+      <b>{tl ? 'Iemand toevoegen' : 'Teamleider toevoegen'}</b>
+      <PersonPicker pool={pool} exclude={sp.memberIds} label="Persoon kiezen voor de speltak" emailLabel={tl ? 'E-mailadres nieuw lid' : 'E-mailadres teamleider'} button="Toevoegen" groupName={g.name || 'de groep'} onPick={add} onNoAccount={invite}>
+        {tl ? <select className="inp" value={role} onChange={e => setRole(e.target.value as 'leiding' | 'teamleider')} aria-label="Rol" style={{ width: 'auto', flex: 'none' }}><option value="leiding">Leiding</option><option value="teamleider">Teamleider</option></select> : null}
       </PersonPicker>
-      {!tl && <p className="hint">Er is nog geen teamleider: wie je nu toevoegt of uitnodigt, wordt teamleider.</p>}
-      <b>Of uitnodigen met een link</b>
-      <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={tl ? 'e-mailadres nieuw lid' : 'e-mailadres teamleider'} aria-label={tl ? 'E-mailadres nieuw lid' : 'E-mailadres teamleider'} style={{ flex: '1 1 220px' }} />
-        {tl && <select className="inp" value={kind} onChange={e => setKind(e.target.value as 'leiding' | 'teamleider')} aria-label="Uitnodigen als" style={{ width: 'auto', flex: 'none' }}><option value="leiding">Leiding</option><option value="teamleider">Teamleider</option></select>}
-        <button className="btn" disabled={busy} onClick={send}><Link2 size={16} />{tl ? 'Uitnodigen' : 'Teamleider uitnodigen'}</button></div>
-      {tl && <p className="hint">Nieuwe leiding krijgt de rechten jaarplanning, opkomsten en banken; aanpassen kan hierboven bij de leiding. Bekijken mag iedereen in de speltak altijd.</p>}
-      {inv && <InviteLink key={inv.id} inv={inv} fromName={me.name} onClose={() => setInv(null)} />}
+      <p className="hint">{tl ? 'Heeft iemand nog geen account, dan maakt Toevoegen een uitnodigingslink. Nieuwe leiding krijgt de rechten jaarplanning, opkomsten en banken; aanpassen kan hierboven bij de leiding. Bekijken mag iedereen in de speltak altijd.'
+        : 'Er is nog geen teamleider: wie je nu toevoegt of uitnodigt, wordt teamleider. Heeft die persoon nog geen account, dan maakt Toevoegen een uitnodigingslink.'}</p>
+      {inv && <InviteLink key={inv.id} inv={inv} fromName={me.name} lead={invLead} onClose={() => setInv(null)} />}
       {!showDel ? <div className="row"><button className="btn sm ghost danger" onClick={() => setShowDel(true)}><Trash2 size={14} />Speltak verwijderen</button></div>
         : <div className="dangerzone"><b>Speltak verwijderen</b>
         <span className="hint">Alle opkomsten, activiteiten en de jaarplanning van {sp.name || 'deze speltak'} worden gewist en het team verliest de toegang. Dit kan niet ongedaan worden.</span>

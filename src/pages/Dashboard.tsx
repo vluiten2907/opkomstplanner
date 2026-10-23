@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { CalendarClock, ChevronLeft, ChevronRight, Download, ExternalLink, Mail, Plus, SquarePen, Tent, Users } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast, undoAction } from '../store/toast';
 import { openModal } from '../store/modal';
-import { markFresh } from '../store/fresh';
+import { makeForEntry, markFresh } from '../store/fresh';
 import { Strip, StatusPill, CatTags, PeopleChips, usePdf, PageTitle } from '../components/shared';
 import { Dot, TimePicker } from '../components/ui';
 import { addDays, cap, dayDiff, fmtLong, fmtRange, fmtShort, fmtT, fromISO, isoWeek, mon3, plural, todayISO, toISO, DAYS, MONTHS } from '../lib/time';
@@ -143,8 +143,9 @@ function TimeEdit({ st, en, onSet, onClose }: { st: number; en: number; onSet: (
 }
 
 function Hero({ r, today }: { r: Row; today: string }) {
-  const { settings, opkOf, presentForEntry, sid, can, canLink, saveOpk, savePlan, entryFor } = useSpeltak();
-  const nav = useNavigate(); const pdf = usePdf();
+  const S = useSpeltak();
+  const { settings, opkOf, presentForEntry, sid, can, canLink, saveOpk, savePlan, entryFor } = S;
+  const nav = useNavigate(), loc = useLocation(); const pdf = usePdf();
   const [timeEdit, setTimeEdit] = useState(false);
   const e = r.e, d = rowDate(r), o = opkOf(e);
   const [st, en] = entryTimes(settings, e, o || null), days = dayDiff(today, d);
@@ -213,7 +214,10 @@ function Hero({ r, today }: { r: Row; today: string }) {
         {can('build') && <button className="btn" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })}><Users size={16} />Leiding indelen</button>}
         <button className="btn" onClick={() => pdf(o)}><Download size={16} />PDF maken</button><button className="btn ghost" onClick={gotoRow}>In jaarplanning</button></div>
     </> : <div className="empty"><span>{kamp ? 'Aan dit kamp is nog geen programma gekoppeld.' : 'Aan deze opkomst is nog geen programma gekoppeld.'}</span>
-      <div className="row">{canLink && <button className="btn primary" onClick={() => openModal({ kind: 'link', keyId: r.key })}>Opkomst koppelen</button>}<button className="btn" onClick={gotoRow}>In jaarplanning</button></div></div>}
+      {/* met het recht Opkomsten meteen een programma maken (zoals Maken in de opkomstbouwer); koppelen aan iets uit de bank of een concept kan ernaast */}
+      <div className="row">{canLink && can('build') ? <><button className="btn primary" onClick={() => makeForEntry(S, r.key, kamp, nav, loc.pathname + loc.search)}><Plus size={16} />Programma maken</button>
+        <button className="btn" onClick={() => openModal({ kind: 'link', keyId: r.key })}>Koppelen</button></>
+        : canLink && <button className="btn primary" onClick={() => openModal({ kind: 'link', keyId: r.key })}>Opkomst koppelen</button>}<button className={'btn' + (canLink && can('build') ? ' ghost' : '')} onClick={gotoRow}>In jaarplanning</button></div></div>}
   </section>;
 }
 

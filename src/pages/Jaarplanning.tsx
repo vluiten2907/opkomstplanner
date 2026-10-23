@@ -84,9 +84,18 @@ function TopicInput({ keyId, value, placeholder, label, disabled }: { keyId: str
   const [v, setV] = useState(value); const editing = useRef(false);
   useEffect(() => { if (!editing.current) setV(value); }, [value]);
   const commit = (val: string) => { const en = { ...entryFor(keyId), topic: val }; const o = opkOf(en); if (o) saveOpk({ ...o, title: val }); savePlan(en); };
-  return <input className="ptopic" value={v} disabled={disabled} placeholder={placeholder} aria-label={label}
+  // Enter (op de telefoon: Volgende) gaat door naar het onderwerp van de volgende datum, Shift+Enter naar de vorige; zo vul je een
+  // seizoen zonder steeds te tikken. Velden die je niet mag aanpassen sla je over; na de laatste datum gaat het veld gewoon dicht.
+  // (Opslaan hoeft niet: dat gebeurt al bij elke letter.)
+  const next = (el: HTMLInputElement, back: boolean) => {
+    const all = [...document.querySelectorAll<HTMLInputElement>('.ptable .ptopic')].filter(x => !x.disabled);
+    const to = all[all.indexOf(el) + (back ? -1 : 1)];
+    if (!to) { el.blur(); return; }
+    to.focus({ preventScroll: true }); to.setSelectionRange(to.value.length, to.value.length); to.scrollIntoView({ block: 'nearest' });
+  };
+  return <input className="ptopic" value={v} disabled={disabled} placeholder={placeholder} aria-label={label} enterKeyHint="next"
     onFocus={() => { editing.current = true; }} onChange={e => { setV(e.target.value); commit(e.target.value); }} onBlur={() => { editing.current = false; }}
-    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />;
+    onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); next(e.currentTarget, e.shiftKey); } }} />;
 }
 
 function PlanRow({ r, today }: { r: Row; today: string }) {

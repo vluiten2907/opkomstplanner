@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Copy, Download, GraduationCap, Plus, Tent, Trash2, TriangleAlert, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast, undoAction } from '../store/toast';
 import { linkBankCopy, linkDraft } from '../components/modals';
 import { openModal, withFreeName } from '../store/modal';
 import { guardLeave, setUnsaved, useDirty } from '../store/unsaved';
-import { isFresh, markFresh, watchFresh } from '../store/fresh';
+import { isFresh, makeForEntry, markFresh, watchFresh } from '../store/fresh';
 import { Strip, PickOpk, usePdf, PageTitle, SaveBar, StatusPill, askBankName } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, TimePicker, useMedia, useSheetDialog } from '../components/ui';
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from '../components/timeline';
@@ -41,8 +41,8 @@ function metaPref(narrow: boolean, v?: '0' | '1') {
 export default function Bouwer() {
   const { oid } = useParams();
   const S = useSpeltak();
-  const { opks, plans, settings, saveOpk, sid, can, canLink, getO, removeOpk, entryOfOpk, entryFor, newForEntry, practice } = S;
-  const nav = useNavigate();
+  const { opks, plans, settings, saveOpk, sid, can, canLink, getO, removeOpk, entryOfOpk, practice } = S;
+  const nav = useNavigate(), loc = useLocation();
   const o = oid ? getO(oid) : undefined;
   if (oid && o) return <Builder key={o.id} o={o} />;
   const bank = opks.filter(x => x.state === 'bank').sort(byTitle), drafts = opks.filter(x => x.state === 'draft').sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
@@ -53,8 +53,8 @@ export default function Bouwer() {
     .sort((a, b) => a.e.date.localeCompare(b.e.date)).slice(0, 6);
   // de eerstvolgende datums met een onderwerp (of een kamp) maar nog zonder programma; koppelen schrijft de jaarplanning én de opkomst: alleen met dat recht
   const open = canLink ? rowsIn(settings, plans, today, addDays(today, 180)).filter(r => !!r.e && !r.e.opkId && r.e.type !== 'geen' && (!!r.e.topic.trim() || r.e.type === 'kamp')).slice(0, 3) : [];
-  // met het recht Opkomsten meteen een programma maken (onderwerp als titel, gekoppeld); anders kiezen uit de bank of een concept
-  const make = (key: string) => { const en = { ...entryFor(key) }, n = newForEntry(en, en.type === 'kamp'); nav(`/s/${sid}/bouwer/${n.id}`); };
+  // met het recht Opkomsten meteen een programma maken (onderwerp als titel, gekoppeld, met Ongedaan maken); anders kiezen uit de bank of een concept
+  const make = (key: string, kamp: boolean) => makeForEntry(S, key, kamp, nav, loc.pathname + loc.search);
   const create = (kamp: boolean) => { const n = kamp ? newKamp(settings, 3) : newOpk(settings); saveOpk(n); markFresh(n.id); nav(`/s/${sid}/bouwer/${n.id}`); };
   // past er een concept of iets uit de bank bij het onderwerp: meteen gebruiken, net als Kiezen in Koppelen
   // (een concept wordt zelf gekoppeld, uit de bank komt een kopie zonder namen met Opkomst overnemen)
@@ -75,7 +75,7 @@ export default function Bouwer() {
         // past er al een concept of iets uit de bank bij het onderwerp? Dan is Gebruiken de hoofdknop (het venster Koppelen zet die ook bovenaan)
         const fit = e.topic.trim() ? [...drafts, ...bank].find(x => fitsTopic(x, e.topic)) : undefined;
         const pick = <button className="btn sm" onClick={() => openModal({ kind: 'link', keyId: r.key })} aria-label={`Koppelen: ${what}`}>Koppelen</button>;
-        const makeBtn = <button className={'btn sm' + (fit ? '' : ' primary')} onClick={() => make(r.key)} aria-label={`Programma maken: ${what}`}><Plus size={14} />Maken</button>;
+        const makeBtn = <button className={'btn sm' + (fit ? '' : ' primary')} onClick={() => make(r.key, e.type === 'kamp')} aria-label={`Programma maken: ${what}`}><Plus size={14} />Maken</button>;
         return <div key={r.key} className="pick">
           <div className="info"><span className="pick-kicker"><span className="pk-when"><CalendarDays size={14} aria-hidden="true" />{fmtRange(d, e.endDate)}</span>{e.type === 'kamp' && <span className="pill kamp">Kamp</span>}</span><b>{what}</b>
             {fit && <span className="hint">Past bij: {fit.title || 'Naamloze opkomst'} ({fit.state === 'bank' ? 'opkomstenbank' : 'concept'})</span>}</div>
@@ -315,7 +315,7 @@ function Builder({ o: stored }: { o: Opk }) {
           {/* kop van de pagina voor schermlezers; de zichtbare titel is het invoerveld eronder */}
           <h1 className="sr-only">{kamp ? 'Weekendkamp' : 'Opkomst'}: {o.title.trim() || 'zonder titel'}</h1>
           <div className="row"><span className="eyebrow">{kamp ? 'Weekendkampplanner' : 'Opkomstbouwer'}</span>{kamp && <span className="pill kamp">Kamp</span>}{pill}{readOnly && <span className="pill neutral">Alleen lezen</span>}</div>
-          <TitleArea value={o.title} readOnly={readOnly} onChange={v => upd(() => { o.title = v; if (e) savePlan({ ...e, topic: v }); })} placeholder={kamp ? 'Titel van het kamp' : 'Opkomst titel'} autoFocus={fresh && !readOnly} />
+          <TitleArea value={o.title} readOnly={readOnly} onChange={v => upd(() => { o.title = v; if (e) savePlan({ ...e, topic: v }); })} placeholder={kamp ? 'Titel van het kamp' : 'Opkomst titel'} autoFocus={fresh && !readOnly && !o.title.trim()} />
         </div>
         <div className="row">{actions}{can('build') ? <button className="btn ghost" onClick={() => go(`/s/${sid}/bouwer`)} title="Nieuwe opkomst of weekendkamp"><Plus size={16} />Nieuw</button>
           : <button className="btn ghost" onClick={() => go(`/s/${sid}/bouwer`)}><ChevronLeft size={16} />Alle opkomsten</button>}</div>

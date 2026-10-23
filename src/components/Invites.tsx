@@ -78,7 +78,7 @@ export function InviteList({ invites, showWhere = true, renew }: { invites: Invi
 /** Net gemaakte (of hergebruikte) uitnodiging: link tonen met kopiëren en mailen.
  *  Een hergebruikte uitnodiging kan van iemand anders zijn en al even lopen: afzender en geldigheid komen uit de uitnodiging zelf.
  *  Laten mailen door de server kan alleen wie de uitnodiging maakte (public/api/uitnodiging-mail.php). */
-export function InviteLink({ inv, fromName, onClose }: { inv: Invite; fromName: string; onClose?: () => void }) {
+export function InviteLink({ inv, fromName, lead, onClose }: { inv: Invite; fromName: string; lead?: string; onClose?: () => void }) {
   const { user } = useAuth();
   const [copied, setCopied] = useState(false);
   const [mail, setMail] = useState<'' | 'bezig' | 'verstuurd' | 'uit'>('');
@@ -86,7 +86,7 @@ export function InviteLink({ inv, fromName, onClose }: { inv: Invite; fromName: 
   const what = `${KIND_LABELS[inv.kind]} voor ${where_(inv)}`;
   const mine = !!user && inv.invitedBy === user.uid, by = inv.invitedByName || fromName, until = validUntil(inv);
   const mailto = `mailto:${inv.email}?subject=${encodeURIComponent('Uitnodiging Opkomstplanner: ' + what)}&body=${encodeURIComponent(`Hoi,\n\n${by || 'Ik'} nodigt je uit voor de Opkomstplanner als ${what}.\n\nOpen deze link. Heb je al een account? Log dan in. Anders maak je er een aan met dit e-mailadres (${inv.email}):\n${url}\n\nDe link is geldig t/m ${until}.\n\nGroet,\n${fromName}`)}`;
-  return <div className="banknote"><span>Uitnodiging als <b>{KIND_LABELS[inv.kind]}</b>{inv.transfer ? ' (rol overdragen)' : ''} voor <b>{inv.email}</b>. {mine ? 'Verstuur de mail of stuur de link zelf door' : 'Stuur de link zelf door'}; hij werkt alleen voor dat e-mailadres en is geldig t/m {until}.</span>
+  return <div className="banknote">{lead && <b>{lead}</b>}<span>Uitnodiging als <b>{KIND_LABELS[inv.kind]}</b>{inv.transfer ? ' (rol overdragen)' : ''} voor <b>{inv.email}</b>. {mine ? 'Verstuur de mail of stuur de link zelf door' : 'Stuur de link zelf door'}; hij werkt alleen voor dat e-mailadres en is geldig t/m {until}.</span>
     {!mine && <span className="hint">Gemaakt door {by || 'iemand anders'}. Kopieer de link of vraag {by || 'die persoon'} om hem te mailen.</span>}
     <code className="mono-code">{url}</code>
     <div className="row"><button className="btn sm" onClick={async () => setCopied(await copyText(url))}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? 'Gekopieerd' : 'Kopiëren'}</button>{mine && mail !== 'uit' && <button className="btn sm primary" disabled={mail === 'bezig' || mail === 'verstuurd'} onClick={async () => {

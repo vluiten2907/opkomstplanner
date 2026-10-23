@@ -85,6 +85,6 @@ function LibEditor({ l, isNew, lib, readOnly, onClose, onCancelNew, onSave, onCo
     <Field label="Voorbereiding" htmlFor="lf-prep"><textarea id="lf-prep" rows={3} readOnly={readOnly} value={d.prep} onChange={e => upd(() => { d.prep = e.target.value; })} /></Field>
     <Field label="Materiaal" htmlFor="lf-mat"><textarea id="lf-mat" rows={4} readOnly={readOnly} value={d.materials} onChange={e => upd(() => { d.materials = e.target.value; })} placeholder="Eén ding per regel" /></Field>
     {!readOnly && !isNew && <div className="stack" style={{ gap: 4 }}><div className="row"><ConfirmBtn label="Uit de bank verwijderen" confirm="Klik nogmaals om te verwijderen" onConfirm={onDelete} /></div><p className="hint">Opkomsten waarin hij al staat, blijven gewoon staan.</p></div>}
-    {!readOnly && <SaveBar dirty={dirty} isNew={isNew} title={d.title} taken={taken} suggest={freeName(lib, d.title || l.title)} onCancel={cancel} onSave={save} onCopy={copy} />}
+    {!readOnly && <SaveBar dirty={dirty} isNew={isNew} newHint="Geef de activiteit een titel." title={d.title} taken={taken} suggest={freeName(lib, d.title || l.title)} onCancel={cancel} onSave={save} onCopy={copy} />}
   </div>;
 }
