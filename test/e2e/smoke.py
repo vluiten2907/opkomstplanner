@@ -2024,6 +2024,15 @@ with sync_playwright() as p:
         pg.locator('.bcard').first.click(); w(300); opened = pg.locator('aside.side.editing').count() == 1
         pg.keyboard.press('Escape'); w(300)
         check(opened and pg.locator('aside.side.editing').count() == 0, f'{bank}bank breed: Esc sluit het zijpaneel')
+    # Esc in "Naam nieuwe categorie" sluit alleen dat veld: het paneel blijft open, de focus terug op Categorie
+    for page, card_sel, pre in [('activiteiten', '.bcard', 'lf'), ('bouwer/opk-jungle', '.lanes .blk:has-text("Junglejacht")', 'bf')]:
+        pg.goto(BASE + '/s/oefen/' + page); w(1200)
+        pg.locator(card_sel).first.click(); w(300); cat0 = pg.input_value(f'#{pre}-cat')
+        pg.select_option(f'#{pre}-cat', '__new'); w(200); pg.fill('.newcat input', 'Kook'); pg.locator('.newcat input').press('Escape'); w(300)
+        check(pg.locator(f'#{pre}-title').count() == 1 and pg.locator('.newcat').count() == 0 and pg.evaluate(ACT) == f'{pre}-cat'
+              and pg.input_value(f'#{pre}-cat') == cat0 and pg.locator('.toast.show button:has-text("Weggooien")').count() == 0,
+              f'{page}: Esc bij Naam nieuwe categorie sluit alleen dat veld, paneel blijft open, focus op Categorie')
+        pg.keyboard.press('Escape'); w(300)
     pg.goto(BASE + '/s/oefen/jaarplanning'); w(1200)
     check(not pg.evaluate(NONAME) and pg.locator('.rangebar label:text-is("Van")').get_attribute('for'), 'jaarplanning: elk veld heeft een naam (ook Van en Tot en met)')
     pg.goto(BASE + '/s/oefen/instellingen'); w(1200)
