@@ -252,8 +252,10 @@ service cloud.firestore {
         && request.resource.data.tlIds == [];
 
       allow update: if signedIn() && (
-        // instellingen, groepsnaam en speltaknaam: teamleider of leiding met recht 'settings'
-        (can('settings') && changed().hasOnly(['settings', 'groupName', 'name']))
+        // instellingen en speltaknaam: teamleider of leiding met recht 'settings'. De groepsnaam alleen bij een oude
+        // speltak zonder groep; onder een groep hoort hij bij de groep (kop, pdf, uitnodigingen) en past de beheerder hem aan.
+        (can('settings') && (changed().hasOnly(['settings', 'name'])
+          || (spGid(resource.data) == null && changed().hasOnly(['settings', 'groupName', 'name']))))
         // beheerder van de groep: team, teamleiders, naam; alleen Beheer (totaal) verhuist een speltak naar een andere groep
         || (isAdmin()
             && changed().hasOnly(['members', 'memberIds', 'tlIds', 'name', 'groupName', 'gid'])
