@@ -135,7 +135,7 @@ function NameList({ items, placeholder, label, onChange, dedupe }: { items: stri
 function AddRow({ placeholder, onAdd }: { placeholder: string; onAdd: (v: string) => void }) {
   const [v, setV] = useState('');
   const add = () => { const t = v.trim(); if (!t) return; onAdd(t); setV(''); };
-  return <div className="row"><input className="inp" value={v} onChange={e => setV(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} placeholder={placeholder} style={{ flex: 1 }} /><button className="btn" onClick={add}>Toevoegen</button></div>;
+  return <div className="row"><input className="inp" value={v} onChange={e => setV(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} placeholder={placeholder} aria-label={placeholder} style={{ flex: 1 }} /><button className="btn" onClick={add}>Toevoegen</button></div>;
 }
 
 /* ---------- Back-up terugzetten (ook uit de losse versie) ---------- */
@@ -252,8 +252,8 @@ function Team() {
     {manage && practice && <p className="hint">In de oefenomgeving kun je niemand uitnodigen. In je echte speltak maak je hier een uitnodigingslink voor nieuwe leiding.</p>}
     {manage && !practice && <div className="invite stack">
       <h3><UserPlus size={16} style={{ verticalAlign: -3, marginRight: 6 }} />Uitnodigen</h3>
-      <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); invite(); } }} placeholder="e-mailadres" style={{ flex: '1 1 220px' }} />
-        <div className="seg"><Chip on={kind === 'leiding'} onClick={() => setKind('leiding')}>Leiding</Chip>
+      <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); invite(); } }} placeholder="e-mailadres" aria-label="E-mailadres" style={{ flex: '1 1 220px' }} />
+        <div className="seg" role="group" aria-label="Uitnodigen als"><Chip on={kind === 'leiding'} onClick={() => setKind('leiding')}>Leiding</Chip>
           {isAdmin && <Chip on={kind === 'teamleider'} onClick={() => setKind('teamleider')}>Teamleider</Chip>}
           {isTL && <Chip on={kind === 'transfer'} onClick={() => setKind('transfer')}>Mijn rol overdragen</Chip>}</div></div>
       {kind === 'leiding' && <PermGrid perms={perms} onChange={(k, v) => setPerms({ ...perms, [k]: v })} />}

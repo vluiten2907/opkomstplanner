@@ -6,7 +6,7 @@ import { toast } from '../store/toast';
 import { openModal, withFreeName } from '../store/modal';
 import { guardLeave, setUnsaved, useDirty } from '../store/unsaved';
 import { Strip, PickOpk, usePdf, PageTitle, SaveBar } from '../components/shared';
-import { Chip, ConfirmBtn, Dot, Field, TimePicker } from '../components/ui';
+import { Chip, ConfirmBtn, Dot, Field, TimePicker, useSheetDialog } from '../components/ui';
 import { Ticks, PrepZones, blkGeom, lanesStyle } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, uid, DAYS } from '../lib/time';
@@ -26,6 +26,12 @@ function TitleArea({ value, readOnly, onChange, placeholder }: { value: string; 
   return <textarea ref={ref} id="om-title" rows={1} value={value} readOnly={readOnly} aria-label="Opkomst titel" placeholder={placeholder}
     onKeyDown={ev => { if (ev.key === 'Enter' && !ev.nativeEvent.isComposing) ev.preventDefault(); }} onChange={ev => onChange(ev.target.value.replace(/[\r\n]+/g, ' '))} />;
 }
+
+/** Focus naar het eerste element dat er is (na het renderen); bijv. een onderdeel in de tijdlijn of de knop + Onderdeel. */
+const focusSoon = (...sels: string[]) => setTimeout(() => {
+  for (const q of sels) { const el = document.querySelector<HTMLElement>(q); if (el) { el.focus({ preventScroll: true }); el.scrollIntoView?.({ block: 'nearest' }); return; } }
+}, 0);
+const blkSel = (id: string) => `.lanes [data-bid="${CSS.escape(id)}"]`;
 
 /* ============ Startscherm ============ */
 export default function Bouwer() {
@@ -102,18 +108,27 @@ function Builder({ o: stored }: { o: Opk }) {
   const whole = kamp ? analyze(o, present, leaders) : A;
   const sel = selId ? allBlocks(o).find(b => b.id === selId) || null : null;
   useEffect(() => { if (selId && !sel) setSelId(null); }, [selId, sel]);
-  const select = (id: string | null) => {
+  // kb: met het toetsenbord gekozen, dan gaat de focus meteen naar het eerste veld van het onderdeel
+  const select = (id: string | null, kb = false) => {
     if (id && kamp) { const k = o.days.findIndex(d => d.blocks.some(b => b.id === id)); if (k >= 0 && k !== di) setDayIdx(k); }
     setSelId(id); if (id && sideRef.current) sideRef.current.scrollTop = 0;
+    if (id && kb) setTimeout(() => document.getElementById('bf-title')?.focus(), 30);
   };
+  // sluiten (kruisje, Esc of naast het paneel): de focus gaat terug naar het onderdeel in de tijdlijn
+  const closeEditor = () => { const id = selId; setSelId(null); if (id) focusSoon(blkSel(id)); };
+  const [sheetRef, sheetProps] = useSheetDialog(!!sel, 'Onderdeel bewerken', () => sel ? document.querySelector<HTMLElement>(blkSel(sel.id)) : null);
   const deleteBlock = (id: string) => {
     if (readOnly) return;
     const dayId = kamp ? o.days.find(d => d.blocks.some(x => x.id === id))?.id : null;
     const blocksOf = (x: Opk) => kamp ? x.days.find(d => d.id === dayId)?.blocks : x.blocks;
     const list = blocksOf(o) || [];
     const i = list.findIndex(b => b.id === id); if (i < 0) return;
+    // daarna de focus op het volgende onderdeel (of het vorige), anders op + Onderdeel: niet kwijt naar het begin van de pagina
+    const rest = list.filter(x => x.id !== id).sort((a, c) => a.start - c.start);
+    const nb = rest.find(x => x.start >= list[i].start) || rest[rest.length - 1];
     const [b] = list.splice(i, 1); if (selId === id) setSelId(null);
     upd(() => {});
+    focusSoon(...(nb ? [blkSel(nb.id)] : []), '#bf-add');
     // terugzetten in de opkomst zoals hij nú is, zodat wat je intussen aanpaste blijft staan
     toast(`"${b.title || 'Naamloos onderdeel'}" verwijderd`, { label: 'Ongedaan maken', fn: () => live.current.upd(() => {
       const to = blocksOf(live.current.o); if (!to || to.some(x => x.id === b.id)) return;
@@ -132,11 +147,13 @@ function Builder({ o: stored }: { o: Opk }) {
   };
   useEffect(() => {
     const h = (ev: KeyboardEvent) => {
-      const tag = (document.activeElement && document.activeElement.tagName) || '';
-      if (ev.key === 'Escape' && selId) { setSelId(null); return; }
+      const act = document.activeElement as HTMLElement | null, tag = (act && act.tagName) || '';
+      // met een venster open sluit Esc alleen het venster
+      if (ev.key === 'Escape' && selId) { if (!ev.defaultPrevented && !document.querySelector('.modal')) closeEditor(); return; }
       if (readOnly) return;
-      const onBlk = document.activeElement?.classList.contains('blk');
-      if ((ev.key === 'Delete' || (ev.key === 'Backspace' && (tag === 'BODY' || onBlk))) && selId && !['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) && !document.querySelector('.modal')) { ev.preventDefault(); deleteBlock(selId); }
+      // het onderdeel met de focus, anders het gekozen onderdeel
+      const bid = act?.classList.contains('blk') ? act.dataset.bid : undefined, target = bid || selId;
+      if ((ev.key === 'Delete' || (ev.key === 'Backspace' && (tag === 'BODY' || bid))) && target && !['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) && !document.querySelector('.modal')) { ev.preventDefault(); deleteBlock(target); }
     };
     document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h);
   });
@@ -215,20 +232,22 @@ function Builder({ o: stored }: { o: Opk }) {
     </div><div style={{ padding: '0 16px 16px' }}><Strip o={D as Day} /></div></div>
     <div className="plan-main">
       <section className="card" aria-label="Tijdlijn">
+        <div className="tl-top"><span className="eyebrow">Tijdlijn{kamp ? ' · ' + (D as Day).label : ''}</span>
+          {!readOnly && <button id="bf-add" className="btn sm" onClick={() => addAt(firstFree(D, 15) ?? firstFree(D, 5) ?? D.start)}><Plus size={14} />Onderdeel</button>}</div>
         <div className="tl-head"><span /><div className="cols3"><span>Programma-onderdeel</span><span className="cl">Locatie</span><span>{nn ? 'Minimaal leiding' : 'Verantwoordelijk'}</span></div></div>
         <div className="tl-scroll"><Timeline ctx={ctx} A={A} selId={selId} lanesRef={lanesRef} onSelect={select} onDelete={deleteBlock} onAdd={addAt} onChange={() => upd(() => {})} /></div>
-        <div className="tl-foot">{readOnly ? 'Je kunt deze opkomst bekijken, maar niet aanpassen.' : 'Klik in de tijdlijn om iets toe te voegen.'}</div>
+        <div className="tl-foot">{readOnly ? 'Je kunt deze opkomst bekijken, maar niet aanpassen.' : 'Klik in de tijdlijn of gebruik + Onderdeel om iets toe te voegen.'}</div>
       </section>
       <aside ref={sideRef} className={'card side sheet' + (sel ? ' editing' : '')} aria-label="Zijpaneel">
-        {sel ? <Editor key={sel.id} b={sel} ctx={ctx} upd={upd} onClose={() => setSelId(null)} onDelete={() => deleteBlock(sel.id)} onDup={() => {
+        {sel ? <div ref={sheetRef} {...sheetProps}><Editor key={sel.id} b={sel} ctx={ctx} upd={upd} onClose={closeEditor} onDelete={() => deleteBlock(sel.id)} onDup={() => {
           const fits = sel.start + 2 * sel.dur <= T1; const c = { ...clone(sel), id: uid(), start: fits ? sel.start + sel.dur : sel.start };
           upd(() => { D.blocks.push(c); }); select(c.id); toast(fits ? 'Kopie direct erna gezet' : 'Kopie op dezelfde tijd gezet');
-        }} saveLib={saveLib} />
+        }} saveLib={saveLib} /></div>
           : <SidePanel tab={sideTab} setTab={t => { setSideTab(t); if (window.matchMedia('(max-width: 900px)').matches) sideRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} ctx={ctx} A={whole} lanesRef={lanesRef} onSelect={select}
             onPlan={l => { const f = firstFree(D, Math.min(l.dur, D.end - D.start)); const b = insertLib(l, f == null ? D.start : f); toast(f == null ? 'Geen vrij moment lang genoeg; gezet op ' + fmtT(b.start) : 'Ingepland om ' + fmtT(b.start)); }}
             onDrop={(l, m) => { const b = insertLib(l, m); toast('Ingepland om ' + fmtT(b.start)); }} />}
       </aside>
-      <div className={'scrim' + (sel ? ' on' : '')} onClick={() => setSelId(null)} />
+      <div className={'scrim' + (sel ? ' on' : '')} onClick={closeEditor} />
     </div>
     {draft && !readOnly && <SaveBar sticky dirty={dirty} title={o.title} taken={(n, c) => nameTaken(bankOpks, n, c ? null : o.id)} suggest={freeName(bankOpks, o.title || stored.title)} onCancel={cancelBank} onSave={saveBank} onCopy={copyBank} />}
   </div>;
@@ -273,7 +292,7 @@ function DaysBar({ o, di, setDayIdx, upd, date, readOnly }: { o: Opk; di: number
 }
 
 /* ============ Tijdlijn ============ */
-function Timeline({ ctx, A, selId, lanesRef, onSelect, onDelete, onAdd, onChange }: { ctx: Ctx; A: Analysis; selId: string | null; lanesRef: React.RefObject<HTMLDivElement | null>; onSelect: (id: string) => void; onDelete: (id: string) => void; onAdd: (m: number) => void; onChange: () => void }) {
+function Timeline({ ctx, A, selId, lanesRef, onSelect, onDelete, onAdd, onChange }: { ctx: Ctx; A: Analysis; selId: string | null; lanesRef: React.RefObject<HTMLDivElement | null>; onSelect: (id: string, kb?: boolean) => void; onDelete: (id: string) => void; onAdd: (m: number) => void; onChange: () => void }) {
   const { settings } = useSpeltak();
   const { o, D, T0, T1, row, nn, readOnly } = ctx;
   const [, bump] = useState(0);
@@ -315,11 +334,11 @@ function Timeline({ ctx, A, selId, lanesRef, onSelect, onDelete, onAdd, onChange
         const g = blkGeom(pos[b.id], b, T0, row, b.id === selId), c = catOf(settings, b.cat);
         const cls = [...g.cls, drag.current?.id === b.id && drag.current.moved ? 'dragging' : ''].join(' ');
         const under = b.minLeaders && b.names.length < b.minLeaders, mats = splitLines(b.materials).length;
-        return <div key={b.id} className={cls} tabIndex={0} role="button" aria-label={`${b.title || 'Naamloos onderdeel'}, ${fmtT(b.start)} tot ${fmtT(b.start + b.dur)}`}
+        return <div key={b.id} className={cls} data-bid={b.id} tabIndex={0} role="button" aria-label={`${b.title || 'Naamloos onderdeel'}, ${fmtT(b.start)} tot ${fmtT(b.start + b.dur)}`}
           style={{ ['--c' as any]: c.color, ...g.style }}
           onPointerDown={ev => { const t = ev.target as HTMLElement; if (t.closest('.bdel')) return; const rs = !!t.closest('.rs'), grip = !!t.closest('.grip'); startDrag(ev, b, rs ? 'resize' : 'move', rs || grip); }}
           onClick={ev => { ev.stopPropagation(); if (suppress.current) return; onSelect(b.id); }}
-          onKeyDown={ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onSelect(b.id); } }}>
+          onKeyDown={ev => { if (ev.target === ev.currentTarget && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); onSelect(b.id, true); } }}>
           <div className="cols3">
             <div className="c1"><span className="grip" title="Vastpakken om te verplaatsen" />
               <div className="t">{b.title || 'Naamloos onderdeel'}</div>
@@ -346,7 +365,7 @@ function Timeline({ ctx, A, selId, lanesRef, onSelect, onDelete, onAdd, onChange
 }
 
 /* ============ Zijpaneel: bank en controle ============ */
-function SidePanel({ tab, setTab, ctx, A, lanesRef, onSelect, onPlan, onDrop }: { tab: 'bank' | 'check'; setTab: (t: 'bank' | 'check') => void; ctx: Ctx; A: Analysis; lanesRef: React.RefObject<HTMLDivElement | null>; onSelect: (id: string) => void; onPlan: (l: Lib) => void; onDrop: (l: Lib, m: number) => void }) {
+function SidePanel({ tab, setTab, ctx, A, lanesRef, onSelect, onPlan, onDrop }: { tab: 'bank' | 'check'; setTab: (t: 'bank' | 'check') => void; ctx: Ctx; A: Analysis; lanesRef: React.RefObject<HTMLDivElement | null>; onSelect: (id: string, kb?: boolean) => void; onPlan: (l: Lib) => void; onDrop: (l: Lib, m: number) => void }) {
   const { settings, lib, leaders } = useSpeltak();
   const { o, T0, T1, row, nn, readOnly } = ctx;
   const [q, setQ] = useState(''); const [cat, setCat] = useState('');
@@ -377,8 +396,8 @@ function SidePanel({ tab, setTab, ctx, A, lanesRef, onSelect, onPlan, onDrop }: 
   if (tab === 'bank') {
     const ql = q.toLowerCase(), items = lib.filter(l => (!cat || l.cat === cat) && (!ql || (l.title + ' ' + l.short + ' ' + l.location).toLowerCase().includes(ql))).sort(byTitle);
     return <>{tabs}<div className="pad stack">
-      <div className="row"><input className="inp" type="search" placeholder="Zoek activiteit" value={q} onChange={e => setQ(e.target.value)} style={{ flex: '1 1 140px' }} />
-        <select className="inp" value={cat} onChange={e => setCat(e.target.value)} style={{ flex: '1 1 120px' }}><option value="">Alle categorieën</option>{settings.categories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></div>
+      <div className="row"><input className="inp" type="search" placeholder="Zoek activiteit" aria-label="Zoek activiteit" value={q} onChange={e => setQ(e.target.value)} style={{ flex: '1 1 140px' }} />
+        <select className="inp" aria-label="Categorie" value={cat} onChange={e => setCat(e.target.value)} style={{ flex: '1 1 120px' }}><option value="">Alle categorieën</option>{settings.categories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></div>
       <div className="libs">{items.length ? items.map(l => <div key={l.id} className="lib lift transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-0.5" style={{ ['--c' as any]: catOf(settings, l.cat).color }}
         onPointerDown={ev => { if (readOnly || ev.button || (ev.target as HTMLElement).closest('button')) return; const grip = !!(ev.target as HTMLElement).closest('.lgrip'); if (ev.pointerType !== 'mouse' && !grip) return; ld.current = { l, x0: ev.clientX, y0: ev.clientY, started: false, m: null }; document.body.style.userSelect = 'none'; if (grip) ev.preventDefault(); }}>
         <span className="lgrip" title="Sleep naar de tijdlijn" />
@@ -391,7 +410,7 @@ function SidePanel({ tab, setTab, ctx, A, lanesRef, onSelect, onPlan, onDrop }: 
   const people = Object.entries(A.per).sort((a, b) => a[0].localeCompare(b[0], 'nl')), free = A.present.filter(n => !A.per[n]);
   return <>{tabs}<div className="pad stack">
     <h3>Aandachtspunten</h3>
-    {A.issues.length ? <ul className="issues">{A.issues.map((i, k) => <li key={k} className={i.lvl}><i />{i.id ? <button className="linkbtn" onClick={() => onSelect(i.id!)}>{i.text}</button> : <span>{i.text}</span>}</li>)}</ul> : <p className="hint">Alles in orde.</p>}
+    {A.issues.length ? <ul className="issues">{A.issues.map((i, k) => <li key={k} className={i.lvl}><i />{i.id ? <button className="linkbtn" onClick={ev => onSelect(i.id!, ev.detail === 0)}>{i.text}</button> : <span>{i.text}</span>}</li>)}</ul> : <p className="hint">Alles in orde.</p>}
     {nn ? <p className="hint">Minimaal {minNeed(o)} leiding nodig: het onderdeel dat de meeste leiding vraagt bepaalt dit.</p> : <>
       <h3 className="gap-lg">Taken per leiding</h3>
       {people.length ? <ul className="who-list">{people.map(([n, arr]) => <li key={n}><b>{n}{A.present.includes(n) || !leaders.includes(n) ? '' : <> <span className="pill warn">afwezig</span></>}</b>
@@ -443,7 +462,7 @@ function Editor({ b, ctx, upd, onClose, onDelete, onDup, saveLib }: { b: Block; 
     {nn ? <div className="field"><span className="lbl">Verantwoordelijk</span><span className="hint">Deel je in bij het inplannen.</span></div> : <div className="field"><span className="lbl">Verantwoordelijk</span>
       <div className="row" style={{ gap: 6 }}>{leaders.length ? leaders.map(n => present.includes(n) ? <Chip key={n} on={b.names.includes(n)} disabled={ro} onClick={() => upd(() => { b.names = b.names.includes(n) ? b.names.filter(x => x !== n) : [...b.names, n]; })}>{n}</Chip>
         : <Chip key={n} className="absent" disabled title="Afwezig volgens de jaarplanning">{n} · afwezig</Chip>) : <span className="hint">Nog geen leidingteam.</span>}</div>
-      <input className="inp" value={extraTxt} readOnly={ro} onChange={e => setExtras(e.target.value, false)} onBlur={e => setExtras(e.target.value, true)} placeholder="Andere namen, gescheiden door komma's" />
+      <input className="inp" aria-label="Andere namen" value={extraTxt} readOnly={ro} onChange={e => setExtras(e.target.value, false)} onBlur={e => setExtras(e.target.value, true)} placeholder="Andere namen, gescheiden door komma's" />
       <span className="hint">{b.minLeaders ? `${b.names.length} van minimaal ${b.minLeaders} ingedeeld` : 'Geen minimum ingesteld'}</span></div>}
     <Field label="Korte beschrijving" htmlFor="bf-short"><textarea id="bf-short" rows={2} readOnly={ro} value={b.short} onChange={e => upd(() => { b.short = e.target.value; })} placeholder="Eén of twee zinnen; komt in de tijdlijn en op pagina 1" /></Field>
     <label className="toggle"><input type="checkbox" checked={b.pdfPage !== false} disabled={ro} onChange={e => upd(() => { b.pdfPage = e.target.checked; })} /><span><b>Uitlegpagina in de pdf</b></span></label>

@@ -98,8 +98,8 @@ function TimeEdit({ st, en, onSet, onClose }: { st: number; en: number; onSet: (
     document.addEventListener('pointerdown', down); document.addEventListener('keydown', key);
     return () => { document.removeEventListener('pointerdown', down); document.removeEventListener('keydown', key); };
   }, [onClose]);
-  return <span ref={ref} className="time-edit"><TimePicker value={st} from={360} to={1430} onChange={v => onSet('start', v)} /><span>–</span>
-    <TimePicker value={en} from={365} to={1435} onChange={v => onSet('end', v)} /><button className="btn sm" onClick={onClose}>Klaar</button></span>;
+  return <span ref={ref} className="time-edit"><TimePicker value={st} from={360} to={1430} label="Begintijd" onChange={v => onSet('start', v)} /><span>–</span>
+    <TimePicker value={en} from={365} to={1435} label="Eindtijd" onChange={v => onSet('end', v)} /><button className="btn sm" onClick={onClose}>Klaar</button></span>;
 }
 
 function Hero({ r, today }: { r: Row; today: string }) {
@@ -205,6 +205,8 @@ function NextItem({ r }: { r: Row }) {
     <span className="nt">{tags}</span></button></li>;
 }
 
+const STATUS_WORD: Record<ReturnType<typeof entryStatus>, string> = { ok: 'programma klaar', warn: 'aandachtspunten', topic: 'alleen onderwerp', open: 'nog open', kamp: 'kamp', off: 'geen opkomst' };
+
 function MiniCal({ today }: { today: string }) {
   const { settings, plans, opkOf, leaders, sid } = useSpeltak();
   const nav = useNavigate();
@@ -215,7 +217,9 @@ function MiniCal({ today }: { today: string }) {
   const marks: Record<string, { st: string; key: string; title: string; first: boolean; last: boolean }> = {};
   rowsIn(settings, plans, addDays(from, -10), addDays(from, 41)).forEach(r => {
     const d0 = rowDate(r), d1 = rowEnd(r), e = r.e, o = opkOf(e), st = entryStatus(e, o, leaders);
-    const title = `${fmtRange(d0, e && e.endDate)}: ${(o && o.title) || (e && e.topic) || (st === 'off' ? 'geen opkomst' : 'nog open')}`;
+    // de status staat ook in de naam (schermlezer, en als tip bij de muis): niet alleen de kleur zegt het
+    const name = (o && o.title) || (e && e.topic) || '';
+    const title = `${fmtRange(d0, e && e.endDate)} · ${STATUS_WORD[st]}${name ? ': ' + name : ''}`;
     for (let d = d0; d <= d1; d = addDays(d, 1)) marks[d] = { st, key: r.key, title, first: d === d0, last: d === d1 };
   });
   const shift = (n: number) => setCalMonth(toISO(new Date(y, m - 1 + n, 1, 12)).slice(0, 7));
@@ -227,7 +231,8 @@ function MiniCal({ today }: { today: string }) {
     for (let i = 0; i < 7; i++) {
       const d = addDays(ws, i), mk = marks[d];
       const cls = ['cday', fromISO(d).getMonth() !== m - 1 ? 'other' : '', mk ? mk.st : '', d === today ? 'today' : '', mk && mk.first ? 'first' : '', mk && mk.last ? 'last' : ''].join(' ');
-      weeks.push(mk ? <button key={d} className={cls} onClick={() => nav(`/s/${sid}/jaarplanning?focus=${encodeURIComponent(mk.key)}`)} title={mk.title} aria-label={mk.title}>{fromISO(d).getDate()}</button> : <span key={d} className={cls}>{fromISO(d).getDate()}</span>);
+      const now = d === today ? 'date' as const : undefined;
+      weeks.push(mk ? <button key={d} className={cls} onClick={() => nav(`/s/${sid}/jaarplanning?focus=${encodeURIComponent(mk.key)}`)} title={mk.title + (now ? ' (vandaag)' : '')} aria-label={mk.title} aria-current={now}>{fromISO(d).getDate()}</button> : <span key={d} className={cls} aria-current={now} title={now ? 'Vandaag' : undefined}>{fromISO(d).getDate()}</span>);
     }
   }
   return <div className="cal"><div className="cal-head"><button className="iconbtn" onClick={() => shift(-1)} aria-label="Vorige maand"><ChevronLeft size={16} /></button><b>{MONTHS[m - 1]} {y}</b><button className="iconbtn" onClick={() => shift(1)} aria-label="Volgende maand"><ChevronRight size={16} /></button></div>

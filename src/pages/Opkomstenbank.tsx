@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { guardLeave, useDirty } from '../store/unsaved';
 import { useNavigate } from 'react-router-dom';
 import { CalendarDays, Copy, ExternalLink, Plus, Users, X } from 'lucide-react';
@@ -6,7 +6,7 @@ import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal, withFreeName } from '../store/modal';
 import { BankCard, Strip, CatTags, PageTitle, SaveBar } from '../components/shared';
-import { Chip, ConfirmBtn, Dot, Field } from '../components/ui';
+import { Chip, ConfirmBtn, Dot, Field, useSheetDialog } from '../components/ui';
 import { fmtDur, fmtT, plural } from '../lib/time';
 import { allBlocks, byTitle, catOf, copyOpk, freeName, isFixed, isKamp, nameTaken, minNeed, newOpk, opkCatList, opkCatOf, toBank, type Cat, type Opk } from '../lib/model';
 import type { Gedeeld } from '../store/groepsbank';
@@ -46,6 +46,13 @@ export default function Opkomstenbank() {
   // alleen wat nu in de eigen bank staat telt (een ingeplande kopie of een concept houdt fromShared ook)
   const copied = new Set(opks.filter(o => o.state === 'bank' && o.fromShared).map(o => o.fromShared!));
   const G = g && sel ? others.find(x => x.id === sel) : undefined;
+  // op een smal scherm ligt het paneel als vel over de pagina: dan is het een venster (focus erin, Esc sluit, focus terug naar de kaart)
+  const [sheetRef, sheetProps] = useSheetDialog(!!(T || G), g ? 'Uit de groepsbank' : 'Opkomst uit de bank', () => document.querySelector<HTMLElement>('.bcard.sel'));
+  useEffect(() => {
+    if (!sel) return;
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.modal')) setSel(null); };
+    document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h);
+  });
 
   const switchTab = (t: Tab) => guardLeave(() => { setTab(t); setSelRaw(null); setFrom(''); });
   const taken = (n: string, except?: string) => nameTaken(own, n, except);
@@ -76,9 +83,9 @@ export default function Opkomstenbank() {
       <button role="tab" aria-selected={!g} onClick={() => switchTab('own')}>Onze bank <span className="count">{total}</span></button>
       <button role="tab" aria-selected={g} onClick={() => switchTab('group')}>Groep <span className="count">{others.length}</span></button>
     </div>}
-    <div className="toolbar"><input className="inp" type="search" placeholder={g ? 'Zoek in de groep' : 'Zoek opkomst'} value={q} onChange={e => setQ(e.target.value)} />
-      {g && speltakken.length > 1 && <div className="catfilter" aria-label="Speltak"><Chip on={!from} onClick={() => setFrom('')}>Alle speltakken</Chip>{speltakken.map(([id, name]) => <Chip key={id} on={from === id} onClick={() => setFrom(id)}>{name}</Chip>)}</div>}
-      <div className="catfilter"><Chip on={!cat} onClick={() => setCat('')}>Alle</Chip>{opkCatList(settings).map(c => <Chip key={c.id} on={cat === c.id} onClick={() => setCat(c.id)}><Dot color={c.color} />{c.label}</Chip>)}</div></div>
+    <div className="toolbar"><input className="inp" type="search" placeholder={g ? 'Zoek in de groep' : 'Zoek opkomst'} aria-label={g ? 'Zoek in de groep' : 'Zoek opkomst'} value={q} onChange={e => setQ(e.target.value)} />
+      {g && speltakken.length > 1 && <div className="catfilter" role="group" aria-label="Speltak"><Chip on={!from} onClick={() => setFrom('')}>Alle speltakken</Chip>{speltakken.map(([id, name]) => <Chip key={id} on={from === id} onClick={() => setFrom(id)}>{name}</Chip>)}</div>}
+      <div className="catfilter" role="group" aria-label="Categorie"><Chip on={!cat} onClick={() => setCat('')}>Alle</Chip>{opkCatList(settings).map(c => <Chip key={c.id} on={cat === c.id} onClick={() => setCat(c.id)}><Dot color={c.color} />{c.label}</Chip>)}</div></div>
     <div className="bank">
       {g ? <div className="stack" style={{ gap: 18 }}>
         {groupList.length ? <div className="bank-grid">{groupList.map(x => <button key={x.id} className={'bcard lift transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-1 active:translate-y-0.5' + (sel === x.id ? ' sel' : '')} onClick={() => setSel(x.id)}>
@@ -110,8 +117,8 @@ export default function Opkomstenbank() {
                 {can('build') && <ConfirmBtn className="btn sm ghost" label="Verwijderen" confirm="Klik nogmaals" onConfirm={() => remove(o)} />}</div></div>)}</div></section>}
         </div>}
       <aside className={'card side sheet' + (T || G ? ' editing' : '')}>
-        {T ? <TplEditor key={T.id} t={T} own={own} groupOn={groupOn} onClose={() => setSel(null)} onDelete={() => remove(T)} onCopied={id => setSelRaw(id)} />
-          : G ? <SharedView key={G.id} x={G} copied={copied.has(G.id)} onClose={() => setSel(null)} onCopy={() => doCopy(G)} />
+        {T || G ? <div ref={sheetRef} {...sheetProps}>{T ? <TplEditor key={T.id} t={T} own={own} groupOn={groupOn} onClose={() => setSel(null)} onDelete={() => remove(T)} onCopied={id => setSelRaw(id)} />
+          : G && <SharedView key={G.id} x={G} copied={copied.has(G.id)} onClose={() => setSel(null)} onCopy={() => doCopy(G)} />}</div>
             : <div className="pad stack"><h3>{g ? 'Uit de groepsbank' : 'Opkomst uit de bank'}</h3><p className="muted">{g ? 'Kies een opkomst om de onderdelen te zien en hem naar jullie eigen bank te kopiëren.' : 'Kies een opkomst om de onderdelen te zien, hem te openen of in te plannen.'}</p></div>}
       </aside>
       <div className={'scrim' + (T || G ? ' on' : '')} onClick={() => setSel(null)} />

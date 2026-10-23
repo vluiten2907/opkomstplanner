@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { guardLeave, useDirty } from '../store/unsaved';
 import { Plus, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { BankCard, PageTitle, SaveBar } from '../components/shared';
-import { Chip, ConfirmBtn, Dot, Field } from '../components/ui';
+import { Chip, ConfirmBtn, Dot, Field, useSheetDialog } from '../components/ui';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { clone, fmtDur, plural, uid } from '../lib/time';
 import { allBlocks, byTitle, catOf, freeName, nameTaken, normLib, type Lib } from '../lib/model';
@@ -24,11 +24,18 @@ export default function Activiteitenbank() {
   const create = () => guardLeave(() => { const l = normLib({ id: uid(), cat: (settings.categories[0] || {}).id || '', minLeaders: 1 }); setFresh(l); setSelRaw(l.id); setQ(''); setCat(''); setTimeout(() => document.getElementById('lf-title')?.focus(), 30); });
   const L = sel ? lib.find(l => l.id === sel) || (fresh && fresh.id === sel ? fresh : undefined) : undefined;
   const isNew = !!L && !lib.some(l => l.id === L.id);
+  // op een smal scherm ligt het paneel als vel over de pagina: dan is het een venster (focus erin, Esc sluit, focus terug naar de kaart)
+  const [sheetRef, sheetProps] = useSheetDialog(!!L, 'Activiteit bewerken', () => document.querySelector<HTMLElement>('.bcard.sel'));
+  useEffect(() => {
+    if (!sel) return;
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.modal')) setSel(null); };
+    document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h);
+  });
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title={plural(lib.length, 'activiteit', 'activiteiten')}>{edit && <button className="btn primary" onClick={create}><Plus size={16} />Nieuwe activiteit</button>}</PageTitle>
     <div className="toolbar">
-      <input className="inp" type="search" placeholder="Zoek op titel, beschrijving of locatie" value={q} onChange={e => setQ(e.target.value)} />
-      <div className="catfilter"><Chip on={!cat} onClick={() => setCat('')}>Alle</Chip>{settings.categories.map(c => <Chip key={c.id} on={cat === c.id} onClick={() => setCat(c.id)}><Dot color={c.color} />{c.label}</Chip>)}</div>
+      <input className="inp" type="search" placeholder="Zoek op titel, beschrijving of locatie" aria-label="Zoek activiteit" value={q} onChange={e => setQ(e.target.value)} />
+      <div className="catfilter" role="group" aria-label="Categorie"><Chip on={!cat} onClick={() => setCat('')}>Alle</Chip>{settings.categories.map(c => <Chip key={c.id} on={cat === c.id} onClick={() => setCat(c.id)}><Dot color={c.color} />{c.label}</Chip>)}</div>
     </div>
     <div className="bank">
       <div>{items.length ? <div className="bank-grid">{items.map(l => { const c = catOf(settings, l.cat); return <BankCard key={l.id} what="Activiteit" onDelete={edit ? () => remove(l) : undefined}><button className={'bcard lift transition-[box-shadow] duration-150 ease-out' + (sel === l.id ? ' sel' : '')} onClick={() => setSel(l.id)}>
@@ -38,10 +45,10 @@ export default function Activiteitenbank() {
         <span className="hint">{uses[l.id] ? `${uses[l.id]}× gebruikt` : 'Nog niet gebruikt'}</span>
       </button></BankCard>; })}</div>
         : <div className="empty"><span>{lib.length ? 'Geen activiteiten gevonden met deze filter.' : 'Nog geen activiteiten. Maak er een, of bewaar een onderdeel vanuit de opkomstbouwer.'}</span>{!lib.length && edit && <button className="btn primary" onClick={create}>Nieuwe activiteit</button>}</div>}</div>
-      <aside className={'card side sheet' + (L ? ' editing' : '')}>{L ? <LibEditor key={L.id} l={L} isNew={isNew} lib={lib} readOnly={!edit} onClose={() => setSel(null)} onCancelNew={() => { setFresh(null); setSelRaw(null); }}
+      <aside className={'card side sheet' + (L ? ' editing' : '')}>{L ? <div ref={sheetRef} {...sheetProps}><LibEditor key={L.id} l={L} isNew={isNew} lib={lib} readOnly={!edit} onClose={() => setSel(null)} onCancelNew={() => { setFresh(null); setSelRaw(null); }}
         onSave={x => { saveLib(x); if (isNew) setFresh(null); toast(isNew ? 'Activiteit opgeslagen in de bank' : 'Activiteit opgeslagen'); }}
         onCopy={x => { saveLib(x); setSelRaw(x.id); toast(`Kopie "${x.title}" opgeslagen`); }}
-        onDelete={() => remove(L)} />
+        onDelete={() => remove(L)} /></div>
         : <div className="pad stack"><h3>Activiteit bewerken</h3><p className="muted">Kies een activiteit om hem te bekijken{edit ? ' of te bewerken' : ''}. In de opkomstbouwer sleep je activiteiten vanuit het zijpaneel op de tijdlijn.</p></div>}</aside>
       <div className={'scrim' + (L ? ' on' : '')} onClick={() => setSel(null)} />
     </div>

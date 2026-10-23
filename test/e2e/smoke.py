@@ -1043,9 +1043,11 @@ with sync_playwright() as p:
     focus_in, stays = in_card(), True
     for k in ['Tab'] * 15 + ['Shift+Tab'] * 4: pg.keyboard.press(k); stays = stays and in_card()
     dname = pg.evaluate("""(() => { const d = document.querySelector('.modal [role=dialog]'); const t = d && document.getElementById(d.getAttribute('aria-labelledby') || ''); return t ? t.textContent : null; })()""")
+    rest_inert = pg.evaluate("document.querySelector('header.bar').inert && document.querySelector('main').inert && !document.querySelector('.modal').closest('[inert]') && !document.querySelector('.toast').inert")
     pg.keyboard.press('Escape'); w(300)
     check(focus_in and stays and dname == 'Wie is er afwezig?' and pg.locator('.modal').count() == 0 and trig.evaluate('e => e === document.activeElement'),
           'venster: focus erin, Tab blijft erin, kop is de naam, Esc sluit en de focus gaat terug naar de knop')
+    check(rest_inert and pg.locator('[inert]').count() == 0, 'venster: de rest van de app is zolang onbereikbaar (inert), de melding onderin niet; daarna alles weer bereikbaar')
     # ontkoppelen vraagt eerst bevestiging
     vk = lambda: pg.locator('.prow:has(.plink:has-text("Vuur en kompas"))')
     vk().locator('[aria-label="Opkomst ontkoppelen"]').click(); w(200)
@@ -1102,6 +1104,80 @@ with sync_playwright() as p:
     check(pg.locator('.lanes .bdel').count() > 3 and not pg.evaluate(f"({on_name})('.lanes .bdel')"), 'bouwer mobiel: prullenbak ligt niet op een naam, ook niet bij onderdelen naast elkaar')
     pg.evaluate("document.querySelector('.lanes').scrollIntoView({ block: 'start' })"); w(200); shot('03b-bouwer-mobiel', False)
     pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    # --- toegankelijkheid: toetsenbord in de bouwer, bewerkpaneel als venster, namen van velden, contrast, kalender
+    ACT = "(() => { const a = document.activeElement; return a ? (a.id || a.dataset.bid || a.tagName) : null; })()"
+    NONAME = """() => [...document.querySelectorAll('input:not([type=hidden]):not([type=file]), select, textarea')].filter(el => el.getClientRects().length && !el.closest('[inert]')).filter(el => {
+      if (el.getAttribute('aria-label')) return false;
+      const lb = el.getAttribute('aria-labelledby'); if (lb && lb.split(' ').some(i => (document.getElementById(i)?.textContent || '').trim())) return false;
+      return !([...(el.labels || [])].some(l => l.textContent.trim()) || (el.closest('label')?.textContent || '').trim());
+    }).map(el => el.outerHTML.slice(0, 100))"""
+    noname = pg.evaluate(NONAME)
+    check(not noname and pg.locator('select[aria-label="Begintijd uur"]').count() == 1 and pg.locator('select[aria-label="Eindtijd minuten"]').count() == 1, f'bouwer: elk veld heeft een naam, begin- en eindtijd apart ({noname[:2]})')
+    n_blk = pg.locator('.lanes .blk').count()
+    pg.locator('#bf-add').focus(); pg.keyboard.press('Enter'); w(400)
+    new_bid = pg.evaluate("document.querySelector('.lanes .blk.sel')?.dataset.bid")
+    check(pg.locator('.lanes .blk').count() == n_blk + 1 and pg.evaluate(ACT) == 'bf-title', '+ Onderdeel (toetsenbord): nieuw onderdeel, focus in het titelveld')
+    check('+ Onderdeel' in pg.locator('.tl-foot').inner_text(), 'bouwer: voettekst noemt + Onderdeel')
+    pg.fill('#bf-title', 'Toetsenbordblok'); w(200); pg.keyboard.press('Escape'); w(300)
+    check(pg.locator('#bf-title').count() == 0 and pg.evaluate(ACT) == new_bid, 'Esc sluit het onderdeel, de focus gaat terug naar het blok')
+    pg.keyboard.press('Enter'); w(300)
+    check(pg.evaluate(ACT) == 'bf-title' and pg.input_value('#bf-title') == 'Toetsenbordblok', 'Enter op een blok: de focus gaat meteen naar het titelveld')
+    pg.click('.side .closex'); w(300)
+    check(pg.evaluate(ACT) == new_bid, 'kruisje: de focus gaat terug naar het blok')
+    pg.keyboard.press('Delete'); w(400)
+    after_del = pg.evaluate(ACT)
+    check(pg.locator('.lanes .blk:has-text("Toetsenbordblok")').count() == 0 and after_del not in (None, 'BODY', new_bid)
+          and (after_del == 'bf-add' or pg.locator(f'.lanes [data-bid="{after_del}"]').count() == 1), f'Delete op een blok: de focus gaat naar het volgende blok of + Onderdeel ({after_del})')
+    shot('16-bouwer-toetsenbord', False)
+    # melding met Ongedaan maken blijft staan zolang de knop focus heeft
+    pg.locator('.toast.show button:has-text("Ongedaan maken")').focus(); w(7600)
+    check(pg.locator('.toast.show button:has-text("Ongedaan maken")').count() == 1, 'melding met Ongedaan maken verdwijnt niet zolang de knop focus heeft')
+    pg.locator('#bf-add').focus(); w(100)
+    # smal scherm (ook een laptop op 200%): het bewerkpaneel ligt als vel over de pagina en is dan een venster
+    pg.set_viewport_size({'width': 768, 'height': 900}); w(300)
+    jb = pg.locator('.lanes .blk:has-text("Junglejacht")'); jb_id = jb.get_attribute('data-bid'); jb.click(); w(400)
+    sheet = pg.locator('.sheet [role=dialog][aria-modal=true]')
+    in_sheet = lambda: pg.evaluate("!!document.activeElement && !!document.activeElement.closest('.sheet [role=dialog]')")
+    ok, stays = sheet.count() == 1 and in_sheet() and pg.evaluate("document.querySelector('header.bar').inert && !document.querySelector('.scrim').inert && !document.querySelector('.toast').inert"), True
+    for k in ['Tab'] * 30 + ['Shift+Tab'] * 5: pg.keyboard.press(k); stays = stays and in_sheet()
+    pg.keyboard.press('Escape'); w(400)
+    check(ok and stays and sheet.count() == 0 and pg.evaluate(ACT) == jb_id and pg.locator('[inert]').count() == 0,
+          'bouwer smal: bewerkpaneel is een venster (focus erin, Tab blijft erin, rest onbereikbaar), Esc sluit en de focus gaat terug naar het blok')
+    jb.click(); w(300); pg.mouse.click(380, 30); w(400)
+    check(sheet.count() == 0 and pg.locator('[inert]').count() == 0, 'bouwer smal: tikken naast het vel sluit het nog steeds')
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(300)
+    pg.goto(BASE + '/s/oefen/activiteiten'); w(1200)
+    check(not pg.evaluate(NONAME), 'activiteitenbank: elk veld heeft een naam')
+    card = pg.locator('.bcard').first; card.click(); w(400)
+    ok = sheet.count() == 1 and in_sheet(); shot('16b-vel-venster-mobiel', False)
+    pg.keyboard.press('Escape'); w(400)
+    check(ok and sheet.count() == 0 and pg.evaluate("document.activeElement.classList.contains('bcard')") and pg.locator('[inert]').count() == 0,
+          'activiteitenbank mobiel: paneel is een venster, Esc sluit en de focus gaat terug naar de kaart')
+    card.click(); w(300); pg.fill('#lf-title', 'Nog niet opgeslagen'); pg.keyboard.press('Escape'); w(300)
+    check(sheet.count() == 1 and pg.locator('.toast.show button:has-text("Weggooien")').count() == 1, 'Esc met niet-opgeslagen wijzigingen: vraagt eerst')
+    pg.click('.toast.show button:has-text("Weggooien")'); w(400)
+    check(sheet.count() == 0 and pg.locator('[inert]').count() == 0, 'Weggooien in de melding werkt terwijl het vel open stond')
+    pg.goto(BASE + '/s/oefen/opkomsten'); w(1200)
+    pg.locator('.bcard').first.click(); w(400); ok = sheet.count() == 1 and in_sheet()
+    pg.keyboard.press('Escape'); w(400)
+    check(ok and sheet.count() == 0 and pg.evaluate("document.activeElement.classList.contains('bcard')"), 'opkomstenbank mobiel: paneel is een venster, Esc sluit en de focus gaat terug')
+    pg.goto(BASE + '/s/oefen/dashboard'); w(1200)
+    cal_lbl = pg.eval_on_selector_all('.cal button.cday', 'els => els.map(e => e.getAttribute("aria-label"))')
+    check(pg.locator('.cal [aria-current=date]').count() == 1 and cal_lbl and all(re.search(r' · (programma klaar|aandachtspunten|alleen onderwerp|nog open|kamp|geen opkomst)', x or '') for x in cal_lbl),
+          'kalender: vandaag heeft aria-current, elke dag noemt zijn status')
+    pg.evaluate("document.querySelector('.cal').scrollIntoView({ block: 'center' })"); w(200); shot('16c-kalender-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'kalender mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    pg.goto(BASE + '/s/oefen/jaarplanning'); w(1200)
+    check(not pg.evaluate(NONAME) and pg.locator('.rangebar label:text-is("Van")').get_attribute('for'), 'jaarplanning: elk veld heeft een naam (ook Van en Tot en met)')
+    pg.goto(BASE + '/s/oefen/instellingen'); w(1200)
+    check(not pg.evaluate(NONAME), 'instellingen: elk veld heeft een naam')
+    pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(1200)
+    col = lambda sel, prop='color': pg.evaluate(f"getComputedStyle(document.querySelector('{sel}')).{prop}")
+    check(col('.zone span') == 'rgb(138, 82, 0)' and col('.tick', 'opacity') == '1', 'contrast: signaaltekst donkerder, tijden in de tijdlijn niet doorschijnend')
+    pg.click('.ctx >> text=Leiding indelen'); w(500)
+    check(not pg.evaluate(NONAME), 'leiding indelen: elk veld heeft een naam')
+    pg.keyboard.press('Escape'); w(300)
     # een verlopen melding is niet meer aan te klikken: de knop verdwijnt mee
     pg.locator('.lanes .blk:has-text("Junglejacht")').click(); pg.keyboard.press('Delete'); w(300)
     check(pg.locator('.toast.show button:has-text("Ongedaan maken")').count() == 1, 'melding met Ongedaan maken staat er')

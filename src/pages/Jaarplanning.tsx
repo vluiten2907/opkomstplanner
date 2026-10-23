@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Mail, Plus, SquarePen, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
@@ -71,10 +71,11 @@ export default function Jaarplanning() {
 }
 
 function RangeInput({ label, value, onChange }: { label: string; value: string; onChange: (iso: string) => boolean }) {
+  const id = useId();
   const [v, setV] = useState(fmtNL(value));
   useEffect(() => setV(fmtNL(value)), [value]);
   const commit = () => { const iso = parseNL(v); if (!iso) { toast('Typ de datum als dd-mm-jjjj, bijvoorbeeld 01-09-2026.'); setV(fmtNL(value)); return; } if (!onChange(iso)) setV(fmtNL(value)); };
-  return <div className="field"><label>{label}</label><input value={v} onChange={e => setV(e.target.value)} onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} placeholder="dd-mm-jjjj" inputMode="numeric" /></div>;
+  return <div className="field"><label htmlFor={id}>{label}</label><input id={id} value={v} onChange={e => setV(e.target.value)} onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} placeholder="dd-mm-jjjj" inputMode="numeric" /></div>;
 }
 
 function TopicInput({ keyId, value, placeholder, label, disabled }: { keyId: string; value: string; placeholder: string; label: string; disabled: boolean }) {
