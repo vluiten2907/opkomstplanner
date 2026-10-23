@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useSpeltak } from '../store/speltak';
 import { withFreeName } from '../store/modal';
 import type { Gedeeld } from '../store/groepsbank';
@@ -108,7 +108,15 @@ export function SaveBar({ dirty, isNew, title, taken, suggest, onCancel, onSave,
   const [copying, setCopying] = useState(false);
   const [name, setName] = useState('');
   const errId = useId();
-  const copyBtn = useRef<HTMLButtonElement>(null);
+  const copyBtn = useRef<HTMLButtonElement>(null), box = useRef<HTMLDivElement>(null);
+  // hoogte van de balk als --saveh: Tab en scrollIntoView zetten daarmee niets onder de balk (scroll-padding-bottom in styles.css)
+  useLayoutEffect(() => {
+    const el = box.current, root = document.documentElement; if (!el) return;
+    const set = () => root.style.setProperty('--saveh', Math.ceil(el.getBoundingClientRect().height) + 'px');
+    set();
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(set); ro?.observe(el);
+    return () => { ro?.disconnect(); root.style.removeProperty('--saveh'); };
+  }, []);
   const why = (n: string, copy = false) => !n.trim() ? 'Geef een titel op.' : taken(n, copy) ? 'Deze naam bestaat al in de bank. Kies een andere naam.' : '';
   const saveErr = dirty || isNew ? why(title) : '';
   const copyErr = why(name, true);
@@ -124,7 +132,7 @@ export function SaveBar({ dirty, isNew, title, taken, suggest, onCancel, onSave,
     }, 30);
   };
   const doCopy = () => { endCopy(); onCopy(name.trim()); };
-  return <div className={'savebar' + (sticky ? ' sticky' : '') + (dirty || isNew ? ' on' : '')} role="group" aria-label="Opslaan">
+  return <div ref={box} className={'savebar' + (sticky ? ' sticky' : '') + (dirty || isNew ? ' on' : '')} role="group" aria-label="Opslaan">
     {copying ? <>
       <label htmlFor="sb-name" className="lbl">Naam van de kopie</label>
       <input id="sb-name" className="inp" value={name} autoFocus aria-invalid={!!copyErr} aria-describedby={errId} onChange={e => setName(e.target.value)}
@@ -144,8 +152,8 @@ export function SaveBar({ dirty, isNew, title, taken, suggest, onCancel, onSave,
   </div>;
 }
 
-/** Kaart in een bank met een eigen verwijderknop rechtsonder (twee keer klikken). */
-export function BankCard({ children, onDelete, what }: { children: ReactNode; onDelete?: () => void; what: string }) {
+/** Kaart in een bank met een eigen verwijderknop rechtsonder (twee keer klikken). De naam van de knop noemt de titel (in de lijst van een schermlezer niet 12× hetzelfde). */
+export function BankCard({ children, onDelete, what, title }: { children: ReactNode; onDelete?: () => void; what: string; title: string }) {
   return <div className="bwrap transition-transform duration-150 ease-out hover:-translate-y-1 active:translate-y-0.5">{children}
-    {onDelete && <ConfirmBtn className="btn sm ghost carddel" label={<Trash2 size={15} aria-label={what + " verwijderen"} />} confirm="Verwijderen?" title={what + ' verwijderen'} onConfirm={onDelete} />}</div>;
+    {onDelete && <ConfirmBtn className="btn sm ghost carddel" label={<Trash2 size={15} aria-hidden="true" />} confirm="Verwijderen?" title={what + ' verwijderen'} ariaLabel={`${what} ${title || 'Naamloos'} verwijderen`} onConfirm={onDelete} />}</div>;
 }

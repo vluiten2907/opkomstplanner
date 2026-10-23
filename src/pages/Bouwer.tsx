@@ -83,11 +83,11 @@ export default function Bouwer() {
       })}</div>
     </section>}
     {drafts.length > 0 && <><h2>Concepten</h2><div className="picklist">{drafts.map(x => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
-      extra={can('build') ? <ConfirmBtn className="btn sm ghost" label={<><Trash2 size={14} />Verwijderen</>} confirm="Klik nogmaals" title="Concept verwijderen" onConfirm={() => removeOpk(x)} /> : undefined} />)}</div></>}
+      extra={can('build') ? <ConfirmBtn className="btn sm ghost" label={<><Trash2 size={14} />Verwijderen</>} confirm="Klik nogmaals" title="Concept verwijderen" ariaLabel={`Concept ${x.title || 'Naamloze opkomst'} verwijderen`} onConfirm={() => removeOpk(x)} /> : undefined} />)}</div></>}
     {!coming.length && !drafts.length && !bank.length && !(oid && !o) && <div className="empty"><span>Hier bouw je het programma van een opkomst of kamp: onderdelen op een tijdlijn per 5 minuten, met wie wat doet.</span>
       {!practice && <Link className="btn" to="/s/oefen/bouwer"><GraduationCap size={16} />Oefenomgeving bekijken</Link>}</div>}
     {bank.length > 0 && <><h2>Uit de opkomstenbank</h2><div className="picklist">{bank.map(x => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
-      extra={can('bank') ? <ConfirmBtn className="btn sm ghost" label={<><Trash2 size={14} />Verwijderen</>} confirm="Klik nogmaals" title="Uit de opkomstenbank verwijderen" onConfirm={() => removeOpk(x)} /> : undefined} />)}</div></>}
+      extra={can('bank') ? <ConfirmBtn className="btn sm ghost" label={<><Trash2 size={14} />Verwijderen</>} confirm="Klik nogmaals" title="Uit de opkomstenbank verwijderen" ariaLabel={`${x.title || 'Naamloze opkomst'} uit de opkomstenbank verwijderen`} onConfirm={() => removeOpk(x)} /> : undefined} />)}</div></>}
   </div>;
 }
 
@@ -154,7 +154,16 @@ function Builder({ o: stored }: { o: Opk }) {
     const io = new IntersectionObserver(([en]) => setSideSeen(en.isIntersecting), { rootMargin: '0px 0px -25% 0px' });
     io.observe(el); return () => io.disconnect();
   }, []);
-  const toSide = (tab: 'bank' | 'check') => { setSelId(null); setSideTab(tab); setTimeout(() => sideRef.current?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }), 0); };
+  // telefoon: "N aandachtspunten" en de knop Activiteit brengen je naar het zijpaneel; de focus gaat mee naar het gekozen tabblad
+  // (anders blijft hij ver boven in de pagina, of is hij kwijt omdat de knop Activiteit verdwijnt)
+  const toSide = (tab: 'bank' | 'check') => {
+    setSelId(null); setSideTab(tab);
+    setTimeout(() => {
+      const el = sideRef.current; if (!el) return;
+      el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+      el.querySelector<HTMLElement>('[role=tab][aria-selected=true]')?.focus({ preventScroll: true });
+    }, 0);
+  };
   // Een opkomst uit de bank bewerk je met het recht Banken, de rest met Opkomsten (zoals de uitleg bij de rechten zegt).
   const readOnly = o.state === 'bank' ? !can('bank') : !can('build');
   // + Onderdeel onderin beeld, waar de knop Activiteit zweeft: die knop dan even weg, anders tik je hem per ongeluk aan
@@ -478,9 +487,9 @@ function Timeline({ ctx, A, selId, flashId, lanesRef, onSelect, onDelete, onAdd,
             <div className="cl">{b.location || <span className="nobody">–</span>}</div>
             <div className="c2"><div className="names">{nn ? (b.minLeaders ? <span className="nobody">min. {b.minLeaders} leiding</span> : null) : b.names.length ? b.names.map(n => <span key={n} className={'nm' + (A.clashes.has(b.id + '|' + n) ? ' clash' : '')}>{n}</span>) : <span className="nobody">nog niemand</span>}</div></div>
           </div>
-          {/* prullenbak voor muis en aanraken; niet in de Tab-volgorde en niet voor schermlezers (een knop in een knop):
-              met het toetsenbord verwijder je met Delete op het onderdeel of met Verwijderen in het bewerkpaneel */}
-          {!readOnly && <button className="bdel" tabIndex={-1} aria-hidden="true" onClick={ev => { ev.stopPropagation(); onDelete(b.id); }} title="Onderdeel verwijderen"><Trash2 size={14} /></button>}
+          {/* prullenbak alleen voor muis en aanraken: geen knop (dat zou een knop in een knop zijn, die een schermlezer toch vindt),
+              niet in de Tab-volgorde en niet voor schermlezers. Met het toetsenbord: Delete op het onderdeel of Verwijderen in het bewerkpaneel */}
+          {!readOnly && <span className="bdel" aria-hidden="true" onClick={ev => { ev.stopPropagation(); onDelete(b.id); }} title="Onderdeel verwijderen"><Trash2 size={14} /></span>}
           {!readOnly && <div className="rs" title="Sleep om de duur te wijzigen" />}
         </div>;
       })}
@@ -531,7 +540,7 @@ function SidePanel({ tab, setTab, ctx, A, lanesRef, onSelect, onPlan, onDrop }: 
         onPointerDown={ev => { if (readOnly || ev.button || (ev.target as HTMLElement).closest('button')) return; const grip = !!(ev.target as HTMLElement).closest('.lgrip'); if (ev.pointerType !== 'mouse' && !grip) return; ld.current = { l, x0: ev.clientX, y0: ev.clientY, started: false, m: null }; document.body.style.userSelect = 'none'; if (grip) ev.preventDefault(); }}>
         <span className="lgrip" title="Sleep naar de tijdlijn" />
         <div style={{ minWidth: 0 }}><div className="lt">{l.title || 'Naamloos'}</div><div className="lm">{fmtDur(l.dur)}{l.minLeaders > 0 ? ` · min. ${l.minLeaders} leiding` : ''}{l.location ? ' · ' + l.location : ''}</div>{l.short && <div className="ls">{l.short}</div>}</div>
-        {!readOnly && <button className="btn sm" onClick={() => onPlan(l)} title="Op het eerste vrije moment inplannen">Inplannen</button>}
+        {!readOnly && <button className="btn sm" onClick={() => onPlan(l)} title="Op het eerste vrije moment inplannen" aria-label={`Inplannen: ${l.title || 'Naamloos'}`}>Inplannen</button>}
       </div>) : <p className="hint">{lib.length ? 'Geen activiteiten gevonden.' : 'Nog geen activiteiten.'}</p>}</div>
     </div>
       {float && <div className="drag-float" style={{ left: float.x, top: float.y }}>{(float.l.title || 'Naamloos') + ' · ' + fmtDur(float.l.dur)}</div>}</>;

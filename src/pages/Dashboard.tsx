@@ -89,16 +89,34 @@ function useDoubleTap(on: (() => void) | null) {
   };
 }
 
-/** Tekst die na een dubbelklik een invoerveld wordt. Enter of wegklikken slaat op, Esc annuleert. */
+/**
+ * Tekst die na een dubbelklik een invoerveld wordt. Enter of wegklikken slaat op, Esc annuleert.
+ * Met Enter of Esc verdwijnt het veld: de focus gaat dan terug naar de knop (bijv. Locatie toevoegen) als die er weer staat,
+ * anders naar wat erna komt op de kaart, niet kwijt naar het begin van de pagina.
+ */
 function InlineText({ value, onSave, enabled, label, multiline, render, className }: {
   value: string; onSave: ((v: string) => void) | null; enabled: boolean; label: string; multiline?: boolean; className?: string;
   render: (tap: Record<string, unknown>, start: (() => void) | null) => ReactNode;
 }) {
   const [edit, setEdit] = useState<string | null>(null);
-  const closed = useRef(false);
+  const closed = useRef(false), was = useRef(false);
+  // onzichtbare markeringen om wat render teruggeeft (dat kan van alles zijn, of niets): zo is te vinden wat er na het bewerken staat
+  const m0 = useRef<HTMLSpanElement>(null), m1 = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (edit !== null) { was.current = true; return; }
+    if (!was.current) return; was.current = false;
+    // alleen als de focus echt weg is (wegklikken naar iets anders houdt die plek)
+    const a = document.activeElement; if (a && a !== document.body && a.isConnected) return;
+    const s = m0.current, e = m1.current; if (!s || !e) return;
+    const scope = s.closest('.hero') || document.getElementById('inhoud'); if (!scope) return;
+    const list = [...scope.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]')].filter(x => x.getClientRects().length > 0);
+    const own = list.find(x => s.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING && e.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_PRECEDING);
+    const next = list.find(x => e.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING);
+    (own || next)?.focus({ preventScroll: true });
+  }, [edit]);
   const start = enabled && onSave ? () => { closed.current = false; setEdit(value); } : null;
   const tap = useDoubleTap(start);
-  if (edit === null) return <>{render(tap, start)}</>;
+  if (edit === null) return <><span hidden ref={m0} />{render(tap, start)}<span hidden ref={m1} /></>;
   const done = (save: boolean) => {
     if (closed.current) return; closed.current = true;
     const v = edit.trim(); if (save && v !== value.trim() && onSave) onSave(v); setEdit(null);

@@ -5,7 +5,8 @@
 /* Opkomstplanner huisstijl v3 (marine/koper, tastbaar). Kleuren en lettertypen staan hier één keer; het accent komt uit de instellingen (Layout). */
 :root {
   --bg: #ECE9E1; --surface: #FFFFFF; --sunk: #E6E2D8; --band: #F5F3EC; --line: #D1CCC0;
-  --ink: #14202E; --muted: #5A6472; --edge: #14202E; --hard: #14202E; --pop: #D98B3A;
+  /* --muted: gedempte tekst; donker genoeg voor ≥ 4,5:1, ook op de korrel en de gloed van het accent (licht thema; donker heeft een eigen waarde) */
+  --ink: #14202E; --muted: #4A5361; --edge: #14202E; --hard: #14202E; --pop: #D98B3A;
   --accent: #1E3A5F; --accent-soft: #DEE6F0; --accent-ink: #FFFFFF;
   --signal: #B26E08; --good: #23704A; --danger: #B3372B; --keep: 100%; --kamp: #5B4A9B;
   /* tekst in signaalkleur en zachte tekst boven de gloed: donker genoeg om te lezen (≥ 4,5:1) */
@@ -77,6 +78,14 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 /* Tab en scrollIntoView zetten niets onder de vaste kopbalk: --barh is zijn onderkant (Layout meet hem, ook als hij op een telefoon
    over twee regels loopt); pagina's zonder die balk hebben alleen een kleine marge */
 html { scroll-padding-top: calc(var(--barh, 0px) + 12px); }
+/* Hetzelfde onderin: de opslaan-balk bij bewerken uit de bank (--saveh is zijn hoogte, SaveBar meet hem) en een melding.
+   Het zijpaneel schuift zelf: daar niets boven de balk (die in de bouwer ligt ook over het zijpaneel) of onder de vaste tabbladen.
+   Voor de tabbladen een marge op de knoppen eronder, niet scroll-padding op het paneel: dan schuift Chrome de tabbladen zelf onder de kopbalk. */
+html:has(.toast.show) { scroll-padding-bottom: 96px; }
+html:has(.savebar.sticky) { scroll-padding-bottom: calc(var(--saveh, 136px) + 24px); }
+html:has(.savebar.sticky):has(.toast.show) { scroll-padding-bottom: calc(var(--saveh, 136px) + 96px); }
+.side:has(.savebar), body:has(.savebar.sticky) .side { scroll-padding-bottom: calc(var(--saveh, 136px) + 12px); }
+.side:has(> .tabs) > .pad :is(button, input, select, textarea, a[href]) { scroll-margin-top: 60px; }
 .brand { display: flex; align-items: center; gap: 8px; }
 .brand svg { width: 26px; height: 26px; }
 .nav { display: flex; overflow-x: auto; flex: 1 1 auto; min-width: 0; scrollbar-width: none; border-radius: 12px; }
@@ -256,7 +265,7 @@ h2.h-sm { font-size: 16.5px; }
 .pill.kamp { background: color-mix(in srgb, var(--kamp) 16%, var(--surface)); color: var(--kamp); }
 .bdel { position: absolute; top: 4px; right: 4px; z-index: 2; width: 28px; height: 28px; border: 0; border-radius: 8px; display: grid; place-items: center; cursor: pointer; padding: 0; background: var(--surface); color: var(--muted); opacity: 0; transition: opacity .15s; box-shadow: var(--shadow); }
 .bdel:hover { color: var(--danger); }
-.blk:hover .bdel, .blk.sel .bdel, .blk:focus-visible .bdel, .bdel:focus-visible { opacity: 1; }
+.blk:hover .bdel, .blk.sel .bdel, .blk:focus-visible .bdel, button.bdel:focus-visible { opacity: 1; }
 .blk.tiny .rs { height: 6px; }
 .blk.tiny .bdel { top: 50%; transform: translateY(-50%); width: 22px; height: 22px; }
 .toast.show.has-act { pointer-events: auto; }
@@ -541,6 +550,8 @@ h1 { font-size: clamp(28px, 3.4vw, 38px); font-weight: 800; letter-spacing: -.02
 h2 { font-size: 21px; }
 h3 { font-size: 16.5px; }
 .eyebrow { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+/* boven de titel in de bouwer staat het label op de pagina zelf, op de gloed van het accent: even donker als de kicker op het dashboard */
+.plan-head .eyebrow { color: var(--ink-2); }
 .field > label, .lbl { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
 .mono, .tick, .stat b, .lm, .when, .val, .barrow .val, .counts b, .pdate > span, .daytab span { font-family: var(--f-body); font-variant-numeric: tabular-nums; }
 .hint { font-size: 13px; }
@@ -612,7 +623,8 @@ body { background: var(--grain), radial-gradient(90% 70% at 100% 0%, color-mix(i
 .subline { font-size: 14px; color: var(--ink-2); margin-top: 10px; }
 
 /* Kopbalk */
-.bar { background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(14px) saturate(1.2); box-shadow: 0 2px 0 var(--edge); }
+/* bijna dicht: de menulinks en de groepsnaam blijven leesbaar, ook als de donkere kaart van de komende opkomst eronder schuift */
+.bar { background: color-mix(in srgb, var(--bg) 96%, transparent); backdrop-filter: blur(14px) saturate(1.2); box-shadow: 0 2px 0 var(--edge); }
 .brand { font-weight: 800; }
 .brand svg { color: var(--ink); }
 

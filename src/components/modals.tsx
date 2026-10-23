@@ -366,7 +366,7 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
       {e && e.topic.trim() && fitsTopic(o, e.topic) && <span className="pick-kicker"><span className="pill good">Past bij onderwerp</span></span>}<b>{shown(d, e && e.endDate)}</b>
       {ch && <span className="pk-change">Onderwerp wordt {o.title.trim()} (nu: {e!.topic.trim()})</span>}
       <span className="hint">{off && <><span className="err">Jaarplanning {plural(off.row, 'dag', 'dagen')} ({fmtRange(d, e!.endDate)})</span> · </>}{e && e.topic && !ch ? e.topic + ' · ' : ''}{e && e.planners.length ? 'planning: ' + e.planners.join(', ') : 'nog niemand toegewezen'}</span></div>
-      <button className="btn sm primary" onClick={() => go(entryFor(r.key))}>Hier inplannen</button></div>; })}</div> : <p className="hint">Geen vrije data gevonden in de komende maanden.</p>}
+      <button className="btn sm primary" onClick={() => go(entryFor(r.key))} aria-label={`Hier inplannen: ${shown(d, e && e.endDate)}`}>Hier inplannen</button></div>; })}</div> : <p className="hint">Geen vrije data gevonden in de komende maanden.</p>}
     <div className="row"><input className="inp" value={custom} onChange={e => setCustom(e.target.value)} onBlur={() => setCustom(tidyNL(custom))} placeholder="Andere datum: dd-mm-jjjj" aria-label="Andere datum" inputMode="numeric" style={{ flex: '1 1 180px' }} /><button className="btn" onClick={() => { const iso = parseNL(custom); if (!iso) { toast('Typ de datum als dd-mm-jjjj.'); return; } go(entryForDate(iso)); }}>Op deze datum</button></div>
   </Modal>;
 }

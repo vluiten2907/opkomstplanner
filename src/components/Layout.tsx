@@ -145,8 +145,9 @@ export default function Layout({ children }: { children: ReactNode }) {
     {!isMember && isAdmin && <div className="banknote adminnote"><span><ShieldCheck size={15} style={{ verticalAlign: -3, marginRight: 6 }} />Je bekijkt deze speltak als beheerder: alleen-lezen. Het team beheer je onder Team.</span></div>}
     <main id="inhoud" tabIndex={-1} className="pb-16">{children}</main>
     <ModalHost />
+    {/* gloed linksboven zwak (12 %): de kop, het menu en de titel staan erop en moeten leesbaar blijven */}
     <div className="aurora pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
-      <span className="absolute -left-40 -top-48 h-[34rem] w-[34rem] rounded-full blur-3xl opacity-30 aur-a"></span>
+      <span className="absolute -left-40 -top-48 h-[34rem] w-[34rem] rounded-full blur-3xl opacity-[.12] aur-a"></span>
       <span className="absolute -bottom-56 -right-32 h-[30rem] w-[30rem] rounded-full blur-3xl opacity-25 aur-b"></span>
     </div>
   </div>;

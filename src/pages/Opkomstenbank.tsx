@@ -96,7 +96,7 @@ export default function Opkomstenbank() {
           : <div className="empty"><span>{others.length ? 'Niets gevonden.' : 'Andere speltakken hebben nog niets gedeeld. Wat zij in hun opkomstenbank zetten, verschijnt hier.'}</span></div>}
       </div>
         : <div className="stack" style={{ gap: 18 }}>
-          {bank.length ? <div className="bank-grid">{bank.map(t => <BankCard key={t.id} what="Opkomst" onDelete={can('bank') ? () => remove(t) : undefined}><button className={'bcard lift transition-[box-shadow] duration-150 ease-out' + (sel === t.id ? ' sel' : '')} onClick={() => setSel(t.id)}>
+          {bank.length ? <div className="bank-grid">{bank.map(t => <BankCard key={t.id} what="Opkomst" title={t.title} onDelete={can('bank') ? () => remove(t) : undefined}><button className={'bcard lift transition-[box-shadow] duration-150 ease-out' + (sel === t.id ? ' sel' : '')} onClick={() => setSel(t.id)}>
             <span className="bt"><span>{t.title || 'Naamloos'}</span>{groupOn && t.shared && <span className="shared-ico" title="Gedeeld met de groep" aria-label="Gedeeld met de groep"><Users size={14} /></span>}</span>
             <CatTags o={t} />
             <CardMeta o={t} />
@@ -110,7 +110,7 @@ export default function Opkomstenbank() {
             <div className="picklist">{drafts.map(o => <div key={o.id} className="pick"><div className="info"><b>{o.title || 'Naamloze opkomst'}</b><span className="hint">{isKamp(o) ? 'Weekendkamp · ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(progBlocks(o).length, 'onderdeel', 'onderdelen')}</span></div>
               <div className="row"><button className="btn sm primary" onClick={() => nav(`/s/${sid}/bouwer/${o.id}`)}>Openen</button>
                 {can('bank') && <button className="btn sm" onClick={() => draftToBank(o)}>In bank zetten</button>}
-                {can('build') && <ConfirmBtn className="btn sm ghost" label="Verwijderen" confirm="Klik nogmaals" onConfirm={() => remove(o)} />}</div></div>)}</div></section>}
+                {can('build') && <ConfirmBtn className="btn sm ghost" label="Verwijderen" confirm="Klik nogmaals" ariaLabel={`Concept ${o.title || 'Naamloze opkomst'} verwijderen`} onConfirm={() => remove(o)} />}</div></div>)}</div></section>}
         </div>}
       <aside className={'card side sheet' + (T || G ? ' editing' : '')}>
         {T || G ? <div ref={sheetRef} {...sheetProps}>{T ? <TplEditor key={T.id} t={T} own={own} groupOn={groupOn} onClose={() => setSel(null)} onDelete={() => remove(T)} onCopied={id => setSelRaw(id)} />

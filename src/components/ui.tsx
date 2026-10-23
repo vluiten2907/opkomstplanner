@@ -5,6 +5,16 @@ import { pad2 } from '../lib/time';
 
 const MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 
+/**
+ * Ongedaan maken (knop of Ctrl+Z) en daarna "Teruggezet" melden: zo weet ook wie het niet ziet (schermlezer, of de rij staat buiten beeld)
+ * dat het gelukt is. Meldt het terugzetten zelf al iets (bijv. "Niet meer ingepland" of "Kan niet meer terug"), dan blijft dat staan.
+ */
+function runUndo(fn: () => void) {
+  const n0 = useToast.getState().n;
+  fn();
+  if (useToast.getState().n === n0) useToast.getState().show('Teruggezet');
+}
+
 export function Toast() {
   const { msg, action, n, hide, hold } = useToast();
   const act = msg ? action : null, undo = isUndo(act) ? act : null;
@@ -21,13 +31,13 @@ export function Toast() {
       const t = e.target instanceof Element ? e.target : null;
       if (t?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
       const m = document.querySelector('.modal'); if (m && m !== useToast.getState().scope) return;
-      e.preventDefault(); hide(); undo.fn();
+      e.preventDefault(); hide(); runUndo(undo.fn);
     };
     document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h);
   }, [undo, hide]);
   return <div className={'toast' + (msg ? ' show' : '') + (act ? ' has-act' : '')} role="status" aria-live="polite"
     onMouseEnter={() => set('hover', true)} onMouseLeave={() => set('hover', false)} onFocus={() => set('focus', true)} onBlur={() => set('focus', false)}>
-    <span>{msg}</span>{act && <button type="button" onClick={() => { hide(); act.fn(); }}
+    <span>{msg}</span>{act && <button type="button" onClick={() => { hide(); if (undo) runUndo(act.fn); else act.fn(); }}
       title={undo ? (MAC ? 'Of ⌘Z' : 'Of Ctrl+Z') : undefined} aria-keyshortcuts={undo ? (MAC ? 'Meta+Z' : 'Control+Z') : undefined}>{act.label}</button>}
   </div>;
 }
@@ -148,16 +158,48 @@ export function useSheetDialog(open: boolean, label: string, opener?: () => HTML
 
 /** Per venster (de .modal) waar de focus vandaan kwam: zo vindt een venster dat een ander verving de weg terug (zie focusBack). */
 const cameFrom = new WeakMap<Element, HTMLElement | null>();
+/** Waar de knop stond die het eerste venster opende (buiten elk venster): de rij of kaart eromheen, de lijst en de plek erin, en het stuk van de pagina. */
+type Spot = { item: Element | null; list: Element | null; idx: number; region: Element | null };
+const spots = new WeakMap<Element, Spot>();
+function spotOf(el: Element | null): Spot | null {
+  if (!el || el === document.body || !el.isConnected || el.closest('.modal')) return null;
+  const item = el.closest('.pick, .prow, .bwrap, .bcard, .lib, li'), list = item?.parentElement || null;
+  return { item, list, idx: item && list ? Array.prototype.indexOf.call(list.children, item) : -1, region: el.closest('section, aside') };
+}
+const firstFocusable = (c: Element | null | undefined) =>
+  c && c.isConnected ? [...c.querySelectorAll<HTMLElement>(FOCUSABLE)].find(x => x.getClientRects().length > 0) || null : null;
+/**
+ * De knop is weg (bijv. de rij in "Nog zonder programma" verdwijnt na Koppelen): dezelfde plek in die lijst (de rij die nu daar staat),
+ * anders de kop van dat stuk van de pagina, anders de inhoud. Nooit kwijt naar het begin van de pagina.
+ */
+function nearby(s: Spot | null): HTMLElement | null {
+  if (s) {
+    const own = firstFocusable(s.item); if (own) return own;
+    if (s.list?.isConnected) {
+      const kids = [...s.list.children], from = Math.max(0, Math.min(s.idx, kids.length));
+      for (const k of [...kids.slice(from), ...kids.slice(0, from).reverse()]) { const f = firstFocusable(k); if (f) return f; }
+    }
+    const h = s.region?.isConnected ? s.region.querySelector<HTMLElement>('h1, h2, h3') : null;
+    if (h) { if (!h.hasAttribute('tabindex')) h.tabIndex = -1; return h; }
+  }
+  return document.getElementById('inhoud');
+}
 /**
  * Focus terug naar `el`. Is dat weg (het zat in een venster dat intussen is vervangen, bijv. Kiezen in Koppelen → Andere naam kiezen
  * → terug naar Koppelen), dan naar waar dát venster vandaan kwam, enzovoort: zo komt hij terug bij bijv. de knop Koppelen van de rij.
+ * Is ook die knop weg en heeft niets anders de focus gepakt, dan naar dezelfde plek op de pagina (zie nearby).
  */
-function focusBack(el: HTMLElement | null) {
+function focusBack(el: HTMLElement | null, spot: Spot | null) {
   for (let i = 0; el && i < 8; i++) {
     if (el.isConnected) { if (el !== document.body) el.focus({ preventScroll: true }); return; }
     const host = el.closest('.modal');
-    el = host && cameFrom.has(host) ? cameFrom.get(host)! : null;
+    if (!host || !cameFrom.has(host)) break;
+    spot = spots.get(host) || spot; el = cameFrom.get(host)!;
   }
+  // alleen als de focus echt kwijt is: een venster dat dit venster vervangt of een veld met autoFocus op een nieuwe pagina houdt hem
+  const a = document.activeElement;
+  if (a && a !== document.body && a.isConnected) return;
+  nearby(spot)?.focus({ preventScroll: true });
 }
 
 export function Modal({ title, sub, onClose, wide, children }: { title: string; sub?: string; onClose: () => void; wide?: boolean; children: ReactNode }) {
@@ -165,17 +207,19 @@ export function Modal({ title, sub, onClose, wide, children }: { title: string; 
   const id = useId();
   // wat de focus had vóór het venster (bij het renderen, dus vóór een autoFocus in het venster): daar gaat hij na het sluiten heen
   const [prev] = useState(() => document.activeElement as HTMLElement | null);
+  // en waar die knop stond, voor als hij na het sluiten weg is (alleen als hij buiten elk venster stond: het begin van een reeks vensters)
+  const [spot] = useState(() => spotOf(document.activeElement));
   // Esc sluit alleen het venster (preventDefault: een paneel eronder sluit dan niet mee)
   useEffect(() => { const h = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose]);
   useEffect(() => {
     // de rest van de app is zolang onbereikbaar (ook voor schermlezers); de melding onderin blijft werken
     const undo = root.current ? inertOutside(root.current) : () => {};
-    if (root.current) cameFrom.set(root.current, prev);
+    if (root.current) { cameFrom.set(root.current, prev); if (spot) spots.set(root.current, spot); }
     // focus in het venster; op de kaart zelf, zodat op een telefoon niet meteen het toetsenbord opent (een veld met autoFocus houdt hem)
     const c = card.current;
     if (c && !c.contains(document.activeElement)) c.focus({ preventScroll: true });
-    return () => { undo(); focusBack(prev); };
-  }, [prev]);
+    return () => { undo(); focusBack(prev, spot); };
+  }, [prev, spot]);
   return <div ref={root} className="modal" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
     <div ref={card} className={'modal-card' + (wide ? ' wide' : '')} role="dialog" aria-modal="true" aria-labelledby={id + 't'} aria-describedby={sub ? id + 's' : undefined} tabIndex={-1} onKeyDown={e => trapTab(card.current, e)}>
       <div className="pad stack">

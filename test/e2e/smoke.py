@@ -2866,8 +2866,9 @@ with sync_playwright() as p:
     k.locator('#om-title').focus(); k.keyboard.press('Control+z'); kw(300)
     in_text = k.locator('.lanes .blk').count() == n0 - 1 and ub.count() == 1
     k.locator('.lanes .blk').first.focus(); k.keyboard.press('Control+z'); kw(500)
-    check(ks == 'Control+Z' and in_text and k.locator('.lanes .blk').count() == n0 and k.locator('.lanes .blk:has-text("Junglejacht")').count() == 1 and k.locator('.toast.show').count() == 0,
-          'Ctrl+Z na Delete zet het onderdeel terug (niet vanuit een tekstveld)')
+    zt = k.locator('.toast.show').inner_text().strip() if k.locator('.toast.show').count() else ''
+    check(ks == 'Control+Z' and in_text and k.locator('.lanes .blk').count() == n0 and k.locator('.lanes .blk:has-text("Junglejacht")').count() == 1 and k.locator('.toast.show button').count() == 0 and zt == 'Teruggezet',
+          f'Ctrl+Z na Delete zet het onderdeel terug (niet vanuit een tekstveld); de melding zegt Teruggezet, zonder knop ({zt})')
     # een melding van de pagina zet niets terug terwijl er een venster open staat; na het sluiten wel
     k.locator('.lanes .blk:has-text("Junglejacht")').focus(); k.keyboard.press('Delete'); kw(300)
     k.click('.ctx >> text=Leiding indelen'); kw(500); k.keyboard.press('Control+z'); kw(300)
@@ -3008,6 +3009,148 @@ with sync_playwright() as p:
     check([kb_hold, kb_off, ms_hold, ms_off] == [True] * 4 and a.locator('.catrow').count() == n_cat,
           f'twee keer klikken: de vraag blijft staan met focus of muis erop (en wordt voorgelezen), verdwijnt 3 s daarna; niets verwijderd ({[kb_hold, kb_off, ms_hold, ms_off]})')
     ac.close()
+    # --- toegankelijkheid (eigen oefendata): contrast op de pagina zelf, focus niet onder de opslaan-balk of de tabbladen, focus na een reeks
+    #     vensters, na Locatie toevoegen en naar het zijpaneel, namen van herhaalde knoppen, Teruggezet na Ongedaan maken, geen knop in een knop
+    zc = b.new_context(viewport={'width': 1360, 'height': 900}, locale='nl-NL')
+    zc.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())
+    z = zc.new_page(); z.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+    z.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' and 'ERR_FAILED' not in m.text else None)
+    zw = lambda ms=400: z.wait_for_timeout(ms)
+    z_set = lambda js: z.evaluate("(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)); " + js + "; localStorage.setItem(k, JSON.stringify(s)); })()")
+    z.goto(BASE + '/s/oefen/dashboard'); zw(1200)
+    # tekst op de pagina zelf (menu, groepsnaam, kop in de bouwer, knoppen zonder vlak, kolomkoppen) ≥ 4,5:1, gemeten op de echte pixels:
+    # met de korrel, de gloed van het accent linksboven en de kopbalk, ook als de donkere kaart van de komende opkomst eronder schuift.
+    # De tekst wordt even doorzichtig gemaakt; de mediaan van wat eronder ligt is de achtergrond (marge tot 4,6 voor de korrel).
+    MEDL = """async (b64) => { const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode();
+      const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+      const d = x.getImageData(0, 0, c.width, c.height).data, l = [], f = v => (v /= 255) <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
+      for (let i = 0; i < d.length; i += 4) l.push(.2126 * f(d[i]) + .7152 * f(d[i + 1]) + .0722 * f(d[i + 2]));
+      l.sort((a, b) => a - b); return l[l.length >> 1]; }"""
+    TXTL = """e => { const s = getComputedStyle(e).color, k = s.startsWith('color(') ? 255 : 1, m = s.match(/[\\d.]+/g).map(Number);
+      const f = v => (v /= 255) <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; return .2126 * f(m[0] * k) + .7152 * f(m[1] * k) + .0722 * f(m[2] * k); }"""
+    HIDE = """(e, on) => { for (const n of [e, ...e.querySelectorAll('*')]) on ? n.style.setProperty('color', 'transparent', 'important') : n.style.removeProperty('color'); }"""
+    def pix_low(sel, n):
+        out = []
+        for i in range(min(n, z.locator(sel).count())):
+            el = z.locator(sel).nth(i); bb = el.bounding_box()
+            if not bb or bb['width'] < 2 or bb['y'] < 0 or bb['y'] + bb['height'] > z.viewport_size['height']: continue
+            tl = el.evaluate(TXTL); el.evaluate(HIDE, True); zw(40)
+            png = z.screenshot(clip=bb); el.evaluate(HIDE, False)
+            bl = z.evaluate(MEDL, base64.b64encode(png).decode()); r = (max(tl, bl) + .05) / (min(tl, bl) + .05)
+            if r < 4.6: out.append(f'{sel} "{el.inner_text().strip()[:14]}" {r:.2f}')
+        return out
+    lowpx, n_px = {}, 0
+    for vw, vh in ((1360, 900), (390, 844)):
+        z.set_viewport_size({'width': vw, 'height': vh})
+        for acc in ('Groen', 'Grijs', 'Marine'):
+            z.goto(BASE + '/s/oefen/instellingen'); zw(900); z.click(f'.accents .acc:has-text("{acc}")'); zw(300)
+            bad = []
+            for path, ys, sels in (('dashboard', (0, 600), ('.brand-txt small', '.nav a:not([aria-current])')),
+                                   ('bouwer/opk-sint', (0,), ('.plan-head .eyebrow', '.plan-head .btn.ghost')), ('jaarplanning', (0,), ('.prow.head span',))):
+                z.goto(BASE + '/s/oefen/' + path); zw(1000); z.add_style_tag(content='.watermark { display: none !important; }')
+                for y in ys:
+                    z.evaluate(f'window.scrollTo(0, {y})'); zw(250)
+                    for sel in sels:
+                        n_px += min(3, z.locator(sel).count()); bad += [f'{path}@{y} {x}' for x in pix_low(sel, 3)]
+            if bad: lowpx[f'{vw} {acc}'] = bad[:4]
+            if vw == 390 and acc == 'Groen': z.goto(BASE + '/s/oefen/dashboard'); zw(1000); z.evaluate('window.scrollTo(0, 600)'); zw(300); z.screenshot(path=f'{OUT}/49b-kopbalk-kaart-eronder-mobiel.png')
+    z.set_viewport_size({'width': 1360, 'height': 900}); z.goto(BASE + '/s/oefen/dashboard'); zw(1000); z.evaluate('window.scrollTo(0, 600)'); zw(300)
+    z.screenshot(path=f'{OUT}/49-kopbalk-kaart-eronder.png')
+    check(n_px > 30 and not lowpx, f'contrast op de pagina zelf (gloed, korrel, kopbalk, ook met de kaart eronder) ≥ 4,5:1 bij de donkerste accenten, breed en smal ({n_px} gemeten; {lowpx})')
+    z.goto(BASE + '/s/oefen/instellingen'); zw(900); z.click('.accents .acc:has-text("Marine")'); zw(300)
+    # Tab zet de focus nooit helemaal onder iets dat vast staat: de opslaan-balk bij bewerken uit de bank (in het zijpaneel, het vel op de
+    # telefoon en in de bouwer), de tabbladen van het zijpaneel of de kopbalk
+    COVER = """() => { const a = document.activeElement; if (!a || a === document.body) return '';
+      const r = a.getBoundingClientRect(); if (!r.width || !r.height) return ''; let vis = 0, cov = 0;
+      for (const fx of [.1, .5, .9]) for (const fy of [.1, .5, .9]) {
+        const x = r.left + r.width * fx, y = r.top + r.height * fy; if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
+        const t = document.elementFromPoint(x, y); if (!t) continue;
+        if (a.contains(t) || t.contains(a) || t.closest('label')?.contains(a)) { vis++; continue; }
+        let n = t; while (n && n !== document.body && !['fixed', 'sticky'].includes(getComputedStyle(n).position)) n = n.parentElement;
+        if (n && n !== document.body) cov++; else vis++; }
+      return cov && !vis ? (a.getAttribute('aria-label') || a.textContent || a.id || a.tagName).trim().slice(0, 24) + ' ' + Math.round(r.top) : ''; }"""
+    def walk(key, steps):
+        bad = []
+        for _ in range(steps):
+            z.keyboard.press(key); z.wait_for_timeout(20); u = z.evaluate(COVER)
+            if u: bad.append(u)
+        return bad
+    covered = {}
+    for vw, vh in ((1360, 900), (1360, 700), (390, 844)):
+        z.set_viewport_size({'width': vw, 'height': vh}); tag = f'{vw}x{vh}'
+        z.goto(BASE + '/s/oefen/activiteiten'); zw(1000); z.locator('.bcard').first.click(); zw(400)
+        z.locator('#lf-title').click(); z.keyboard.press('End'); z.keyboard.type(' x'); zw(300)
+        saveh = z.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--saveh')")
+        covered['activiteit ' + tag] = walk('Tab', 40) + walk('Shift+Tab', 40)
+        if not saveh.endswith('px'): covered['--saveh ' + tag] = [saveh]
+        z.locator('.savebar button:has-text("Annuleren")').click(); zw(200)
+        z.goto(BASE + '/s/oefen/opkomsten'); zw(1000); z.locator('.bcard').first.click(); zw(400)
+        covered['opkomst ' + tag] = walk('Tab', 50)
+        z.goto(BASE + '/s/oefen/bouwer/opk-bank-knopen'); zw(1000)
+        z.locator('#om-title').click(); z.keyboard.press('End'); z.keyboard.type(' x'); zw(300)
+        covered['bouwer uit de bank ' + tag] = walk('Tab', 70)
+        z.locator('.savebar button:has-text("Annuleren")').click(); zw(200)
+        z.goto(BASE + '/s/oefen/bouwer/opk-jungle'); zw(1000)
+        z.evaluate("document.activeElement && document.activeElement.blur(); window.scrollTo(0, 0)")
+        covered['bouwer ' + tag] = walk('Tab', 100)
+        z.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)"); zw(200)
+        z.evaluate("[...document.querySelectorAll('.side button')].filter(x => x.getClientRects().length).pop().focus()")
+        covered['bouwer terug ' + tag] = walk('Shift+Tab', 40)
+    bad = {k: v[:3] for k, v in covered.items() if v}
+    check(not bad, f'focus nooit helemaal onder de opslaan-balk, de tabbladen van het zijpaneel of de kopbalk (banken en bouwer; breed, laag en smal) ({bad})')
+    # dashboard: Locatie toevoegen met het toetsenbord; na Esc terug op de knop, na Enter op wat erna komt op de kaart (niet kwijt)
+    z.set_viewport_size({'width': 1360, 'height': 900})
+    z_set("const o = s['speltakken/oefen/opkomsten/opk-jungle']; o.location = ''; o.short = ''")
+    z.goto(BASE + '/s/oefen/dashboard'); zw(1200)
+    HACT = "(() => { const a = document.activeElement; return !a || a === document.body ? 'BODY' : (a.closest('.hero') ? 'kaart: ' : '') + (a.getAttribute('aria-label') || a.textContent).trim().slice(0, 30); })()"
+    addl = z.locator('.hero button:has-text("Locatie toevoegen")'); had_add = addl.count() == 1
+    addl.focus(); z.keyboard.press('Enter'); zw(200); z.keyboard.press('Escape'); zw(300); h_esc = z.evaluate(HACT)
+    addl.focus(); z.keyboard.press('Enter'); zw(200); z.keyboard.type('Bos'); z.keyboard.press('Enter'); zw(500); h_ent = z.evaluate(HACT)
+    z.locator('.hero button:has-text("Korte omschrijving toevoegen")').focus(); z.keyboard.press('Enter'); zw(200); z.keyboard.press('Escape'); zw(300); h_sh = z.evaluate(HACT)
+    check(had_add and h_esc == 'kaart: Locatie toevoegen' and h_ent == 'kaart: Korte omschrijving toevoegen' and h_sh == 'kaart: Korte omschrijving toevoegen'
+          and z.locator('.hero .facts:has-text("Bos")').count() == 1, f'dashboard: na Esc of Enter in Locatie toevoegen of Korte omschrijving blijft de focus op de kaart ({h_esc}; {h_ent}; {h_sh})')
+    # herhaalde knoppen met de titel of datum in de naam: Inplannen in het zijpaneel, verwijderen op de kaarten, Hier inplannen, Verwijderen bij concepten
+    NMS = "sel => [...document.querySelectorAll(sel)].filter(b => b.getClientRects().length).map(b => b.getAttribute('aria-label') || b.textContent.trim())"
+    z.goto(BASE + '/s/oefen/bouwer/opk-jungle'); zw(1000); nms = {'Inplannen: ': z.evaluate(NMS, '.side .lib button')}
+    z.goto(BASE + '/s/oefen/activiteiten'); zw(1000); nms['Activiteit '] = z.evaluate(NMS, '.carddel')
+    z.goto(BASE + '/s/oefen/opkomsten'); zw(1000); nms['Opkomst '] = z.evaluate(NMS, '.carddel')
+    z.locator('.bcard').first.click(); zw(300); z.click('.side button:has-text("Inplannen")'); zw(400)
+    nms['Hier inplannen: '] = z.evaluate(NMS, '.modal .pick button'); z.keyboard.press('Escape'); zw(300)
+    z.goto(BASE + '/s/oefen/bouwer'); zw(1000); nms[''] = z.evaluate(NMS, 'main .picklist .btn.ghost')
+    nm_bad = {k: v[:2] for k, v in nms.items() if len(v) < 2 or len(set(v)) != len(v) or not all(x.startswith(k) for x in v)
+              or (k in ('Activiteit ', 'Opkomst ', '') and not all(x.endswith(' verwijderen') and len(x) > len(k) + 12 for x in v))}
+    check(not nm_bad, f'herhaalde knoppen met de titel of datum in de naam (Inplannen, verwijderen op een kaart, Hier inplannen, concept verwijderen) ({nm_bad or {k: v[:1] for k, v in nms.items()}})')
+    # Ongedaan maken met de knop zegt Teruggezet; de prullenbak in de tijdlijn is geen knop in een knop (alleen muis en aanraken) en werkt
+    z.goto(BASE + '/s/oefen/bouwer/opk-jungle'); zw(1000)
+    nest = z.evaluate("[document.querySelectorAll('.lanes [role=button] button, .lanes [role=button] [role=button], .lanes [role=button] a').length, [...document.querySelectorAll('.lanes .bdel')].every(e => e.tagName === 'SPAN' && e.getAttribute('aria-hidden') === 'true' && e.tabIndex < 0)]")
+    n_b = z.locator('.lanes .blk').count(); kl = z.locator('.lanes .blk:has-text("Knopen leren")'); kl.hover(); kl.locator('.bdel').click(); zw(400)
+    gone = z.locator('.lanes .blk').count() == n_b - 1
+    z.click('.toast.show button:has-text("Ongedaan maken")'); zw(400)
+    t_undo = z.locator('.toast.show').inner_text().strip() if z.locator('.toast.show').count() else ''
+    check(nest == [0, True] and gone and z.locator('.lanes .blk').count() == n_b and t_undo == 'Teruggezet' and z.locator('.toast.show button').count() == 0,
+          f'tijdlijn: prullenbak is geen knop in een knop en werkt met de muis; Ongedaan maken zegt daarna Teruggezet ({nest}, {t_undo})')
+    # telefoon: "N aandachtspunten" en de knop Activiteit brengen de focus mee naar het tabblad in het zijpaneel
+    TABF = "(() => { const a = document.activeElement, r = a.getBoundingClientRect(); return [a.getAttribute('role'), a.getAttribute('aria-selected'), a.textContent, r.top >= 0 && r.bottom <= innerHeight]; })()"
+    z.set_viewport_size({'width': 390, 'height': 844}); z.goto(BASE + '/s/oefen/bouwer/opk-jungle'); zw(1200)
+    z.locator('.summary.mini .linkbtn').focus(); z.keyboard.press('Enter'); zw(900); f_chk = z.evaluate(TABF)
+    z.goto(BASE + '/s/oefen/bouwer/opk-jungle'); zw(1200); z.evaluate('window.scrollBy(0, 300)'); zw(400)
+    fab = z.locator('.plan-fab'); fab_vis = fab.count() == 1 and fab.is_visible()
+    if fab_vis: fab.focus(); z.keyboard.press('Enter'); zw(900)
+    f_fab = z.evaluate(TABF)
+    check(f_chk == ['tab', 'true', 'Controle', True] and fab_vis and f_fab == ['tab', 'true', 'Activiteitenbank', True],
+          f'bouwer mobiel: aandachtspunten en de knop Activiteit zetten de focus op het tabblad in het zijpaneel ({f_chk}, {f_fab})')
+    # na Koppelen van een concept (de rij verdwijnt) en na een reeks vensters (Koppelen → Kiezen uit de bank → Opkomst overnemen → Esc)
+    # gaat de focus naar dezelfde plek in de lijst "Nog zonder programma", niet kwijt naar het begin van de pagina
+    z.set_viewport_size({'width': 1360, 'height': 900}); z.goto(BASE + '/s/oefen/bouwer'); zw(1000)
+    OPENF = "(() => { const a = document.activeElement; return !a || a === document.body ? 'BODY' : (a.closest('section[aria-labelledby=\"bw-open\"]') ? 'lijst: ' : '') + (a.getAttribute('aria-label') || a.textContent).trim().slice(0, 40); })()"
+    z.locator('section[aria-labelledby="bw-open"] button[aria-label="Koppelen: Sinterklaas"]').focus(); z.keyboard.press('Enter'); zw(500)
+    z.locator('.modal button[aria-label="Kiezen: Sinterklaasopkomst"]').focus(); z.keyboard.press('Enter'); zw(600); f_draft = z.evaluate(OPENF)
+    z.locator('section[aria-labelledby="bw-open"] button[aria-label="Koppelen: Rond de wereld"]').focus(); z.keyboard.press('Enter'); zw(500)
+    z.locator('.modal button[aria-label="Kiezen: Rond de wereld"]').first.focus(); z.keyboard.press('Enter'); zw(600)
+    chain = z.locator('.modal h2:has-text("Opkomst overnemen")').count() == 1
+    z.keyboard.press('Escape'); zw(400); f_chain = z.evaluate(OPENF)
+    check(f_draft.startswith('lijst: ') and chain and f_chain.startswith('lijst: '), f'bouwer: na Koppelen en na Opkomst overnemen staat de focus op de volgende datum in de lijst ({f_draft}; {f_chain})')
+    zc.close()
     # aanraakscherm: grotere naamknoppen, geen prullenbak op een blokje van 5 minuten, groter raakvlak op het dashboard
     tc = b.new_context(viewport={'width': 390, 'height': 844}, locale='nl-NL', has_touch=True, is_mobile=True)
     tc.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())
