@@ -279,7 +279,7 @@ function Builder({ o: stored }: { o: Opk }) {
       <span className="stat">Nog vrij<b>{A.free ? fmtDur(A.free) : '0 min'}</b></span><span className="stat">Onderdelen<b>{D.blocks.length}</b></span>
       <span className="stat">Minimaal leiding<b>{minNeed(o)}</b></span>
       {!nn && <span className={'stat' + (minNeed(o) > A.present.length ? ' warnc' : '')}>Leiding{o.state === 'planned' ? ' aanwezig' : ''}<b>{A.present.length}</b></span>}
-      <button className={'stat' + (w ? ' warnc' : '')} style={{ border: 0, cursor: 'pointer', textAlign: 'left' }} onClick={() => { setSelId(null); setSideTab('check'); }}>Aandachtspunten{kamp ? ' (kamp)' : ''}<b>{w}</b></button>
+      <button className={'stat' + (w ? ' warnc' : '')} onClick={() => { setSelId(null); setSideTab('check'); }}><span>Aandachtspunten{kamp ? ' (kamp)' : ''}</span><b>{w}</b></button>
     </div>}<div style={{ padding: '0 16px 16px' }}><Strip o={D as Day} /></div></div>
     <div className="plan-main">
       <section className="card" aria-label="Tijdlijn">

@@ -374,7 +374,13 @@ button.cday:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 .tblocks li small { display: block; color: var(--muted); font-size: 12px; }
 
 /* Instellingen */
-.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 20px; align-items: start; }
+/* Instellingen: kaarten in kolommen die op elkaar aansluiten (geen gaten onder een korte kaart); Team over de volle breedte.
+   Je leest per kolom van boven naar beneden, in de volgorde van de pagina. */
+.settings { columns: 320px; column-gap: 20px; }
+.settings > * { break-inside: avoid; margin: 0 0 20px; }
+.settings > :last-child { margin-bottom: 0; }
+.settings > fieldset { border: 0; min-width: 0; }
+.settings > .teamcard { column-span: all; }
 .setlist { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .setlist li { display: flex; gap: 8px; align-items: center; }
 .setlist .inp { flex: 1; }
@@ -974,3 +980,20 @@ body:has(.auth-wrap) { padding-bottom: 0; }
 /* lege bank: één vlak met uitleg en één knop, over de hele breedte */
 .bank-empty { max-width: 760px; }
 .bank-empty > span { max-width: 62ch; }
+
+/* Telwaarden (jaarplanning, bouwer, leiding indelen): label met een groot getal, geen vakje meer (dat leek op een invoerveld).
+   Een dunne lijn in de tussenruimte scheidt ze. Loopt de rij over twee regels, dan valt de lijn vóór het eerste getal van
+   een regel buiten de rij en wordt hij weggeknipt (clip-path), zodat elke regel netjes links begint.
+   Aandachtspunten in de bouwer is een knop: het label krijgt de koperen onderstreping van een link. */
+.stat, .stat.warnc { position: relative; background: transparent; box-shadow: none; border: 0; border-radius: 0; padding: 0; gap: 2px; }
+.stat + .stat::before { content: ''; position: absolute; left: calc(var(--statgap) / -2 - .75px); top: 2px; bottom: 2px; width: 1.5px; background: var(--line); }
+.stat b { font-family: var(--f-display); font-size: 22px; font-weight: 800; line-height: 1.05; letter-spacing: -.01em; }
+.stat.warnc b { color: var(--danger); }
+.rangestats, .summary:not(.mini), .statrow { --statgap: 22px; column-gap: var(--statgap); row-gap: 12px; }
+.summary:not(.mini) { --statgap: 26px; }
+.rangestats, .statrow { clip-path: inset(-8px -8px -8px 0); }
+.summary:not(.mini) { padding-bottom: 14px; clip-path: inset(-8px -8px -8px 12px); }
+button.stat { font: inherit; color: var(--muted); cursor: pointer; text-align: left; }
+button.stat > span { text-decoration: underline; text-decoration-thickness: 2px; text-decoration-color: var(--pop); text-underline-offset: 3px; }
+button.stat.warnc > span { text-decoration-color: var(--danger); }
+button.stat:hover > span { color: var(--ink); }

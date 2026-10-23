@@ -24,3 +24,7 @@
   </FilesMatch>
 </IfModule>
 AddDefaultCharset UTF-8
+# Thuisscherm-gegevens (naam, kleur, icoon): met het juiste type, anders negeert de browser het bestand (nosniff)
+<IfModule mod_mime.c>
+  AddType application/manifest+json .webmanifest
+</IfModule>

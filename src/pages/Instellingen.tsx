@@ -33,9 +33,10 @@ export default function Instellingen() {
   const dayOpts = (list: number[]) => list.map(n => <option key={n} value={n}>{n} dagen</option>);
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title={team ? 'Team & instellingen' : 'Instellingen'} sub={edit ? undefined : 'Je kunt de instellingen bekijken; alleen de teamleider (of leiding met het recht Instellingen) kan ze aanpassen.'} />
+    {/* kolommen lopen van boven naar beneden: volgorde = leesvolgorde (en zo zijn de kolommen ongeveer even lang) */}
     <div className="settings">
       <Team />
-      <fieldset className="card pad stack" disabled={!edit} style={{ border: 0, margin: 0, minWidth: 0 }}>
+      <fieldset className="card pad stack" disabled={!edit}>
         <h2>Je groep</h2>
         {/* Onder een groep hoort de naam bij de groep (ook in uitnodigingen en pdf's): die past de beheerder aan in Beheer. */}
         {S.sp?.gid ? <Field label="Naam van de groep" htmlFor="gs-name" hint="Wijzigen kan de beheerder van de groep in Beheer."><input id="gs-name" value={settings.groupName} readOnly aria-readonly="true" /></Field>
@@ -44,7 +45,7 @@ export default function Instellingen() {
         <Logo />
         <div className="field"><span className="lbl">Kleur</span><div className="accents">{Object.entries(ACCENTS).map(([k, a]) => <button key={k} className="acc" aria-pressed={settings.accent === k} style={{ ['--c' as any]: a.l }} onClick={() => set({ accent: k })}><i />{a.label}</button>)}</div></div>
       </fieldset>
-      <fieldset className="card pad stack" disabled={!edit} style={{ border: 0, margin: 0, minWidth: 0 }}>
+      <fieldset className="card pad stack" disabled={!edit}>
         <h2>Standaardtijden en seizoen</h2>
         <div className="two">
           <Field label="Begintijd" className="timefield"><TimePicker value={settings.defStart} from={360} to={1430} onChange={v => { const p: Partial<Settings> = { defStart: v }; if (settings.defEnd <= v) { p.defEnd = v + 60; toast('Standaard eindtijd verschoven naar ' + fmtT(v + 60)); } set(p); }} /></Field>
@@ -60,28 +61,28 @@ export default function Instellingen() {
           <Field label="Seizoen eindigt in"><select value={settings.seasonEndMonth} onChange={e => set({ seasonEndMonth: +e.target.value })}>{monthOpts}</select></Field>
         </div>
       </fieldset>
-      <fieldset className="card pad stack" disabled={!edit} style={{ border: 0, margin: 0, minWidth: 0 }}>
+      <fieldset className="card pad stack" disabled={!edit}>
         <h2>Vaste blokken</h2>
         <label className="toggle"><input type="checkbox" checked={settings.fixedOn} onChange={e => set({ fixedOn: e.target.checked })} /><span><b>Vaste blokken toevoegen</b><br /><span className="hint">Openen, ranja drinken en sluiten staan dan automatisch in elke nieuwe opkomst (niet bij kampen).</span></span></label>
         {settings.fixedOn && <div className="three">{([['fixedOpen', 'Openen'], ['fixedRanja', 'Ranja drinken'], ['fixedClose', 'Sluiten']] as const).map(([k, l]) => <Field key={k} label={l}><select value={settings[k]} onChange={e => set({ [k]: +e.target.value } as Partial<Settings>)}>{[0, 5, 10, 15, 20, 25, 30].map(m => <option key={m} value={m}>{m ? m + ' min' : 'Niet'}</option>)}</select></Field>)}</div>}
       </fieldset>
-      <fieldset className="card pad stack" disabled={!edit} style={{ border: 0, margin: 0, minWidth: 0 }}>
+      <fieldset className="card pad stack" disabled={!edit}>
         <h2>Brieven</h2>
         <Field label="Brief standaard versturen" hint="voor de opkomst"><select value={settings.letterDays} onChange={e => set({ letterDays: +e.target.value })}>{dayOpts([7, 10, 14, 21, 28, 42])}</select></Field>
         <Field label="Melding op het dashboard" hint="voor de verzenddatum"><select value={settings.letterNotice} onChange={e => set({ letterNotice: +e.target.value })}>{dayOpts([3, 7, 10, 14, 21])}</select></Field>
       </fieldset>
-      <fieldset className="card pad stack" disabled={!edit} style={{ border: 0, margin: 0, minWidth: 0 }}>
-        <h2>Extra leiding</h2>
-        <p className="hint">Leden van het team staan hierboven en zijn automatisch in te delen. Hier zet je namen van leiding of hulpouders zonder account.</p>
-        <NameList items={settings.leaders} placeholder="Naam" label="Naam leiding" onChange={fn => set(s => ({ leaders: fn(s.leaders) }))} dedupe />
-      </fieldset>
-      <fieldset className="card pad stack" disabled={!edit} style={{ border: 0, margin: 0, minWidth: 0 }}>
+      <fieldset className="card pad stack" disabled={!edit}>
         <h2>Categorieën</h2>
         <div className="stack" style={{ gap: 8 }}>{settings.categories.map(c => <CatRow key={c.id} label={c.label} color={c.color}
           onLabel={v => setCat(c.id, { label: v })} onColor={v => setCat(c.id, { color: v })} onRemove={() => set(s => ({ categories: s.categories.filter(x => x.id !== c.id) }))} />)}</div>
         <AddRow placeholder="Nieuwe categorie" onAdd={v => set(s => ({ categories: [...s.categories, { id: uid(), label: v, color: SWATCHES[s.categories.length % SWATCHES.length] }] }))} />
       </fieldset>
-      <fieldset className="card pad stack" disabled={!edit} style={{ border: 0, margin: 0, minWidth: 0 }}>
+      <fieldset className="card pad stack" disabled={!edit}>
+        <h2>Extra leiding</h2>
+        <p className="hint">Leden van het team staan hierboven en zijn automatisch in te delen. Hier zet je namen van leiding of hulpouders zonder account.</p>
+        <NameList items={settings.leaders} placeholder="Naam" label="Naam leiding" onChange={fn => set(s => ({ leaders: fn(s.leaders) }))} dedupe />
+      </fieldset>
+      <fieldset className="card pad stack" disabled={!edit}>
         <h2>Locaties</h2>
         <NameList items={settings.locations} placeholder="bijv. Speelveld" label="Locatie" onChange={fn => set(s => ({ locations: fn(s.locations) }))} />
       </fieldset>
@@ -244,7 +245,7 @@ function Team() {
     } catch { toast('Uitnodiging maken mislukt.'); }
     setBusy(false);
   };
-  return <section className="card pad stack" style={{ gridColumn: '1 / -1' }}>
+  return <section className="card pad stack teamcard">
     <div className="row between"><h2>Team</h2><span className="hint">{plural(members.length, 'lid', 'leden')} · {sp.name}</span></div>
     <div className="team">
       {members.map(([uidX, m]) => <MemberRow key={uidX} m={m} isTl={tl(uidX)} me={uidX === user?.uid} iAmTL={isTL} isAdmin={isAdmin} lastTL={tl(uidX) && tlCount < 2}

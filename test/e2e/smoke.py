@@ -1024,6 +1024,8 @@ with sync_playwright() as p:
     check(pg.locator('.blk').count() == nb0, 'alleen lezen: onderdeel niet te verwijderen')
     pg.goto(BASE + '/s/oefen/instellingen'); w(1000)
     check(pg.locator('#gs-name').is_disabled() and pg.locator('button:has-text("Back-up terugzetten")').count() == 0, 'zonder recht Instellingen: instellingen alleen bekijken, geen back-up terugzetten')
+    check(pg.locator('.catrow .sw.cur').count() > 0 and all(pg.locator('.catrow .sw.cur').nth(i).is_disabled() for i in range(pg.locator('.catrow .sw.cur').count())),
+          'zonder recht Instellingen: kleurstip van een categorie gaat niet open')
     oefen_set("s['speltakken/oefen'].members['oefen-jij'].perms = { plan: false, build: false, bank: true, settings: false }")
     pg.goto(BASE + '/s/oefen/opkomsten'); w(1000); pg.click('.bcard:has-text("Rond de wereld")'); w(300); pg.click('.side >> text=Bewerken'); w(800)
     check(pg.locator('.plan-head button:has-text("Kopie")').count() == 0 and pg.locator('.plan-head button:has-text("Verwijderen")').count() == 1,
@@ -1517,6 +1519,61 @@ with sync_playwright() as p:
     st = q.evaluate("[...document.querySelectorAll('.settings .two')[1].querySelectorAll('select')].map(s => Math.round(s.getBoundingClientRect().bottom) + '/' + Math.round(s.getBoundingClientRect().height))")
     lh = q.evaluate("document.querySelectorAll('.settings .two')[1].querySelector('.field label').getBoundingClientRect().height")
     check(len(st) == 2 and st[0] == st[1] and st[0].endswith('/38') and lh > 25, f'instellingen: velden naast elkaar op één lijn, ook met een label van twee regels ({st}, label {lh:.0f} px)')
+    # instellingen in kolommen: kaarten sluiten aan (geen gaten onder een korte kaart), Team over de volle breedte,
+    # leesvolgorde = volgorde op de pagina (per kolom van boven naar beneden); een kleurstip openen verschuift geen kaart naar een andere kolom
+    q.reload(); q.wait_for_timeout(1000)
+    LAY = """(() => { const s = document.querySelector('.settings').getBoundingClientRect();
+      return { sw: s.width, cards: [...document.querySelectorAll('.settings > *')].map(e => { const r = e.getBoundingClientRect();
+        return { h: e.querySelector('h2').textContent, l: Math.round(r.left), t: r.top, b: r.bottom, w: r.width }; }) }; })()"""
+    lay = q.evaluate(LAY); team, rest = lay['cards'][0], lay['cards'][1:]
+    order = sorted(rest, key=lambda c: (c['l'], c['t']))
+    gaps = [round(y['t'] - x['b']) for x, y in zip(order, order[1:]) if x['l'] == y['l']]
+    check(team['h'] == 'Team' and abs(team['w'] - lay['sw']) < 2 and len({c['l'] for c in rest}) == 3 and [c['h'] for c in order] == [c['h'] for c in rest] and gaps and max(gaps) <= 24,
+          f'instellingen: kaarten sluiten aan in 3 kolommen, Team over de volle breedte, volgorde per kolom van boven naar beneden (tussenruimte {gaps})')
+    q.locator('.catrow .sw.cur').first.click(); q.wait_for_timeout(200)
+    check([c['l'] for c in q.evaluate(LAY)['cards']] == [c['l'] for c in lay['cards']] and q.locator('.catrow .swatches').count() == 1, 'instellingen: kleuren uitklappen houdt elke kaart in zijn kolom')
+    q.screenshot(path=f'{OUT}/35-instellingen-kolommen.png', full_page=True)
+    # telwaarden: een getal met een label, geen vakje dat op een invoerveld lijkt
+    STATS = """sel => [...document.querySelectorAll(sel)].map(e => { const s = getComputedStyle(e), r = e.getBoundingClientRect(), bs = getComputedStyle(e, '::before');
+      return { bg: s.backgroundColor, sh: s.boxShadow, l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), f: getComputedStyle(e.querySelector('b')).fontFamily,
+               sep: bs.content === 'none' ? null : r.left + parseFloat(bs.left) }; })"""
+    q.goto(BASE + '/s/oefen/jaarplanning'); q.wait_for_timeout(1000)
+    js = q.evaluate(STATS, '.rangestats .stat')
+    check(len(js) == 4 and all(x['bg'] == 'rgba(0, 0, 0, 0)' and x['sh'] == 'none' and 'Bricolage' in x['f'] for x in js) and len({x['t'] for x in js}) == 1
+          and js[0]['sep'] is None and all(x['sep'] is not None for x in js[1:]),
+          'jaarplanning: tellingen als grote getallen met een scheidingslijn, geen vakjes naast de datumvelden')
+    q.set_viewport_size({'width': 390, 'height': 844}); q.wait_for_timeout(300)
+    js = q.evaluate(STATS, '.rangestats .stat'); cb = q.locator('.rangebar').bounding_box()
+    check(len({x['t'] for x in js}) == 1 and max(x['r'] for x in js) <= cb['x'] + cb['width'] - 16 and q.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'),
+          'jaarplanning mobiel: de vier tellingen op één regel, binnen de kaart')
+    q.locator('.rangebar').scroll_into_view_if_needed(); q.screenshot(path=f'{OUT}/36-jaarplanning-tellingen-mobiel.png')
+    # bouwer net boven telefoonbreedte: een kamp heeft meer tellingen dan op één regel past; elke regel begint links, zonder lijn ervoor
+    q.set_viewport_size({'width': 920, 'height': 900}); q.goto(BASE + '/s/oefen/bouwer/opk-kamp'); q.wait_for_timeout(1200)
+    bs = q.evaluate(STATS, '.summary .stat'); sm = q.locator('.summary').bounding_box()
+    clip = q.evaluate("getComputedStyle(document.querySelector('.summary')).clipPath")
+    m = re.search(r'inset\(\S+ \S+ \S+ ([\d.]+)px\)', clip); edge = sm['x'] + (float(m.group(1)) if m else 0)
+    rows = sorted({x['t'] for x in bs}); firsts = [min((x for x in bs if x['t'] == t), key=lambda x: x['l']) for t in rows]
+    check(len(rows) >= 2 and len({f['l'] for f in firsts}) == 1 and m is not None
+          and all(f['sep'] is None or f['sep'] < edge for f in firsts) and all(x['sep'] > edge for x in bs if x not in firsts),
+          f'bouwer: tellingen over twee regels: elke regel begint links, de scheidingslijn ervoor valt weg ({len(rows)} regels, {clip})')
+    ul = q.evaluate("(() => { const s = document.querySelector('.summary button.stat > span'); return s ? getComputedStyle(s).textDecorationLine : ''; })()")
+    check(ul == 'underline', 'bouwer: Aandachtspunten bij de tellingen is herkenbaar als knop (onderstreept)')
+    q.locator('.summary').scroll_into_view_if_needed(); q.screenshot(path=f'{OUT}/37-bouwer-tellingen-kamp.png')
+    q.set_viewport_size({'width': 1360, 'height': 900}); q.wait_for_timeout(200)
+    # tabblad- en thuisschermicoon: eigen tent-icoon (koper/marine), naam en kleur voor het thuisscherm
+    ic = q.evaluate("""(async () => { const get = async sel => { const l = document.querySelector(sel); if (!l) return null;
+        const r = await fetch(l.href); return { url: r.url, st: r.status, ct: r.headers.get('content-type') || '', tx: (r.headers.get('content-type') || '').includes('png') ? '' : await r.text() }; };
+      const out = { icon: await get('link[rel=icon]'), apple: await get('link[rel=apple-touch-icon]'), man: await get('link[rel=manifest]') };
+      if (out.man && out.man.st === 200) { const m = JSON.parse(out.man.tx); out.m = m;
+        out.mi = await Promise.all((m.icons || []).map(async i => { const r = await fetch(new URL(i.src, out.man.url)); return r.status + ' ' + (r.headers.get('content-type') || ''); })); }
+      return out; })()""")
+    fav, ap, mf = ic.get('icon') or {}, ic.get('apple') or {}, ic.get('m') or {}
+    check(fav.get('st') == 200 and 'svg' in fav.get('ct', '') and '#D98B3A' in fav.get('tx', '') and '#1E3A5F' in fav.get('tx', '')
+          and ap.get('st') == 200 and 'image/png' in ap.get('ct', ''),
+          'tabblad en thuisscherm: eigen tent-icoon (marine op koper), geen standaardicoon')
+    check(mf.get('name') == 'Opkomstplanner' and mf.get('theme_color') == '#1E3A5F' and ic.get('mi') and all(x.startswith('200 image/') for x in ic['mi'])
+          and 'AddType application/manifest+json .webmanifest' in open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'public', '.htaccess'), encoding='utf-8').read(),
+          f'thuisscherm: naam Opkomstplanner, kleur marine, iconen te laden; Apache kent het type .webmanifest ({ic.get("mi")})')
     # nog niets ingevuld voor de komende data
     q.goto(BASE + '/s/oefen/dashboard'); q.wait_for_timeout(1000)
     drop = "pre => { const s = JSON.parse(localStorage.getItem('opk.oefen.v1')); Object.keys(s).forEach(k => { if (k.startsWith(pre)) delete s[k]; }); localStorage.setItem('opk.oefen.v1', JSON.stringify(s)); }"

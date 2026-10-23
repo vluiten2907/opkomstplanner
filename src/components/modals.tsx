@@ -317,7 +317,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
       </>}
     </div>
     {e && <div className="field"><span className="lbl">Planning door</span><div className="row" style={{ gap: 6 }}>{[...new Set([...present, ...plannersOf(e, o)])].map(n => <Chip key={n} on={plannersOf(e, o).includes(n)} onClick={() => togglePlanner(n)}>{n}</Chip>)}</div></div>}
-    <div className="row" style={{ gap: 6 }}><span className="stat">Minimaal leiding<b>{need}</b></span><span className={'stat' + (need > present.length ? ' warnc' : '')}>Aanwezig<b>{present.length}</b></span><span className={'stat' + (A.warn ? ' warnc' : '')}>Aandachtspunten<b>{A.warn}</b></span></div>
+    <div className="row statrow"><span className="stat">Minimaal leiding<b>{need}</b></span><span className={'stat' + (need > present.length ? ' warnc' : '')}>Aanwezig<b>{present.length}</b></span><span className={'stat' + (A.warn ? ' warnc' : '')}>Aandachtspunten<b>{A.warn}</b></span></div>
     {A.warn > 0 && <ul className="issues">{A.issues.filter(i => i.lvl === 'warn').slice(0, 6).map((i, k) => <li key={k} className="warn"><i /><span>{i.text}</span></li>)}</ul>}
     <p className="hint">Klik op een naam om die in te delen. Klik op een onderdeel om de tijd aan te passen of het weg te halen.</p>
     <div className="tk-prog">{containers.map(C => <div key={C.d.id} className="stack" style={{ gap: 8 }}>
