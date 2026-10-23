@@ -12,7 +12,7 @@ import { Chip, ConfirmBtn, Dot, Field, TimePicker, useMedia, useSheetDialog } fr
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, todayISO, uid, DAYS } from '../lib/time';
-import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, fitsTopic, rowDate, rowsIn, catOf, changeOpkTime, copyKampDay, copyOpk, dayShort, firstFree, freeName, kampFitRow, kampMismatchNote, nameTaken, dayTitle, isBlankOpk, relabelDays, isFixed, isKamp, lanesLayout, libSearchText, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, fitsTopic, rowDate, rowsIn, catOf, changeOpkTime, copyKampDay, copyOpk, dayShort, firstFree, freeName, hasPdfPage, kampFitRow, kampMismatchNote, nameTaken, dayTitle, isBlankOpk, relabelDays, isFixed, isKamp, lanesLayout, libSearchText, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /** Titel van de opkomst: loopt door op een volgende regel in plaats van af te breken (smal scherm), zonder echte regeleinden. */
 function TitleArea({ value, readOnly, onChange, placeholder, autoFocus }: { value: string; readOnly: boolean; onChange: (v: string) => void; placeholder: string; autoFocus?: boolean }) {
@@ -56,6 +56,9 @@ export default function Bouwer() {
   // met het recht Opkomsten meteen een programma maken (onderwerp als titel, gekoppeld, met Ongedaan maken); anders kiezen uit de bank of een concept
   const make = (key: string, kamp: boolean) => makeForEntry(S, key, kamp, nav, loc.pathname + loc.search);
   const create = (kamp: boolean) => { const n = kamp ? newKamp(settings, 3) : newOpk(settings); saveOpk(n); markFresh(n.id); nav(`/s/${sid}/bouwer/${n.id}`); };
+  // één hoofdknop in de lijsten (naast Nieuwe opkomst): Openen bij de eerstvolgende opkomst, of als die er niet is
+  // de eerste datum nog zonder programma (Gebruiken als er iets past, anders Maken); de rest gewone knoppen
+  const firstOpen = !coming.length;
   // past er een concept of iets uit de bank bij het onderwerp: meteen gebruiken, net als Kiezen in Koppelen
   // (een concept wordt zelf gekoppeld, uit de bank komt een kopie zonder namen met Opkomst overnemen)
   const use = (x: Opk, key: string) => x.state === 'draft' ? linkDraft(S, x, key, () => nav(`/s/${sid}/bouwer/${x.id}`)) : linkBankCopy(S, x, key, (id, fresh) => openModal({ kind: 'takeover', oid: id, fresh }), id => nav(`/s/${sid}/bouwer/${id}`));
@@ -65,21 +68,21 @@ export default function Bouwer() {
     {can('build') && <div className="row"><button className="btn primary" onClick={() => create(false)}><Plus size={16} />Nieuwe opkomst</button><button className="btn" onClick={() => create(true)}><Tent size={16} />Weekendkamp</button></div>}
     {coming.length > 0 && <section className="stack" style={{ gap: 10 }} aria-labelledby="bw-coming">
       <div className="row between"><h2 id="bw-coming">Komende opkomsten</h2><button className="linkbtn" onClick={() => nav(`/s/${sid}/jaarplanning`)}>Hele jaarplanning</button></div>
-      <div className="picklist coming">{coming.map(({ x, e }) => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
+      <div className="picklist coming">{coming.map(({ x, e }, i) => <PickOpk key={x.id} o={x} label="Openen" primary={i === 0} onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
         kicker={<><span className="pk-when"><CalendarDays size={14} aria-hidden="true" />{fmtRange(e.date, e.endDate)}</span><StatusPill o={x} /></>} />)}</div>
     </section>}
     {open.length > 0 && <section className="stack" style={{ gap: 10 }} aria-labelledby="bw-open">
       <h2 id="bw-open">Nog zonder programma</h2>
-      <div className="picklist">{open.map(r => {
-        const e = r.e!, d = rowDate(r), what = e.topic.trim() || 'Weekendkamp';
-        // past er al een concept of iets uit de bank bij het onderwerp? Dan is Gebruiken de hoofdknop (het venster Koppelen zet die ook bovenaan)
+      <div className="picklist">{open.map((r, i) => {
+        const e = r.e!, d = rowDate(r), what = e.topic.trim() || 'Weekendkamp', main = firstOpen && i === 0;
+        // past er al een concept of iets uit de bank bij het onderwerp? Dan staat Gebruiken vooraan (het venster Koppelen zet die ook bovenaan)
         const fit = e.topic.trim() ? [...drafts, ...bank].find(x => fitsTopic(x, e.topic)) : undefined;
         const pick = <button className="btn sm" onClick={() => openModal({ kind: 'link', keyId: r.key })} aria-label={`Koppelen: ${what}`}>Koppelen</button>;
-        const makeBtn = <button className={'btn sm' + (fit ? '' : ' primary')} onClick={() => make(r.key, e.type === 'kamp')} aria-label={`Programma maken: ${what}`}><Plus size={14} />Maken</button>;
+        const makeBtn = <button className={'btn sm' + (main && !fit ? ' primary' : '')} onClick={() => make(r.key, e.type === 'kamp')} aria-label={`Programma maken: ${what}`}><Plus size={14} />Maken</button>;
         return <div key={r.key} className="pick">
           <div className="info"><span className="pick-kicker"><span className="pk-when"><CalendarDays size={14} aria-hidden="true" />{fmtRange(d, e.endDate)}</span>{e.type === 'kamp' && <span className="pill kamp">Kamp</span>}</span><b>{what}</b>
             {fit && <span className="hint">Past bij: {fit.title || 'Naamloze opkomst'} ({fit.state === 'bank' ? 'opkomstenbank' : 'concept'})</span>}</div>
-          {can('build') ? <div className="row">{fit && <button className="btn sm primary" onClick={() => use(fit, r.key)} aria-label={`Gebruiken: ${fit.title || 'Naamloze opkomst'} voor ${what}`}>Gebruiken</button>}{makeBtn}{fit && pick}</div> : pick}</div>;
+          {can('build') ? <div className="row">{fit && <button className={'btn sm' + (main ? ' primary' : '')} onClick={() => use(fit, r.key)} aria-label={`Gebruiken: ${fit.title || 'Naamloze opkomst'} voor ${what}`}>Gebruiken</button>}{makeBtn}{fit && pick}</div> : pick}</div>;
       })}</div>
     </section>}
     {drafts.length > 0 && <><h2>Concepten</h2><div className="picklist">{drafts.map(x => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
@@ -607,10 +610,12 @@ function Editor({ b, ctx, upd, onClose, onDelete, onDup, saveLib }: { b: Block; 
       <input className="inp" aria-label="Andere namen" value={extraTxt} readOnly={ro} onChange={e => setExtras(e.target.value, false)} onBlur={e => setExtras(e.target.value, true)} placeholder="Andere namen, gescheiden door komma's" />
       <span className="hint">{b.minLeaders ? `${b.names.length} van minimaal ${b.minLeaders} ingedeeld` : 'Geen minimum ingesteld'}</span></div>}
     <Field label="Korte beschrijving" htmlFor="bf-short"><textarea id="bf-short" rows={2} readOnly={ro} value={b.short} onChange={e => upd(() => { b.short = e.target.value; })} placeholder="Eén of twee zinnen; komt in de tijdlijn en op pagina 1" /></Field>
-    <label className="toggle"><input type="checkbox" checked={b.pdfPage !== false} disabled={ro} onChange={e => upd(() => { b.pdfPage = e.target.checked; })} /><span><b>Uitlegpagina in de pdf</b></span></label>
     <Field label="Uitgebreide beschrijving" htmlFor="bf-desc"><textarea id="bf-desc" rows={6} readOnly={ro} value={b.desc} onChange={e => upd(() => { b.desc = e.target.value; })} placeholder="Hoe gaat het spel, wat is de opzet, waar let je op?" /></Field>
     <Field label="Voorbereiding" htmlFor="bf-prep"><textarea id="bf-prep" rows={3} readOnly={ro} value={b.prep} onChange={e => upd(() => { b.prep = e.target.value; })} placeholder="Wat moet er vooraf gebeuren?" /></Field>
     <Field label="Materiaal om te halen" htmlFor="bf-mat"><textarea id="bf-mat" rows={4} readOnly={ro} value={b.materials} onChange={e => upd(() => { b.materials = e.target.value; })} placeholder="Eén ding per regel" /></Field>
+    {/* onder de velden die op de uitlegpagina komen; een lege uitlegpagina komt niet in de pdf, dat staat erbij (zoals in de pdf) */}
+    <label className="toggle"><input type="checkbox" checked={b.pdfPage !== false} disabled={ro} onChange={e => upd(() => { b.pdfPage = e.target.checked; })} /><span><b>Uitlegpagina in de pdf</b>
+      {b.pdfPage !== false && !hasPdfPage(b) && <><br /><span className="hint">Komt in de pdf zodra er een beschrijving, voorbereiding of materiaal is.</span></>}</span></label>
     {!ro && can('bank') && <div className="banknote">{L ? <><span>Uit de activiteitenbank</span><div className="row"><button className="btn sm" onClick={updLib}>Bank bijwerken</button><button className="btn sm ghost" onClick={toLib}>Als nieuwe bewaren</button></div></>
       : <div className="row"><button className="btn sm" onClick={toLib}><Bookmark size={14} />Bewaren in activiteitenbank</button></div>}</div>}
     {!ro && <div className="row"><button className="btn" onClick={onDup}><Copy size={16} />Dupliceren</button><button className="btn danger" onClick={onDelete}><Trash2 size={16} />Verwijderen</button></div>}

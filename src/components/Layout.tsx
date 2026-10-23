@@ -5,7 +5,7 @@ import { useRoles } from '../store/roles';
 import { useAuth } from '../store/auth';
 import { useSpeltak } from '../store/speltak';
 import { ACCENTS } from '../lib/model';
-import { fromISO, MONTHS } from '../lib/time';
+import { fromISO, initials, MONTHS } from '../lib/time';
 import { lastSpeltak } from '../lib/lastSpeltak';
 import ModalHost from './ModalHost';
 import { ConfirmBtn } from './ui';
@@ -61,14 +61,24 @@ export default function Layout({ children }: { children: ReactNode }) {
     const bar = barRef.current; if (!hasBar || !bar) return;
     const root = document.documentElement;
     const set = () => {
-      // Tablet en laptop: past alles op één regel? Anders naam en account boven en het menu eronder over de hele breedte
-      // (data-wrap), niet het account alleen op een eigen regel. Gemeten, want het hangt af van de namen en het lettertype.
-      // (Telefoon: altijd twee regels, zie styles.css.)
-      const brand = bar.querySelector('.brand'), acct = bar.querySelector('.acct');
-      if (window.innerWidth > 600 && brand && acct) {
-        bar.removeAttribute('data-wrap');
-        if (acct.getBoundingClientRect().top - brand.getBoundingClientRect().top > 12) bar.setAttribute('data-wrap', '');
-      } else bar.removeAttribute('data-wrap');
+      // Tablet en laptop: past alles op één regel? Gemeten, want het hangt af van de namen en het lettertype. In drie stappen:
+      // de lange menunamen; anders de korte (data-short: Bouwer, Activiteiten, ...); anders naam en account boven en het menu
+      // eronder over de hele breedte (data-wrap, niet het account alleen op een eigen regel), daar met de lange namen als die passen.
+      // Alles hier in één keer (zonder tussendoor te tekenen), zodat de ResizeObserver niet blijft vuren.
+      // (Telefoon: altijd twee regels en korte namen, zie styles.css.)
+      const brand = bar.querySelector('.brand'), acct = bar.querySelector('.acct'), nav = bar.querySelector('.nav');
+      bar.removeAttribute('data-wrap'); bar.removeAttribute('data-short');
+      if (window.innerWidth > 600 && brand && acct && nav) {
+        const wraps = () => acct.getBoundingClientRect().top - brand.getBoundingClientRect().top > 12;
+        if (wraps()) {
+          bar.setAttribute('data-short', '');
+          if (wraps()) {
+            bar.setAttribute('data-wrap', '');
+            bar.removeAttribute('data-short');
+            if (nav.scrollWidth > nav.clientWidth + 1) bar.setAttribute('data-short', '');
+          }
+        }
+      }
       // waar de balk vastzit (onder de inkeping van een telefoon) plus zijn hoogte
       root.style.setProperty('--barh', Math.ceil((parseFloat(getComputedStyle(bar).top) || 0) + bar.getBoundingClientRect().height) + 'px');
     };
@@ -93,7 +103,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   const doLogout = () => { setMenu(false); return safeLogout(logout, () => nav('/inloggen'), flushAll); };
   // oefenomgeving terugzetten: pas na bevestigen, en eerst vragen als er nog iets niet is opgeslagen
   const reset = () => guardLeave(() => resetPractice?.());
-  const initials = (myName || user?.email || '?').split(/\s+/).map(x => x[0]).join('').slice(0, 2).toUpperCase();
+  // zoals de naam ernaast; zonder naam het deel van het e-mailadres vóór de @ (vluiten2907@… → V, niet VG)
+  const avatar = initials(myName || (user?.email || '').split('@')[0]);
   /** Accountmenu met het toetsenbord: pijltjes, Home/End, Esc sluit en zet de focus terug op de knop, Tab gaat verder en sluit. */
   const menuKey = (ev: ReactKeyboardEvent) => {
     if (!menu) return;
@@ -120,7 +131,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       <div className="acct" onKeyDown={menuKey} onBlur={menuBlur}>
         <SaveState />
         <button ref={acctBtn} className="btn sm" aria-label={acctLabel} aria-haspopup="menu" aria-expanded={menu} aria-controls={menu ? 'acct-menu' : undefined}
-          onClick={e => { e.stopPropagation(); setMenu(m => !m); }}><span className="avatar" aria-hidden="true">{initials}</span><span className="acct-name">{myName || 'Account'}</span><ChevronDown size={14} aria-hidden="true" /></button>
+          onClick={e => { e.stopPropagation(); setMenu(m => !m); }}><span className="avatar" aria-hidden="true">{avatar}</span><span className="acct-name">{myName || 'Account'}</span><ChevronDown size={14} aria-hidden="true" /></button>
         {menu && practice && <div ref={menuRef} id="acct-menu" className="menu" role="menu" aria-label="Account" onClick={e => e.stopPropagation()}>
           <ConfirmBtn className="" role="menuitem" tabIndex={-1} label={<><RotateCcw size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Opnieuw beginnen</>} confirm="Klik nogmaals: alles terugzetten" onConfirm={() => { setMenu(false); reset(); }} />
           <button {...item} onClick={() => guardLeave(() => nav('/'))}><LogOut size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Oefenen stoppen</button>

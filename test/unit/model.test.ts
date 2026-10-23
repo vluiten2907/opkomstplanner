@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as M from '../../src/lib/model.ts';
-import { fmtT, isoWeek, parseNL, parseRange, tidyNL } from '../../src/lib/time.ts';
+import { fmtT, initials, isoWeek, parseNL, parseRange, tidyNL } from '../../src/lib/time.ts';
 import type { Block, Opk, Plan, Settings } from '../../src/lib/model.ts';
 
 const S = (extra: Partial<Settings> = {}): Settings => ({ ...M.defaultSettings(), ...extra });
@@ -459,4 +459,29 @@ test('isBlankPlan: alleen een lege gewone opkomst op zijn eigen datum telt als l
     ['afwezig', { absent: ['Kaa'] }], ['brief', { letter: { needed: true, due: '', sent: false } }], ['eigen tijden', { start: 600, end: 720 }],
     ['geen opkomst', { type: 'geen' }], ['kamp', { type: 'kamp' }], ['verzet', { date: '2026-12-20' }], ['meer dagen', { endDate: '2026-12-20' }],
   ] as [string, Partial<Plan>][]) assert.equal(M.isBlankPlan(plan({ slot: '2026-12-19', date: '2026-12-19', ...extra })), false, why);
+});
+
+test('initials: alleen letters en cijfers, hooguit twee', () => {
+  assert.equal(initials('Beheer (demo)'), 'BD');
+  assert.equal(initials('Kaa (Jan)'), 'KJ');
+  assert.equal(initials('"Rikki"'), 'R');
+  assert.equal(initials('Akela'), 'A');
+  assert.equal(initials('Vincent van der Luiten'), 'VV');
+  assert.equal(initials('Ömer Şahin'), 'ÖŞ');
+  assert.equal(initials('🔥 Vuur'), 'V');
+  assert.equal(initials('vluiten2907'), 'V');
+  assert.equal(initials(''), '?');
+  assert.equal(initials('(…)'), '?');
+});
+
+test('hasPdfPage: een uitlegpagina alleen als die aan staat en er iets te lezen is', () => {
+  const b = (extra: Partial<Block>) => M.normBlock({ title: 'Spel', ...extra });
+  assert.equal(M.hasPdfPage(b({})), false, 'leeg: geen pagina met drie keer Niet ingevuld');
+  assert.equal(M.hasPdfPage(b({ short: 'Kort', location: 'Veld', names: ['Akela'] })), false, 'alleen korte beschrijving, locatie of namen: staat al in de tijdlijn');
+  assert.equal(M.hasPdfPage(b({ desc: '  \n ' })), false, 'alleen spaties');
+  assert.equal(M.hasPdfPage(b({ materials: '- \n•' })), false, 'materiaal zonder inhoud');
+  assert.equal(M.hasPdfPage(b({ desc: 'Zo gaat het' })), true);
+  assert.equal(M.hasPdfPage(b({ prep: 'Hout halen' })), true);
+  assert.equal(M.hasPdfPage(b({ materials: 'Touw' })), true);
+  assert.equal(M.hasPdfPage(b({ desc: 'Zo gaat het', pdfPage: false })), false, 'uitgezet');
 });

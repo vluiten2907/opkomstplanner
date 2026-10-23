@@ -1,4 +1,4 @@
-import { addDays, clone, dayDiff, fmtDur, fmtRange, fmtT, fromISO, num, plural, splitNames, todayISO, toISO, uid, wd2, DAYS, MONTHS, cap, mon3 } from './time.ts';
+import { addDays, clone, dayDiff, fmtDur, fmtRange, fmtT, fromISO, num, plural, splitLines, splitNames, todayISO, toISO, uid, wd2, DAYS, MONTHS, cap, mon3 } from './time.ts';
 
 /* ---------- Types ---------- */
 export type Cat = { id: string; label: string; color: string };
@@ -98,6 +98,9 @@ export function normBlock(b: any): Block {
     minLeaders: num(b.minLeaders, 0), location: b.location || '', short: b.short || '', desc: b.desc || '', prep: b.prep || '',
     materials: b.materials || '', names: splitNames(b.names), pdfPage: b.pdfPage !== false };
 }
+/** Krijgt een onderdeel een eigen uitlegpagina in de pdf? Alleen als dat aan staat én er iets te lezen is (beschrijving, voorbereiding of materiaal). */
+export const hasPdfPage = (b: Pick<Block, 'pdfPage' | 'desc' | 'prep' | 'materials'>) =>
+  b.pdfPage !== false && !!((b.desc || '').trim() || (b.prep || '').trim() || splitLines(b.materials).length);
 export function normDay(d: any, i = 0): Day {
   const n: Day = { id: d.id || uid(), label: d.label || 'Dag ' + (i + 1), start: num(d.start, 480), end: num(d.end, 1380), blocks: (d.blocks || []).map(normBlock) };
   if (n.end <= n.start) n.end = n.start + 60;

@@ -2,6 +2,7 @@
 // PDF-opbouw met jsPDF: pagina 1 tijdlijn, pagina 2 materiaallijst, daarna uitlegpagina's.
 /* eslint-disable */
 import { fmtT, fmtDur, splitNames, splitLines, fmtLong, plural } from './time';
+import { hasPdfPage } from './model';
 const fmtDate = (iso: string) => (iso ? fmtLong(iso) : '');
 const hexRgb = (h: string) => { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); const n = m ? parseInt(m[1], 16) : 0x55635A; return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
 export function buildPdf(jsPDF: any, O: any, cats: any[]) {
@@ -72,6 +73,10 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
     tableHead();
   };
   const refs = [];
+  // de allerlaatste rij van de tijdlijn mag iets in de ondermarge (boven de voetlijn op H - 13): anders komt er een pagina met
+  // alleen die ene rij. Hooguit 5 mm, zodat er ruimte blijft tot de voettekst.
+  let tail = false;
+  const full = h => y + h > BOTTOM + (tail ? 5 : 0);
   const drawBar = D => {
     const lo = D.start - (D.prep || 0), hi = D.end + (D.post || 0), total = Math.max(5, hi - lo);
     doc.setFillColor(...SOFT); doc.rect(M, y, CW, 5, 'F');
@@ -96,7 +101,7 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
   };
   const bandRow = (time, text, sub) => {
     const h = 8;
-    if (y + h > BOTTOM) contHead();
+    if (full(h)) contHead();
     doc.setFillColor(...SOFT); doc.rect(M, y + 0.5, CW, h - 1, 'F');
     font('bold', 9.5); doc.text(fmtT(time), X.t, y + 5.2);
     font('bold', 9.5); doc.text(clean(text), X.o, y + 5.2);
@@ -105,25 +110,26 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
   };
   const gapRow = (s0, e0) => {
     const h = 7.5;
-    if (y + h > BOTTOM) contHead();
+    if (full(h)) contHead();
     font('normal', 9, MUTED); doc.text(fmtT(s0), X.t, y + 4.8);
     font('italic', 8.5, MUTED); doc.text('niet ingepland  (' + fmtDur(e0 - s0) + ', tot ' + fmtT(e0) + ')', X.o, y + 4.8);
     y += h; doc.setDrawColor(...LINE); doc.setLineWidth(0.2); doc.line(M, y, M + CW, y);
   };
   const blockRow = b => {
     const P = 2.6, c = cat(b.cat);
-    const hasPage = b.pdfPage !== false;
+    // zonder uitlegpagina (uit, of niets te lezen) ook geen regel "Uitleg op pagina N": de rij wordt lager
+    const page = hasPdfPage(b);
     font('bold', 10); const tLines = wrap(b.title || 'Naamloos onderdeel', X.oW);
     font('normal', 8.5); const sLines = b.short ? wrap(b.short, X.oW, 3) : [];
     font('normal', 9); const lLines = b.location ? wrap(b.location, X.lW) : ['–'];
     const nArr = splitNames(b.names); const nLines = nArr.length ? wrap(nArr.join(', '), X.nW) : ['–'];
     font('normal', 8.5); const prepL = b.prep ? wrap(b.prep, X.pW, 5) : [];
-    const hO = tLines.length * lh(10) + sLines.length * lh(8.5) + lh(8) * (hasPage ? 2 : 1) + 1.5;
+    const hO = tLines.length * lh(10) + sLines.length * lh(8.5) + lh(8) * (page ? 2 : 1) + 1.5;
     const hN = nLines.length * lh(9) + (b.minLeaders ? lh(8) : 0);
     const hT = lh(10) + lh(8) * 2;
     const hP = prepL.length * lh(8.5);
     const h = Math.max(hT, hO, hN, lLines.length * lh(9), hP || lh(8.5)) + 2 * P;
-    if (y + h > BOTTOM) contHead();
+    if (full(h)) contHead();
     const top = y + P + 3.2;
     doc.setFillColor(...hexRgb(c.color)); doc.rect(X.s, y + 1.2, 1.4, h - 2.4, 'F');
     font('bold', 10); doc.text(fmtT(b.start), X.t, top);
@@ -132,7 +138,7 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
     let oy = top + tLines.length * lh(10);
     if (sLines.length) { font('normal', 8.5); doc.text(sLines, X.o, oy - 0.4); oy += sLines.length * lh(8.5); }
     font('normal', 8, MUTED); doc.text(clean(c.label), X.o, oy); oy += lh(8);
-    if (hasPage) refs.push({ id: b.id, page: doc.getCurrentPageInfo().pageNumber, x: X.o, y: oy });
+    if (page) refs.push({ id: b.id, page: doc.getCurrentPageInfo().pageNumber, x: X.o, y: oy });
     font('normal', 9); doc.text(lLines, X.l, top);
     doc.text(nLines, X.n, top);
     if (b.minLeaders) {
@@ -144,32 +150,35 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
     else { font('italic', 8.5, MUTED); doc.text('geen', X.p, top); }
     y += h; doc.setDrawColor(...LINE); doc.setLineWidth(0.2); doc.line(M, y, M + CW, y);
   };
-  const renderDay = D => {
+  // eerst de rijen op volgorde verzamelen, dan tekenen: zo is bekend welke rij de laatste is (zie tail)
+  const renderDay = (D, last) => {
     const bl = [...D.blocks].sort((a, b) => a.start - b.start || a.dur - b.dur);
-    const prep = D.prep || 0, post = D.post || 0;
-    if (prep) bandRow(D.start - prep, 'Voorbereiding leiding', fmtDur(prep) + ', opkomst start om ' + fmtT(D.start));
+    const prep = D.prep || 0, post = D.post || 0, rows = [];
+    if (prep) rows.push(() => bandRow(D.start - prep, 'Voorbereiding leiding', fmtDur(prep) + ', opkomst start om ' + fmtT(D.start)));
     let cursor = D.start, done = false;
     const finish = () => {
-      if (bl.length && cursor < D.end) gapRow(cursor, D.end);
-      if (post) bandRow(D.end, 'Nabespreking leiding', fmtDur(post) + ', tot ' + fmtT(D.end + post));
+      if (bl.length && cursor < D.end) { const c0 = cursor; rows.push(() => gapRow(c0, D.end)); }
+      if (post) rows.push(() => bandRow(D.end, 'Nabespreking leiding', fmtDur(post) + ', tot ' + fmtT(D.end + post)));
       done = true;
     };
     bl.forEach(b => {
       if (!done && b.start >= D.end) finish();
-      if (!done && b.start > cursor) gapRow(cursor, b.start);
-      blockRow(b);
+      if (!done && b.start > cursor) { const c0 = cursor; rows.push(() => gapRow(c0, b.start)); }
+      rows.push(() => blockRow(b));
       if (b.start + b.dur > cursor) cursor = Math.max(cursor, b.start + b.dur);
     });
     if (!done) finish();
+    rows.forEach((draw, i) => { tail = last && i === rows.length - 1; draw(); });
+    tail = false;
     if (!bl.length) { font('italic', 10, MUTED); doc.text('Er zijn nog geen onderdelen ingepland.', M, y + 6); y += 10; }
   };
-  if (!MULTI) { drawBar(DAYSX[0]); tableHead(); renderDay(DAYSX[0]); }
+  if (!MULTI) { drawBar(DAYSX[0]); tableHead(); renderDay(DAYSX[0], true); }
   else DAYSX.forEach((D, i) => {
     if (i && y + 45 > BOTTOM) newPage(); else if (i) y += 7;
     font('bold', 13); const dl = clean(D.label || 'Dag ' + (i + 1)); doc.text(dl, M, y + 5); curDay = dl;
     const w = doc.getTextWidth(dl);
     font('normal', 10, MUTED); doc.text(fmtT(D.start) + ' – ' + fmtT(D.end) + '   ·   ' + D.blocks.length + (D.blocks.length === 1 ? ' onderdeel' : ' onderdelen'), M + w + 4, y + 5);
-    y += 9; drawBar(D); tableHead(); renderDay(D);
+    y += 9; drawBar(D); tableHead(); renderDay(D, i === DAYSX.length - 1);
   });
 
   /* ---- Pagina 2: totale materiaallijst ---- */
@@ -225,9 +234,9 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
     });
   }
 
-  /* ---- Uitlegpagina's: alleen voor onderdelen die dat aan hebben staan ---- */
+  /* ---- Uitlegpagina's: alleen voor onderdelen die dat aan hebben staan en waar iets te lezen is (geen lege pagina met drie keer "Niet ingevuld.") ---- */
   const pageOf = {};
-  const withPage = blocks.filter(b => b.pdfPage !== false);
+  const withPage = blocks.filter(hasPdfPage);
   withPage.forEach((b, i) => {
     newPage();
     pageOf[b.id] = doc.getCurrentPageInfo().pageNumber;

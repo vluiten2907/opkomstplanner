@@ -8,7 +8,7 @@ import { PageTitle } from '../components/shared';
 import { Chip, ConfirmBtn, Field, TimePicker, useDebouncedInput } from '../components/ui';
 import { download, slugify } from '../lib/export';
 import { lastSpeltak } from '../lib/lastSpeltak';
-import { fmtNL, fmtT, plural, todayISO, uid, DAYS, MONTHS } from '../lib/time';
+import { fmtNL, fmtT, initials, plural, todayISO, uid, DAYS, MONTHS } from '../lib/time';
 import { ACCENTS, normLib, normOpk, normPlan, normSettings, prepLabel, PREP_OPTS, SPELTAKKEN, SWATCHES, SWATCH_NAMES, type Opk, type Plan, type Settings } from '../lib/model';
 import { ALL_PERMS, DEFAULT_LEIDING_PERMS, PERM_HELP, PERM_LABELS, isTeamleider, type Invite, type Member, type PermKey, type Perms } from '../lib/types';
 import { ensureTlIds, inviteOnce, isEmail, releaseOwnName, removeGroupAdmin, renewInvite, setGroupAdmin, setTeamleider, stepDownTeamleider, transferJoiners, transferTeamleider } from '../store/beheer';
@@ -341,13 +341,12 @@ function MemberRow({ m, isTl, me, iAmTL, isAdmin, lastTL, heir, groupAdmin, grou
   onTeamleider: (on: boolean) => void; onTransfer: () => void; onStepDown: () => void; onPerm: (k: PermKey, v: boolean) => void; onRemove: () => void }) {
   const [open, setOpen] = useState(false);
   const manage = iAmTL || isAdmin;
-  const initials = (m.name || '?').split(/\s+/).map(x => x[0]).join('').slice(0, 2).toUpperCase();
   const summary = isTl ? 'alle rechten' : (Object.keys(PERM_LABELS) as PermKey[]).filter(k => m.perms?.[k]).map(k => PERM_LABELS[k]).join(', ') || 'alleen bekijken';
   // Teamleiders verwijderen mag alleen de beheerder; een teamleider haalt alleen leiding weg.
   const canRemove = !me && !lastTL && (isAdmin || (iAmTL && !isTl));
   return <div className="member">
     <div className="row between" style={{ flexWrap: 'nowrap' }}>
-      <div className="row" style={{ flexWrap: 'nowrap', minWidth: 0 }}><span className="avatar">{initials}</span><div style={{ minWidth: 0 }}><b>{m.name}{me ? ' (jij)' : ''}</b><div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}{m.email ? ' · ' : ''}{isTl ? 'Teamleider' : 'Leiding'}{groupAdmin ? ' · beheerder' : ''} · {summary}</div></div></div>
+      <div className="row" style={{ flexWrap: 'nowrap', minWidth: 0 }}><span className="avatar">{initials(m.name)}</span><div style={{ minWidth: 0 }}><b>{m.name}{me ? ' (jij)' : ''}</b><div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}{m.email ? ' · ' : ''}{isTl ? 'Teamleider' : 'Leiding'}{groupAdmin ? ' · beheerder' : ''} · {summary}</div></div></div>
       {manage && <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
         <button className="btn sm ghost" aria-expanded={open} aria-label={`Rechten van ${m.name}${open ? ' sluiten' : ''}`} onClick={() => setOpen(o => !o)}>{open ? 'Sluiten' : 'Rechten'}</button>
         {canRemove && <ConfirmBtn className="iconbtn danger" label={<Trash2 size={15} />} confirm="Zeker?" title="Uit het team halen" ariaLabel={`${m.name} uit het team halen`} onConfirm={onRemove} />}

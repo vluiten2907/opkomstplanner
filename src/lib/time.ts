@@ -70,6 +70,8 @@ export function isoWeek(iso: string) {
 export const splitNames = (s: unknown): string[] => Array.isArray(s) ? s.map(x => String(x).trim()).filter(Boolean) : String(s || '').split(/[,;\n]+/).map(x => x.trim()).filter(Boolean);
 export const splitLines = (s: unknown): string[] => String(s || '').split(/\n+/).map(x => x.replace(/^[-•*]\s*/, '').trim()).filter(Boolean);
 export const plural = (n: number, one: string, more: string) => n + ' ' + (n === 1 ? one : more);
+/** Initialen voor het rondje bij een naam: alleen letters en cijfers (geen haakjes, aanhalingstekens of emoji), hooguit twee. "Beheer (demo)" → BD. */
+export const initials = (n: string) => ((String(n || '').match(/[\p{L}\p{N}]+/gu) || ['?']).map(w => [...w][0]).join('').slice(0, 2)).toUpperCase();
 export const uid = () => Date.now().toString(36).slice(-4) + Math.random().toString(36).slice(2, 8);
 export const num = (v: unknown, d: number) => (v === null || v === undefined || v === '' || !Number.isFinite(+(v as any))) ? d : +(v as any);
 export const clone = <T,>(o: T): T => JSON.parse(JSON.stringify(o));

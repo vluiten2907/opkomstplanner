@@ -222,7 +222,8 @@ h2.h-sm { font-size: 16.5px; }
 .pdate > span { font-size: 12px; color: var(--muted); }
 .pdate .moved { font-family: var(--f-body); color: var(--signal-ink); font-weight: 700; }
 .prow.kamp .pdate { background: color-mix(in srgb, var(--kamp) 16%, var(--surface)); }
-.ptopic { border: 0; background: transparent; padding: 7px 9px; border-radius: 8px; width: 100%; min-width: 0; font-weight: 700; }
+/* te lang onderwerp: nooit midden in een woord afgekapt, maar met … (zolang je er niet in typt) */
+.ptopic { border: 0; background: transparent; padding: 7px 9px; border-radius: 8px; width: 100%; min-width: 0; font-weight: 700; text-overflow: ellipsis; }
 .ptopic:hover { background: var(--sunk); }
 .ptopic:focus { background: var(--surface); outline: 2px solid var(--accent); }
 .ptopic::placeholder { font-weight: 400; color: var(--muted); }
@@ -801,6 +802,9 @@ body { padding-top: env(safe-area-inset-top, 0px); }
   .bar[data-wrap] .brand { flex: 1 1 0; min-width: 0; }
   .bar[data-wrap] .acct { order: 1; }
   .bar[data-wrap] .nav { order: 2; flex-basis: 100%; }
+  /* past het net niet op één regel (bijv. iPad liggend, 1100–1280 px), dan eerst de korte menunamen (Layout meet dat: data-short) */
+  .bar[data-short] .nl > span { display: none; }
+  .bar[data-short] .nl::after { content: attr(data-short); }
 }
 /* tablet staand en telefoon dwars: korte namen en iets minder ruimte, zodat alle zes de menuknoppen in beeld zijn
    (ook met de reservelettertypes, als de webfonts niet laden) */
@@ -916,7 +920,9 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
 .pk-when { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 13.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 /* koppelen: van welke speltak een opkomst uit de groep komt; inplannen: het onderwerp van de datum verandert */
 .pk-from { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 13px; color: var(--ink-2); }
-.pk-change { font-size: 13px; font-weight: 700; color: var(--signal-ink); }
+/* Inplannen op een datum met een ander onderwerp: "Sinterklaas → Speurtocht" (rustig; de signaalkleur is voor echte problemen) */
+.pk-change { font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.pk-change svg { vertical-align: -2px; margin-inline: 4px; }
 
 /* Aanraakscherm: grotere raakvlakken waar je snel mistikt, zonder het ontwerp te veranderen */
 @media (pointer: coarse) {

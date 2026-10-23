@@ -108,7 +108,7 @@ export default function Opkomstenbank() {
               : !drafts.length && <div className="empty"><span>Niets gevonden.</span></div>}
           {drafts.length > 0 && <section className="stack"><h2>Concepten</h2>
             <div className="picklist">{drafts.map(o => <div key={o.id} className="pick"><div className="info"><b>{o.title || 'Naamloze opkomst'}</b><span className="hint">{isKamp(o) ? 'Weekendkamp · ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(progBlocks(o).length, 'onderdeel', 'onderdelen')}</span></div>
-              <div className="row"><button className="btn sm primary" onClick={() => nav(`/s/${sid}/bouwer/${o.id}`)}>Openen</button>
+              <div className="row"><button className="btn sm" onClick={() => nav(`/s/${sid}/bouwer/${o.id}`)}>Openen</button>
                 {can('bank') && <button className="btn sm" onClick={() => draftToBank(o)}>In bank zetten</button>}
                 {can('build') && <ConfirmBtn className="btn sm ghost" label="Verwijderen" confirm="Klik nogmaals" ariaLabel={`Concept ${o.title || 'Naamloze opkomst'} verwijderen`} onConfirm={() => remove(o)} />}</div></div>)}</div></section>}
         </div>}

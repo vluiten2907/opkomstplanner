@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Tent, Trash2, SquarePen, Users } from 'lucide-react';
+import { ArrowRight, Plus, Tent, Trash2, SquarePen, Users } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast, undoAction } from '../store/toast';
 import { Modal, TimePicker, Field, Chip, ConfirmBtn, useMedia } from './ui';
@@ -363,12 +363,22 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
   };
   // het onderwerp van de datum wordt de titel van de opkomst: laat zien wat er verandert
   const change = (e: Plan | null) => !!(e && e.topic.trim() && o.title.trim() && e.topic.trim().toLowerCase() !== o.title.trim().toLowerCase());
+  // wat bij de opkomst past bovenaan onder een eigen kop (zoals in Koppelen), de andere datums daarna op volgorde van datum;
+  // alleen de eerste (de beste keuze) is de hoofdknop
+  type Row = (typeof rows)[number];
+  const fitsRow = (r: Row) => !!(r.e && r.e.topic.trim() && fitsTopic(o, r.e.topic));
+  const fitRows = rows.filter(fitsRow), otherRows = rows.filter(r => !fitsRow(r)), firstKey = (fitRows[0] || otherRows[0])?.key;
+  const row = (r: Row) => { const e = r.e, d = rowDate(r), off = e && e.endDate ? kampMismatch(o, d, e.endDate) : null, ch = change(e); return <div key={r.key} className="pick" data-date={d}><div className="info">
+    <b>{shown(d, e && e.endDate)}</b>
+    {/* het onderwerp dat er stond wordt overschreven: rustig, maar duidelijk (de signaalkleur is voor echte problemen, zoals een kamp dat niet past) */}
+    {ch && <span className="pk-change"><span aria-hidden="true">{e!.topic.trim()}<ArrowRight size={14} />{o.title.trim()}</span><span className="sr-only">Onderwerp {e!.topic.trim()} wordt {o.title.trim()}</span></span>}
+    <span className="hint">{off && <><span className="err">Jaarplanning {plural(off.row, 'dag', 'dagen')} ({fmtRange(d, e!.endDate)})</span> · </>}{e && e.topic && !ch ? e.topic + ' · ' : ''}{e && e.planners.length ? 'planning: ' + e.planners.join(', ') : 'nog niemand toegewezen'}</span></div>
+    <button className={'btn sm' + (r.key === firstKey ? ' primary' : '')} onClick={() => go(entryFor(r.key))} aria-label={`Hier inplannen: ${shown(d, e && e.endDate)}`}>Hier inplannen</button></div>; };
   return <Modal title="Inplannen" sub={o.state === 'bank' ? 'Er wordt een kopie ingepland zonder namen; de opkomst in de bank blijft zoals hij is.' : 'Kies een datum waar nog geen opkomst aan gekoppeld is. De ingedeelde leiding gaat mee.'} onClose={onClose}>
-    {rows.length ? <div className="picklist">{rows.map(r => { const e = r.e, d = rowDate(r), off = e && e.endDate ? kampMismatch(o, d, e.endDate) : null, ch = change(e); return <div key={r.key} className="pick"><div className="info">
-      {e && e.topic.trim() && fitsTopic(o, e.topic) && <span className="pick-kicker"><span className="pill good">Past bij onderwerp</span></span>}<b>{shown(d, e && e.endDate)}</b>
-      {ch && <span className="pk-change">Onderwerp wordt {o.title.trim()} (nu: {e!.topic.trim()})</span>}
-      <span className="hint">{off && <><span className="err">Jaarplanning {plural(off.row, 'dag', 'dagen')} ({fmtRange(d, e!.endDate)})</span> · </>}{e && e.topic && !ch ? e.topic + ' · ' : ''}{e && e.planners.length ? 'planning: ' + e.planners.join(', ') : 'nog niemand toegewezen'}</span></div>
-      <button className="btn sm primary" onClick={() => go(entryFor(r.key))} aria-label={`Hier inplannen: ${shown(d, e && e.endDate)}`}>Hier inplannen</button></div>; })}</div> : <p className="hint">Geen vrije data gevonden in de komende maanden.</p>}
+    {fitRows.length > 0 && <><h3 className="gap-lg">Past bij {o.title.trim() || 'deze opkomst'}</h3><div className="picklist fits">{fitRows.map(row)}</div>
+      {otherRows.length > 0 && <h3 className="gap-lg">Andere datums</h3>}</>}
+    {otherRows.length > 0 && <div className="picklist">{otherRows.map(row)}</div>}
+    {!rows.length && <p className="hint">Geen vrije data gevonden in de komende maanden.</p>}
     <div className="row"><input className="inp" value={custom} onChange={e => setCustom(e.target.value)} onBlur={() => setCustom(tidyNL(custom))} placeholder="Andere datum: dd-mm-jjjj" aria-label="Andere datum" inputMode="numeric" style={{ flex: '1 1 180px' }} /><button className="btn" onClick={() => { const iso = parseNL(custom); if (!iso) { toast('Typ de datum als dd-mm-jjjj.'); return; } go(entryForDate(iso)); }}>Op deze datum</button></div>
   </Modal>;
 }

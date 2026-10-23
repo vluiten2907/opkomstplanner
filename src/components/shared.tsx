@@ -93,7 +93,8 @@ export function OpkMeta({ o }: { o: Opk }) {
 }
 
 /** Opkomst in een keuzelijst. `kicker`: regel boven de titel, bijv. de datum en de status van een ingeplande opkomst. `cats`: categorieën van een andere speltak (groepsbank). */
-export function PickOpk({ o, label, onPick, primary = true, extra, kicker, cats, pickId }: { o: Opk; label: string; onPick: () => void; primary?: boolean; extra?: ReactNode; kicker?: ReactNode; cats?: Cat[]; pickId?: string }) {
+export function PickOpk({ o, label, onPick, primary = false, extra, kicker, cats, pickId }: { o: Opk; label: string; onPick: () => void; primary?: boolean; extra?: ReactNode; kicker?: ReactNode; cats?: Cat[]; pickId?: string }) {
+  // standaard een gewone knop: in een lijst is hooguit de eerste (de beste keuze) de hoofdknop, anders zegt groen niets meer
   // naam met de titel erbij: in een lijst van schermlezers zijn de knoppen anders allemaal "Openen"
   const btn = <button className={'btn sm' + (primary ? ' primary' : '')} onClick={onPick} aria-label={`${label}: ${o.title || 'Naamloze opkomst'}`}>{label}</button>;
   return <div className="pick" data-pick={pickId}><div className="info">{kicker && <span className="pick-kicker">{kicker}</span>}<b>{o.title || 'Naamloze opkomst'}</b><OpkMeta o={o} /><CatTags o={o} cats={cats} /><Strip o={o} cats={cats} /></div>
