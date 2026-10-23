@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, KeyRound, Save } from 'lucide-react';
 import VerifyNote from '../components/VerifyNote';
-import { useAuth } from '../store/auth';
+import { useAuth, authError } from '../store/auth';
 import { useRoles } from '../store/roles';
 import { saveProfile } from '../store/beheer';
 import { toast } from '../store/toast';
@@ -11,10 +11,11 @@ import PageHead from '../components/PageHead';
 
 /** Mijn account: gebruikersnaam en e-mailadres bekijken, voor- en achternaam invullen. */
 export default function AccountPage() {
-  const { user } = useAuth();
+  const { user, reset } = useAuth();
   const { profile } = useRoles();
   const nav = useNavigate();
   const [first, setFirst] = useState(''); const [last, setLast] = useState(''); const [busy, setBusy] = useState(false);
+  const [pwBusy, setPwBusy] = useState(false);
   useEffect(() => { if (profile) { setFirst(profile.firstName); setLast(profile.lastName); } }, [profile]);
   const back = () => { const sid = localStorage.getItem('opk.sid'); nav(sid ? `/s/${sid}` : '/'); };
   const save = async () => {
@@ -22,6 +23,14 @@ export default function AccountPage() {
     setBusy(true);
     try { await saveProfile(user!.uid, user!.email || '', first, last); toast('Opgeslagen'); } catch { toast('Opslaan mislukt.'); }
     setBusy(false);
+  };
+  // Je bent al ingelogd: meteen de mail om een nieuw wachtwoord te kiezen, zonder je adres opnieuw te typen.
+  const newPw = async () => {
+    const em = user?.email; if (!em) return;
+    setPwBusy(true);
+    try { await reset(em); toast(`We hebben een mail gestuurd naar ${em}. Kies daar je nieuwe wachtwoord.`); }
+    catch (e) { toast(authError(e)); }
+    setPwBusy(false);
   };
   return <div className="auth-wrap" style={{ alignItems: 'start' }}>
     <div className="stack" style={{ width: 'min(640px, 100%)', gap: 18 }}>
@@ -36,7 +45,7 @@ export default function AccountPage() {
           <Field label="Achternaam" htmlFor="ac-last"><input id="ac-last" value={last} onChange={e => setLast(e.target.value)} autoComplete="family-name" /></Field>
         </div>
         <p className="hint">Je voor- en achternaam zien alleen de beheerders van je groep.</p>
-        <div className="row"><button className="btn primary" disabled={busy} onClick={save}><Save size={16} />Opslaan</button><Link className="btn ghost" to="/wachtwoord">Wachtwoord wijzigen</Link></div>
+        <div className="row"><button className="btn primary" disabled={busy} onClick={save}><Save size={16} />Opslaan</button><button className="btn ghost" disabled={pwBusy} onClick={newPw}><KeyRound size={16} />{pwBusy ? 'Versturen…' : 'Wachtwoord wijzigen'}</button></div>
       </section>
     </div>
   </div>;

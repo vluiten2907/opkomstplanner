@@ -5,7 +5,7 @@
 import { arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { defaultSettings } from '../lib/model';
-import { ALL_PERMS, INVITE_DAYS, NO_PERMS, normInvite, normPerms, type Admin, type Groep, type Invite, type InviteKind, type Member, type Perms, type Speltak } from '../lib/types';
+import { ALL_PERMS, INVITE_DAYS, NO_PERMS, inviteExpired, normInvite, normPerms, type Admin, type Groep, type Invite, type InviteKind, type Member, type PermKey, type Perms, type Speltak } from '../lib/types';
 import { uid as mkId } from '../lib/time';
 
 type Me = { uid: string; name: string; email: string };
@@ -55,6 +55,52 @@ export async function readInvite(token: string): Promise<Invite | null> {
   return s.exists() ? normInvite(s.id, s.data()) : null;
 }
 export const revokeInvite = (id: string) => deleteDoc(doc(db, 'invites', id));
+
+const samePerms = (a: Perms, b: Perms) => (Object.keys(ALL_PERMS) as PermKey[]).every(k => !!a[k] === !!b[k]);
+/**
+ * Uitnodigen zonder dubbele links. Staat er in `open` al een geldige uitnodiging voor dit adres en deze plek, met dezelfde rol,
+ * rechten en overdracht, dan is dat de uitnodiging (reused). Anders maakt `make` een nieuwe en gaan de oude voor dit adres en deze plek weg.
+ */
+export async function inviteOnce(inp: InviteInput, myUid: string, open: Invite[], make: () => Promise<Invite>): Promise<{ inv: Invite; reused: boolean }> {
+  const email = inp.email.trim().toLowerCase(), sid = inp.sid || null, gid = inp.gid || null;
+  const perms = normPerms(inp.kind === 'leiding' ? inp.perms : inp.kind === 'teamleider' ? ALL_PERMS : NO_PERMS);
+  // zelfde plek: dezelfde speltak, of (zonder speltak) dezelfde soort beheer voor dezelfde groep
+  const same = open.filter(i => !i.usedBy && i.email === email && i.sid === sid && (sid ? true : i.kind === inp.kind && i.gid === gid));
+  // een overdracht hoort bij wie hem maakte: die van een ander hergebruik je niet
+  const hit = same.find(i => !inviteExpired(i) && i.kind === inp.kind && i.transfer === !!inp.transfer && samePerms(i.perms, perms) && (!i.transfer || i.invitedBy === myUid));
+  if (hit) return { inv: hit, reused: true };
+  const inv = await make();
+  await Promise.all(same.map(i => revokeInvite(i.id).catch(() => {})));
+  return { inv, reused: false };
+}
+/** Verlopen uitnodiging vernieuwen: eerst een nieuwe met dezelfde rol, rechten en overdracht, daarna gaat de oude weg.
+ *  `cur`: de huidige groep en namen (de speltak kan intussen onder een groep hangen of anders heten). */
+export async function renewInvite(old: Invite, me: Me, cur?: { gid?: string | null; groupName?: string; speltakName?: string }) {
+  const inv = await createInvite({ kind: old.kind, email: old.email, gid: cur && cur.gid !== undefined ? cur.gid : old.gid, groupName: cur?.groupName ?? old.groupName,
+    sid: old.sid, speltakName: cur?.speltakName ?? old.speltakName, perms: old.perms, transfer: old.transfer }, me);
+  await revokeInvite(old.id).catch(() => {});
+  return inv;
+}
+
+/** Zit uid al op de plek van deze uitnodiging: lid van de speltak, beheerder van de groep of Beheer (totaal)?
+ *  Wie er niet in zit, mag het document meestal niet lezen; dan is het antwoord nee. */
+export async function alreadyJoined(inv: Invite, uid: string): Promise<boolean> {
+  const has = async (ref: ReturnType<typeof doc>, field: string) => {
+    try { const s = await getDoc(ref); return s.exists() && ((s.data() as any)[field] || []).includes(uid); } catch { return false; }
+  };
+  if (inv.kind === 'totaal') return has(doc(db, 'beheer', 'totaal'), 'ids');
+  if (inv.kind === 'groep') return !!inv.gid && has(doc(db, 'groepen', inv.gid), 'adminIds');
+  return !!inv.sid && has(doc(db, 'speltakken', inv.sid), 'memberIds');
+}
+/** Uitnodiging als gebruikt markeren zonder toe te treden, omdat je er al in zit (alleen de genodigde, met bevestigd e-mailadres). */
+export const markInviteUsed = (id: string, uid: string) => updateDoc(doc(db, 'invites', id), { usedBy: uid });
+
+/* Openstaande uitnodiging onthouden op dit apparaat: wie later via een andere weg inlogt, ziet hem op Mijn speltakken terug. */
+const INV_KEY = 'opk.invite';
+export const savedInvite = () => { try { return localStorage.getItem(INV_KEY); } catch { return null; } };
+export const rememberInvite = (token: string) => { try { localStorage.setItem(INV_KEY, token); } catch { /* geen opslag */ } };
+/** Vergeten, als het (nog) deze uitnodiging is. */
+export const forgetInvite = (token: string | undefined) => { try { if (token && localStorage.getItem(INV_KEY) === token) localStorage.removeItem(INV_KEY); } catch { /* geen opslag */ } };
 
 /** Openstaande uitnodigingen per niveau ophalen (eenmalig). */
 /** Wie trad toe met een "Mijn rol overdragen"-uitnodiging van `by` in deze speltak? uid's, gecontroleerd aan de uitnodiging zelf. */
@@ -270,13 +316,32 @@ export async function claimName(gid: string, uid: string, name: string, inviteId
 export async function releaseName(gid: string, uid: string, name: string) {
   if (await nameOwner(gid, name) === uid) await deleteDoc(doc(db, 'groepen', gid, 'namen', nameKey(name)));
 }
-/** Namen van de groep aanvullen (beheerder): iedereen die al in een speltak zit, krijgt zijn naam vastgelegd. */
-export async function syncNames(gid: string, people: Map<string, string>) {
+/**
+ * Namen van de groep bijhouden (beheerder). Eerst aanvullen: iedereen die al in een speltak zit, krijgt zijn naam vastgelegd.
+ * Daarna, met `admins`, opruimen: namen van wie in geen enkele speltak van de groep meer zit en geen beheerder is, komen vrij.
+ * Opruimen alleen met de volledige lijst speltakken van de server, nooit met een (mogelijk onvolledige) lijst uit de cache.
+ */
+export async function syncNames(gid: string, people: Map<string, string>, admins?: string[]) {
   const s = await getDocs(collection(db, 'groepen', gid, 'namen'));
   const have = new Set(s.docs.map(d => d.id));
   const ops: Promise<unknown>[] = [];
   people.forEach((name, uid) => { const k = nameKey(name); if (k && !have.has(k)) { have.add(k); ops.push(setDoc(doc(db, 'groepen', gid, 'namen', k), { uid, name: name.trim() })); } });
   await Promise.all(ops.map(p => p.catch(() => {})));
+  if (!admins) return;
+  const sps = await getDocs(query(collection(db, 'speltakken'), where('gid', '==', gid)));
+  if (s.metadata?.fromCache || sps.metadata?.fromCache) return;
+  const keep = new Set([...admins, ...people.keys()]);
+  sps.docs.forEach(d => { const ids = (d.data() as any).memberIds; if (Array.isArray(ids)) ids.forEach((u: string) => keep.add(u)); });
+  const gone = s.docs.filter(d => { const u = (d.data() as any).uid; return typeof u === 'string' && !keep.has(u); });
+  await Promise.all(gone.map(d => deleteDoc(doc(db, 'groepen', gid, 'namen', d.id)).catch(() => {})));
+}
+/** Na het verlaten van een speltak: je eigen naam in de groep vrijgeven, als je in geen andere speltak van de groep zit en geen beheerder bent. */
+export async function releaseOwnName(gid: string, uid: string, name: string, leftSid: string) {
+  const s = await getDocs(query(collection(db, 'speltakken'), where('memberIds', 'array-contains', uid)));
+  if (s.metadata?.fromCache || s.docs.some(d => d.id !== leftSid && (d.data() as any).gid === gid)) return;
+  // de groep lezen mag alleen een beheerder: lukt het niet, dan ben je dat niet
+  try { const g = await getDoc(doc(db, 'groepen', gid)); if (g.exists() && ((g.data() as any).adminIds || []).includes(uid)) return; } catch { /* geen beheerder */ }
+  await releaseName(gid, uid, name);
 }
 
 /** Rechten van een leiding aanpassen (teamleider of beheerder van de groep). Bekijken mag altijd. */

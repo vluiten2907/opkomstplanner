@@ -10,7 +10,7 @@ import { download, slugify } from '../lib/export';
 import { fmtNL, fmtT, plural, todayISO, uid, DAYS, MONTHS } from '../lib/time';
 import { ACCENTS, normLib, normOpk, normPlan, normSettings, prepLabel, PREP_OPTS, SPELTAKKEN, SWATCHES, type Settings } from '../lib/model';
 import { ALL_PERMS, DEFAULT_LEIDING_PERMS, PERM_HELP, PERM_LABELS, isTeamleider, type Invite, type Member, type PermKey, type Perms } from '../lib/types';
-import { ensureTlIds, isEmail, removeGroupAdmin, setGroupAdmin, setTeamleider, stepDownTeamleider, transferJoiners, transferTeamleider } from '../store/beheer';
+import { ensureTlIds, inviteOnce, isEmail, releaseOwnName, removeGroupAdmin, renewInvite, setGroupAdmin, setTeamleider, stepDownTeamleider, transferJoiners, transferTeamleider } from '../store/beheer';
 import { useRoles } from '../store/roles';
 import { InviteLink, InviteList, useOpenInvites } from '../components/Invites';
 
@@ -37,7 +37,9 @@ export default function Instellingen() {
       <Team />
       <fieldset className="card pad stack" disabled={!edit} style={{ border: 0, margin: 0, minWidth: 0 }}>
         <h2>Je groep</h2>
-        <Field label="Naam van de groep" htmlFor="gs-name"><DebText id="gs-name" value={settings.groupName} onCommit={v => set({ groupName: v.trim() })} placeholder="bijv. Scoutinggroep De Verkenners" /></Field>
+        {/* Onder een groep hoort de naam bij de groep (ook in uitnodigingen en pdf's): die past de beheerder aan in Beheer. */}
+        {S.sp?.gid ? <Field label="Naam van de groep" htmlFor="gs-name" hint="Wijzigen kan de beheerder van de groep in Beheer."><input id="gs-name" value={settings.groupName} readOnly aria-readonly="true" /></Field>
+          : <Field label="Naam van de groep" htmlFor="gs-name"><DebText id="gs-name" value={settings.groupName} onCommit={v => set({ groupName: v.trim() })} placeholder="bijv. Scoutinggroep De Verkenners" /></Field>}
         <Field label="Speltak" htmlFor="gs-speltak"><DebText id="gs-speltak" list="speltaklist" value={settings.speltak} onCommit={v => set({ speltak: v.trim() })} placeholder="bijv. Scouts" /><datalist id="speltaklist">{SPELTAKKEN.map(x => <option key={x} value={x} />)}</datalist></Field>
         <Logo />
         <div className="field"><span className="lbl">Kleur</span><div className="accents">{Object.entries(ACCENTS).map(([k, a]) => <button key={k} className="acc" aria-pressed={settings.accent === k} style={{ ['--c' as any]: a.l }} onClick={() => set({ accent: k })}><i />{a.label}</button>)}</div></div>
@@ -170,9 +172,17 @@ function Restore() {
 }
 
 function Leave() {
-  const { removeMember, sid } = useSpeltak(); const { user } = useAuth(); const nav = useNavigate();
+  const { removeMember, sid, sp, myName } = useSpeltak(); const { user } = useAuth(); const nav = useNavigate();
+  const leave = async () => {
+    const uidX = user!.uid, gid = sp?.gid, name = myName;
+    try { await removeMember(uidX); } catch { toast('Verlaten mislukt.'); return; }
+    // je naam in de groep komt vrij als je nergens anders in de groep meer zit (op de achtergrond; niet erg als het niet lukt)
+    if (gid && name) releaseOwnName(gid, uidX, name, sid).catch(() => {});
+    try { if (localStorage.getItem('opk.sid') === sid) localStorage.removeItem('opk.sid'); } catch { /* geen opslag */ }
+    nav('/speltakken');
+  };
   return <div className="dangerzone"><b>Speltak verlaten</b><span className="hint">Je wordt uit het team gehaald; een teamleider kan je opnieuw uitnodigen.</span>
-    <div className="row"><ConfirmBtn className="btn sm danger" label="Speltak verlaten" confirm="Klik nogmaals: verlaten" onConfirm={async () => { try { await removeMember(user!.uid); if (localStorage.getItem('opk.sid') === sid) localStorage.removeItem('opk.sid'); nav('/speltakken'); } catch { toast('Verlaten mislukt.'); } }} /></div></div>;
+    <div className="row"><ConfirmBtn className="btn sm danger" label="Speltak verlaten" confirm="Klik nogmaals: verlaten" onConfirm={leave} /></div></div>;
 }
 
 /* ---------- Team: leden, rechten en uitnodigingen ---------- */
@@ -217,7 +227,11 @@ function Team() {
     try {
       if (kind === 'teamleider') await ensureTlIds(sp).catch(() => {});
       // Rol overdragen: de ander komt binnen als leiding met alle rechten; daarna draag je zelf je rol over (knop bij die persoon).
-      setInv(await createInvite(em, kind === 'teamleider' ? 'teamleider' : 'leiding', kind === 'leiding' ? perms : ALL_PERMS, kind === 'transfer')); setEmail('');
+      const k = kind === 'teamleider' ? 'teamleider' : 'leiding', p = kind === 'leiding' ? perms : ALL_PERMS, transfer = kind === 'transfer';
+      // Staat er al een geldige uitnodiging met dezelfde rol en rechten voor dit adres? Dan die link, geen tweede.
+      const r = await inviteOnce({ kind: k, email: em, gid: sp.gid, sid: sp.id, perms: p, transfer }, user!.uid, open, () => createInvite(em, k, p, transfer));
+      setInv(r.inv); setEmail('');
+      if (r.reused) toast(`Er stond al een uitnodiging voor ${em}. Dit is dezelfde link.`);
     } catch { toast('Uitnodiging maken mislukt.'); }
     setBusy(false);
   };
@@ -245,9 +259,13 @@ function Team() {
       {kind === 'leiding' && <PermGrid perms={perms} onChange={(k, v) => setPerms({ ...perms, [k]: v })} />}
       {kind === 'transfer' && <p className="hint">De ander komt eerst in het team als leiding met alle rechten. Daarna staat bij die persoon de knop Rol overdragen: hij wordt teamleider, jij blijft leiding. Zit je opvolger al in het team? Draag dan direct over via Rechten bij die persoon.</p>}
       <div className="row"><button className="btn primary" disabled={busy} onClick={invite}><Link2 size={16} />Uitnodigingslink maken</button></div>
-      {inv && <InviteLink inv={inv} fromName={myName} onClose={() => setInv(null)} />}
+      {inv && <InviteLink key={inv.id} inv={inv} fromName={myName} onClose={() => setInv(null)} />}
       <h3>Openstaande uitnodigingen</h3>
-      <InviteList invites={open} showWhere={false} />
+      <InviteList invites={open} showWhere={false} renew={{
+        // een teamleider vernieuwt leiding (een overdracht alleen als hij van hem is); een teamleider-uitnodiging alleen de beheerder
+        can: i => i.kind === 'leiding' ? (!i.transfer || i.invitedBy === user?.uid) : i.kind === 'teamleider' && isAdmin,
+        run: i => renewInvite(i, { uid: user!.uid, name: myName || user?.email || '', email: user?.email || '' }, { gid: sp.gid, groupName: sp.groupName, speltakName: sp.name }),
+        onDone: setInv }} />
     </div>}
   </section>;
 }

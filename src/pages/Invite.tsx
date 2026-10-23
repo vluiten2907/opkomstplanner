@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { TentTree } from 'lucide-react';
 import { useAuth, authError } from '../store/auth';
 import { useRoles } from '../store/roles';
-import { acceptInvite, claimName, nameOwner, readInvite, saveProfile } from '../store/beheer';
+import { acceptInvite, alreadyJoined, claimName, forgetInvite, markInviteUsed, nameOwner, readInvite, rememberInvite, saveProfile } from '../store/beheer';
 import { Field } from '../components/ui';
 import VerifyNote from '../components/VerifyNote';
 import { auth } from '../lib/firebase';
@@ -24,7 +24,28 @@ export default function InvitePage() {
   const [chosen, setChosen] = useState('');
   // Naam al bezet in deze groep (bijv. een bestaand account uit een andere groep): dan kies je hier een naam voor deze groep.
   const [pick, setPick] = useState<{ taken: string; name: string } | null>(null);
-  useEffect(() => { readInvite(token!).then(setInv).catch(() => setInv(null)); }, [token]);
+  // Zit je er al in (bijv. direct toegevoegd door de beheerder)? Dan heb je de uitnodiging niet meer nodig.
+  const [already, setAlready] = useState(false);
+  useEffect(() => {
+    readInvite(token!).then(i => {
+      setInv(i);
+      // Open uitnodiging onthouden op dit apparaat (ook als je later via een andere weg inlogt); een ongeldige vergeten.
+      if (i && !i.usedBy && !inviteExpired(i)) rememberInvite(i.id); else forgetInvite(token);
+    }).catch(() => setInv(null));
+  }, [token]);
+  /** Je zat er al in: uitnodiging als gebruikt markeren (lukt alleen met bevestigd e-mailadres) en de melding tonen. */
+  const settleAlready = (i: Invite, uid: string, isVerified: boolean) => {
+    setAlready(true); forgetInvite(i.id);
+    if (isVerified) markInviteUsed(i.id, uid).catch(() => {});
+  };
+  const uid = user?.uid, myMail = (user?.email || '').toLowerCase();
+  useEffect(() => {
+    if (!inv || !uid || inv.usedBy || inviteExpired(inv) || myMail !== inv.email) return;
+    let alive = true;
+    alreadyJoined(inv, uid).then(yes => { if (alive && yes) settleAlready(inv, uid, verified); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inv, uid, myMail, verified]);
   if (!ready || inv === undefined) return <div className="loading">Uitnodiging ophalen…</div>;
   const box = (body: React.ReactNode) => <div className="auth-wrap"><div className="card pad stack auth-card">
     <div className="brand flex items-center gap-2.5" style={{ paddingBottom: 0 }}><TentTree size={26} strokeWidth={1.9} /><span className="brand-txt"><span>Opkomstplanner</span><small>voor scoutinggroepen</small></span></div>
@@ -39,12 +60,29 @@ export default function InvitePage() {
     {inv.kind === 'leiding' && inv.transfer && <p className="hint">{inv.invitedByName || 'De teamleider'} wil de rol van teamleider aan je overdragen. Dat doet {inv.invitedByName || 'hij'} zodra je in het team zit.</p>}
   </>;
   const used = !!inv.usedBy, expired = inviteExpired(inv);
+  // Al lid (zelf deze uitnodiging gebruikt, of er al in gezet): geen fout, maar de weg erheen.
+  if (user && (already || inv.usedBy === user.uid)) {
+    const open = () => {
+      if (inv.sid) { try { localStorage.setItem('opk.sid', inv.sid); } catch { /* geen opslag */ } nav(`/s/${inv.sid}`, { replace: true }); }
+      else { if (inv.kind === 'totaal') recheck(); nav('/beheer', { replace: true }); }
+    };
+    const admin = inv.kind === 'totaal' || inv.kind === 'groep';
+    return box(<>
+      <h2>{admin ? 'Je bent al beheerder' : 'Je bent al lid'}</h2>
+      <p>{inv.kind === 'totaal' ? <>Je bent al <b>Beheer (totaal)</b>.</> : admin ? <>Je beheert <b>{where}</b> al.</> : <>Je zit al in <b>{where}</b>.</>} Deze uitnodiging heb je niet meer nodig.</p>
+      <div className="row"><button className="btn primary" onClick={open}>Openen</button></div>
+    </>);
+  }
+  if (used && !user) return box(<>{intro}<p className="hint">Deze uitnodiging is al gebruikt. Heb je hem zelf gebruikt? Log dan in.</p><div className="row"><Link className="btn primary" to="/inloggen">Inloggen</Link></div></>);
   if (used || expired) return box(<>{intro}<p className="hint err">{used ? 'Deze uitnodiging is al gebruikt.' : 'Deze uitnodiging is verlopen. Vraag om een nieuwe.'}</p><Link className="btn" to="/">Naar de start</Link></>);
 
-  const accept = async (u: { uid: string; email: string | null; displayName: string | null }, nm?: string) => {
+  const accept = async (u: { uid: string; email: string | null; displayName: string | null; emailVerified?: boolean }, nm?: string) => {
+    // Al lid (bijv. intussen direct toegevoegd): niet toetreden (dat weigert Firestore), maar melden dat je er al in zit.
+    if (await alreadyJoined(inv, u.uid)) { settleAlready(inv, u.uid, u.emailVerified !== false); return; }
     // Namen zijn uniek binnen een groep (zoals een gebruikersnaam).
     if (inv.gid) await claimName(inv.gid, u.uid, nm || u.displayName || '', inv.id);
     await acceptInvite(inv, { uid: u.uid, name: nm || u.displayName || u.email || 'Leiding', email: u.email || '' });
+    forgetInvite(inv.id);
     if (inv.sid) { localStorage.setItem('opk.sid', inv.sid); nav(`/s/${inv.sid}`, { replace: true }); }
     else {
       // Beheer (totaal) lezen werd vóór het toetreden geweigerd; opnieuw ophalen, anders zie je "geen beheerder" tot herladen
@@ -92,7 +130,7 @@ export default function InvitePage() {
         <Field label="Voornaam" htmlFor="i-first"><input id="i-first" value={first} onChange={e => setFirst(e.target.value)} autoComplete="given-name" /></Field>
         <Field label="Achternaam" htmlFor="i-last"><input id="i-last" value={last} onChange={e => setLast(e.target.value)} autoComplete="family-name" /></Field>
       </div>}
-      {mode === 'register' && <Field label="Gebruikersnaam" htmlFor="i-name" hint={`Je naam is je gebruikersnaam binnen ${inv.groupName || 'de groep'}: hij mag er maar één keer voorkomen.`}><input id="i-name" value={name} onChange={e => setName(e.target.value)} placeholder="Zoals de leiding je kent, bijv. Akela" autoComplete="name" /></Field>}
+      {mode === 'register' && <Field label="Gebruikersnaam" htmlFor="i-name" hint={`Je naam is je gebruikersnaam binnen ${inv.groupName || 'de groep'}: hij mag er maar één keer voorkomen.`}><input id="i-name" value={name} maxLength={40} onChange={e => setName(e.target.value)} placeholder="Zoals de leiding je kent, bijv. Akela" autoComplete="name" /></Field>}
       <Field label={mode === 'register' ? 'Kies een wachtwoord' : 'Wachtwoord'} htmlFor="i-pw"><input id="i-pw" type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete={mode === 'register' ? 'new-password' : 'current-password'} minLength={6} required /></Field>
       {err && <p className="hint err">{err}</p>}
       <button className="btn primary" disabled={busy}>{mode === 'register' ? 'Account aanmaken en toetreden' : 'Inloggen en toetreden'}</button>

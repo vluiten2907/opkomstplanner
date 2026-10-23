@@ -55,7 +55,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         else throw e;
       }
     },
-    async logout() { await signOut(auth); },
+    async logout() {
+      // de laatste speltak hoort bij dit account: wie hierna inlogt, begint niet in een speltak waar hij geen lid van is
+      try { localStorage.removeItem('opk.sid'); } catch { /* geen opslag */ }
+      await signOut(auth);
+    },
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -92,5 +96,8 @@ export function authError(e: any): string {
   if (c.includes('invalid-email')) return 'Dit is geen geldig e-mailadres.';
   if (c.includes('too-many-requests')) return 'Te veel pogingen. Probeer het straks opnieuw.';
   if (c.includes('network')) return 'Geen verbinding. Controleer je internet.';
-  return 'Er ging iets mis: ' + (e?.message || c || 'onbekende fout');
+  if (c.includes('user-disabled')) return 'Dit account is uitgeschakeld.';
+  // de echte fout (vaak Engelse tekst van Firebase) alleen in de console
+  console.error(e);
+  return 'Er ging iets mis. Probeer het opnieuw.';
 }

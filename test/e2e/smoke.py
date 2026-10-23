@@ -90,6 +90,10 @@ with sync_playwright() as p:
     open_sp('Scouts')
     pg.select_option('.groupcard select[aria-label="Persoon kiezen voor de speltak"]', label='Beheer (demo) · vluiten2907@gmail.com'); pg.click('.groupcard .member >> button:text-is("Toevoegen")'); w(800)
     check(pg.locator('.groupcard .member:has-text("Scouts") >> text=Teamleider: Beheer (demo)').count() == 1, 'bestaand account direct toegevoegd als teamleider')
+    lr = pg.locator('.groupcard .spcard:has-text("Scouts") .leiding .subrow:has-text("Beheer (demo)")')
+    lr.locator('label:has-text("Teamleider") input').click(); w(300)
+    check(lr.locator('text=Voeg hieronder eerst iemand toe.').count() == 1, 'enige teamleider zonder andere leiding: uitleg wijst naar toevoegen hieronder')
+    lr.locator('button:has-text("Sluiten")').click(); w(200)
     pg.select_option('.groupcard select[aria-label="Bestaande persoon kiezen"]', label='Mijzelf (Beheer (demo))'); pg.click('.groupcard >> text=Beheerder maken'); w(800)
     check(pg.locator('.groupcard .member:not(.spcard):has-text("Beheer (demo) (jij)")').count() == 1, 'beheer totaal (als leiding) maakt zichzelf beheerder van de groep')
     def invite_as(email, kind):
@@ -124,21 +128,38 @@ with sync_playwright() as p:
     # --- teamleider maakt account via de uitnodiging
     logout_to(tl_link)
     check(pg.locator('input[type=email]').input_value() == 'vincent@test.nl', 'uitnodiging: e-mailadres staat vast')
+    check(pg.locator('#i-name').get_attribute('maxlength') == '40', 'uitnodiging: gebruikersnaam hoogstens 40 tekens')
     pg.evaluate("localStorage.setItem('fake.noverify','1')")
     register('Vincent Test', 'vincent@test.nl')
     check('/uitnodiging/' in pg.url and pg.locator('text=Bevestig je e-mailadres').count() == 1, 'na registreren eerst e-mailadres bevestigen'); shot('00-bevestigen')
     pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('00-bevestigen-mobiel')
     check(pg.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'bevestigen: mobiel zonder horizontaal scrollen')
     pg.set_viewport_size({'width': 1360, 'height': 900})
+    # tabblad dicht en later via een andere weg ingelogd: Mijn speltakken legt uit hoe je toetreedt (elk apparaat) ...
+    tl_token = pg.evaluate("localStorage.getItem('opk.invite')")
+    pg.evaluate("localStorage.removeItem('opk.invite')"); pg.goto(BASE + '/speltakken'); w(900)
+    check(pg.locator('.empty:has-text("Open de link uit die mail nog een keer")').count() == 1 and pg.locator('.invitenote').count() == 0, 'mijn speltakken zonder speltak: uitleg over de link in de mail')
+    # ... en wijst op dit apparaat meteen naar de uitnodiging die er openstaat
+    pg.evaluate("t => localStorage.setItem('opk.invite', t)", tl_token); pg.goto(BASE + '/speltakken'); w(900)
+    check(tl_link.endswith('/' + (tl_token or '-')) and pg.locator('.invitenote:has-text("Testgroep · Scouts") a:has-text("Toetreden")').count() == 1, 'mijn speltakken: openstaande uitnodiging op dit apparaat, met Toetreden')
+    shot('00c-uitnodiging-open', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('00d-uitnodiging-open-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'mijn speltakken met uitnodiging: mobiel zonder horizontaal scrollen')
+    pg.set_viewport_size({'width': 1360, 'height': 900})
+    pg.click('.invitenote >> text=Toetreden'); w(800)
+    check('/uitnodiging/' in pg.url and pg.locator('text=Bevestig je e-mailadres').count() == 1, 'Toetreden: terug op de uitnodiging')
     pg.click('text=Ik heb bevestigd'); w(500)
     check('/uitnodiging/' in pg.url and pg.locator('text=Nog niet bevestigd').count() == 1, 'zonder klikken op de link geen toegang')
     pg.evaluate("localStorage.setItem('fake.clicked','vincent@test.nl'); localStorage.removeItem('fake.noverify')")
     pg.click('text=Ik heb bevestigd'); w(900)
     check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'account via uitnodiging → dashboard speltak'); shot('01-dashboard')
+    check(pg.evaluate("localStorage.getItem('opk.invite')") is None, 'na toetreden: uitnodiging niet meer onthouden')
     check(pg.locator('h1').first.inner_text().strip() == 'Scouts', 'dashboard: speltaknaam is de titel')
     check(pg.locator('.kicker-switch').count() == 1, 'dashboard: knop andere speltak')
     # --- team en instellingen
     pg.click('nav >> text=Team & instellingen'); w()
+    check(pg.locator('#gs-name').get_attribute('readonly') is not None and pg.locator('.field:has(#gs-name) .hint:has-text("Wijzigen kan de beheerder van de groep in Beheer")').count() == 1,
+          'speltak in een groep: naam van de groep alleen-lezen, met uitleg')
     check(pg.locator('.invite .chip:has-text("Teamleider")').count() == 0 and pg.locator('.invite .chip:has-text("Mijn rol overdragen")').count() == 1, 'teamleider kan geen extra teamleider uitnodigen, wel overdragen')
     pg.fill('.invite input[type=email]', 'anna@test.nl'); pg.click('text=Uitnodigingslink maken'); w(600)
     link = pg.locator('.mono-code').inner_text()
@@ -153,6 +174,28 @@ with sync_playwright() as p:
     pg.click('button:has-text("Mail versturen")'); w(500)
     check(pg.locator('button:has-text("Gemaild")').count() == 1 and seen.get('auth', '').startswith('Bearer ') and link.rsplit('/', 1)[-1] in seen.get('body', ''), 'uitnodiging mailen via de server')
     pg.unroute('**/api/uitnodiging-mail.php')
+    # hetzelfde adres nog eens uitnodigen met dezelfde rechten: dezelfde link, geen tweede rij
+    pg.fill('.invite input[type=email]', 'anna@test.nl'); pg.click('text=Uitnodigingslink maken'); w(600)
+    check(pg.locator('.invite .mono-code').inner_text() == link and pg.locator('.invrow:has-text("anna@test.nl")').count() == 1 and 'dezelfde link' in pg.locator('.toast').inner_text(),
+          'nogmaals uitnodigen met dezelfde rechten: dezelfde link, geen dubbele uitnodiging')
+    # verlopen uitnodiging: Vernieuwen maakt een nieuwe link met dezelfde rol en rechten, de oude verdwijnt
+    pg.fill('.invite input[type=email]', 'later@test.nl'); pg.click('text=Uitnodigingslink maken'); w(600)
+    old_t = pg.locator('.invite .mono-code').inner_text().rsplit('/', 1)[-1]
+    fs = lambda: pg.evaluate("JSON.parse(localStorage.getItem('fake.firestore'))")
+    old_inv = fs()['invites/' + old_t]
+    pg.evaluate("t => { const s = JSON.parse(localStorage.getItem('fake.firestore')), d = s['invites/' + t]; d.expiresAt = Date.now() - 1000; window.__fakeRemote('invites/' + t, d); }", old_t); w(400)
+    lrow_inv = pg.locator('.invrow:has-text("later@test.nl")')
+    check(lrow_inv.locator('text=verlopen').count() == 1 and lrow_inv.locator('button:has-text("Vernieuwen")').count() == 1 and lrow_inv.locator('button:has-text("Link")').count() == 0,
+          'verlopen uitnodiging: knop Vernieuwen in plaats van Link')
+    lrow_inv.scroll_into_view_if_needed(); shot('02c-uitnodiging-verlopen', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); lrow_inv.scroll_into_view_if_needed(); shot('02d-uitnodiging-verlopen-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'verlopen uitnodiging mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    lrow_inv.locator('button:has-text("Vernieuwen")').click(); w(700)
+    new_t = pg.locator('.invite .mono-code').inner_text().rsplit('/', 1)[-1]; st = fs()
+    new_inv = st.get('invites/' + new_t, {})
+    check(new_t != old_t and ('invites/' + old_t) not in st and new_inv.get('kind') == 'leiding' and new_inv.get('perms') == old_inv['perms'] and new_inv.get('email') == 'later@test.nl'
+          and lrow_inv.count() == 1 and lrow_inv.locator('text=verlopen').count() == 0, 'vernieuwen: nieuwe link met dezelfde rol en rechten, de oude is weg')
     for n in ['Bram', 'Carla']:
         pg.fill('input[placeholder="Naam"]', n); pg.locator('input[placeholder="Naam"]').press('Enter'); w(300)
     shot('02-instellingen')
@@ -445,11 +488,30 @@ with sync_playwright() as p:
     anna_uid = pg.evaluate("JSON.parse(localStorage.getItem('fake.auth.current')).uid")
     check(pg.evaluate("t => JSON.parse(localStorage.getItem('fake.firestore'))['invites/' + t].usedBy", link.rsplit('/', 1)[-1]) == anna_uid, 'uitnodiging na toetreden als gebruikt gemarkeerd')
     pg.goto(link); w(700)
-    check(pg.locator('text=Deze uitnodiging is al gebruikt').count() == 1, 'dezelfde uitnodiging werkt niet nog een keer')
-    check(pg.locator('p.err:has-text("al gebruikt")').evaluate('e => getComputedStyle(e).fontWeight') == '700', 'melding in foutstijl')
+    check(pg.locator('h2:has-text("Je bent al lid")').count() == 1 and pg.locator('p:has-text("Testgroep · Scouts")').count() >= 1 and pg.locator('.err').count() == 0,
+          'eigen, al gebruikte uitnodiging nog eens openen: "Je bent al lid", geen fout'); shot('05b-al-lid', False)
+    pg.click('button:has-text("Openen")'); w(900)
+    check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'al lid: Openen gaat naar de speltak')
+    # open uitnodiging voor iemand die al lid is (bijv. intussen direct toegevoegd): geen fout, uitnodiging telt als gebruikt
+    scouts_sid = re.search(r'/s/([^/]+)/', pg.url).group(1)
+    pg.evaluate("""sid => { const sp = JSON.parse(localStorage.getItem('fake.firestore'))['speltakken/' + sid];
+      window.__fakeRemote('invites/dubbelanna', { kind: 'leiding', role: 'leiding', email: 'anna@test.nl', gid: sp.gid, groupName: sp.groupName, sid, speltakName: sp.name,
+        perms: { plan: true, build: true, bank: true, settings: false }, invitedBy: 'uroot', invitedByName: 'Beheer (demo)', createdAt: Date.now(), expiresAt: Date.now() + 864e5, usedBy: null, transfer: false }); }""", scouts_sid)
+    pg.goto(BASE + '/uitnodiging/dubbelanna'); w(900)
+    check(pg.locator('h2:has-text("Je bent al lid")').count() == 1 and pg.locator('.err').count() == 0
+          and soon(lambda: pg.evaluate("JSON.parse(localStorage.getItem('fake.firestore'))['invites/dubbelanna'].usedBy") == anna_uid),
+          'open uitnodiging terwijl je al lid bent: "Je bent al lid", uitnodiging als gebruikt gemarkeerd')
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('05c-al-lid-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'al lid mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900})
     pg.goto(BASE + '/'); w(900)
     pg.click('nav >> text=Instellingen'); w(400)
     check(pg.locator('text=Anna de Vries (jij)').count() == 1, 'nieuw lid staat in het team')
+
+    # gebruikte uitnodiging, niet ingelogd: geen fout, maar de vraag of je hem zelf gebruikte en een knop Inloggen
+    logout_to(link)
+    check(pg.locator('text=Heb je hem zelf gebruikt? Log dan in.').count() == 1 and pg.locator('a:has-text("Inloggen")').count() == 1 and pg.locator('.err').count() == 0,
+          'gebruikte uitnodiging zonder in te loggen: uitleg en knop Inloggen, geen fout')
 
     # --- Greet wordt leiding; Beheer (totaal) maakt haar beheerder en wisselt de teamleider
     logout_to(ga_link); register('anna de  vries', 'ga@test.nl')
@@ -457,11 +519,21 @@ with sync_playwright() as p:
     register('Greet Beheer', 'ga@test.nl')
     check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'leiding via uitnodiging → dashboard speltak')
     check(pg.locator('.namenote').count() == 0, 'geen melding: voor- en achternaam bij registreren ingevuld')
+    # iemand anders opent een al gebruikte uitnodiging: die werkt niet nog een keer
+    pg.goto(link); w(700)
+    check(pg.locator('text=Deze uitnodiging is al gebruikt').count() == 1, 'dezelfde uitnodiging werkt niet nog een keer')
+    check(pg.locator('p.err:has-text("al gebruikt")').evaluate('e => getComputedStyle(e).fontWeight') == '700', 'melding in foutstijl')
     pg.goto(BASE + '/account'); w(700)
     check(pg.title() == 'Opkomstplanner · Mijn account' and pg.locator('.page-head button:has-text("Uitloggen")').count() == 1 and pg.locator('.page-head button:has-text("Terug")').count() == 1, 'mijn account: kop met Terug en Uitloggen')
     check(pg.locator('#ac-first').input_value() == 'Greet' and pg.locator('#ac-last').input_value() == 'Beheer', 'mijn account toont voor- en achternaam')
     pg.fill('#ac-last', 'de Beheerder'); pg.click('text=Opslaan'); w(600)
     shot('06-account')
+    pg.click('button:has-text("Wachtwoord wijzigen")'); w(500)
+    check(pg.url.rstrip('/').endswith('/account') and 'We hebben een mail gestuurd naar ga@test.nl' in pg.locator('.toast').inner_text(),
+          'mijn account: wachtwoord wijzigen stuurt meteen de mail, zonder je adres te typen')
+    sid_before = pg.evaluate("localStorage.getItem('opk.sid')")
+    pg.click('.page-head button:has-text("Uitloggen")'); w(700)
+    check(sid_before is not None and pg.evaluate("localStorage.getItem('opk.sid')") is None and '/inloggen' in pg.url, 'uitloggen: de laatste speltak wordt vergeten')
     def login(email, pw):
         logout_to(BASE + '/inloggen'); pg.fill('input[type=email]', email); pg.fill('input[type=password]', pw); pg.click('.btn.primary'); w(1200)
     login('vluiten2907@gmail.com', 'demo123'); open_group()
@@ -617,6 +689,8 @@ with sync_playwright() as p:
     login('vluiten2907@gmail.com', 'demo123')
     zg = pg.locator('.groupcard:has-text("Zeegroep")'); opened(zg, '.gc-head')
     zs = zg.locator('.spcard:has-text("Zeeverkenners")'); opened(zs, '.sp-head')
+    zs.locator('input[placeholder="e-mailadres nieuw lid"]').fill('ga@test.nl'); zs.locator('button:text-is("Uitnodigen")').click(); w(800)
+    ga_zee = zs.locator('.mono-code').inner_text().rsplit('/', 1)[-1]
     zs.locator('input[aria-label="E-mailadres van een account"]').fill('ga@test.nl'); zs.locator('button:text-is("Toevoegen")').click(); w(600)
     check(zs.locator('input[id^="pp-name-"]').count() == 1 and 'al in gebruik binnen Zeegroep' in pg.locator('.toast').inner_text(), 'beheer: naam bezet in de groep → veld voor een andere naam')
     zs.locator('input[id^="pp-name-"]').scroll_into_view_if_needed(); shot('24-beheer-naam-bezet', False)
@@ -626,6 +700,24 @@ with sync_playwright() as p:
     pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     zs.locator('input[id^="pp-name-"]').fill('Greet Test'); zs.locator('button:text-is("Toevoegen")').click(); w(800)
     check(zs.locator('.subrow:has-text("Greet Test")').count() == 1 and zs.locator('input[id^="pp-name-"]').count() == 0, 'beheer: toegevoegd met de gekozen naam')
+    check(soon(lambda: pg.evaluate("t => !JSON.parse(localStorage.getItem('fake.firestore'))['invites/' + t]", ga_zee)) and pg.locator('.invrow:has-text("ga@test.nl")').count() == 0,
+          'direct toegevoegd: openstaande uitnodiging voor die persoon en speltak ingetrokken')
+    # namen: wie nergens meer in de groep zit (bijv. via Team uit het team gehaald), krijgt zijn naam terug vrij; leden en beheerders niet
+    gid_of = lambda n: pg.evaluate("n => Object.entries(JSON.parse(localStorage.getItem('fake.firestore'))).find(([k, v]) => k.split('/').length === 2 && k.startsWith('groepen/') && v.name === n)[0].split('/')[1]", n)
+    has_name = lambda g, k: pg.evaluate("([g, k]) => !!JSON.parse(localStorage.getItem('fake.firestore'))['groepen/' + g + '/namen/' + k]", [g, k])
+    tg_id, zg_id = gid_of('Testgroep'), gid_of('Zeegroep')
+    pg.evaluate("g => window.__fakeRemote('groepen/' + g + '/namen/spook', { uid: 'uspook', name: 'Spook' })", tg_id)
+    pg.goto(BASE + '/beheer'); w(1200)
+    check(soon(lambda: not has_name(tg_id, 'spook')) and has_name(tg_id, 'anna de vries') and has_name(tg_id, 'beheer (demo)'),
+          'beheer: naam van wie in geen speltak van de groep meer zit komt vrij; leden en beheerders houden hun naam')
+    # speltak verlaten: je naam in die groep komt vrij (Greet zit verder in geen speltak van Zeegroep)
+    check(has_name(zg_id, 'greet test'), 'naam Greet Test vastgelegd in Zeegroep')
+    login('ga@test.nl', 'geheim123')
+    pg.goto(f"{BASE}/s/{sid_of('Zeeverkenners')}/instellingen"); w(1000)
+    lv = pg.locator('.dangerzone:has-text("Speltak verlaten")')
+    lv.locator('button:has-text("Speltak verlaten")').click(); w(150); lv.locator('button:has-text("Klik nogmaals")').click()
+    check(soon(lambda: '/speltakken' in pg.url) and soon(lambda: not has_name(zg_id, 'greet test')) and has_name(tg_id, 'greet beheer'),
+          'speltak verlaten: naam in die groep komt vrij, naam in de andere groep blijft')
 
     # --- laden: pagina's pas tonen als alles binnen is; een andere speltak (ook via de terugknop) begint schoon
     login('vluiten2907@gmail.com', 'demo123')

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { Check, Copy, Mail, Send, X } from 'lucide-react';
+import { Check, Copy, Mail, RotateCw, Send, X } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { inviteUrl, revokeInvite, sendInviteMail } from '../store/beheer';
 import { toast } from '../store/toast';
@@ -42,9 +42,20 @@ async function copyText(t: string) {
   catch { toast('Kopiëren lukt niet; selecteer de link en kopieer hem zelf.'); return false; }
 }
 
-/** Lijst met openstaande uitnodigingen: link kopiëren of intrekken. */
-export function InviteList({ invites, showWhere = true }: { invites: Invite[]; showWhere?: boolean }) {
+/** Verlopen uitnodiging vernieuwen: `can` (mag de kijker dit soort uitnodiging maken?), `run` maakt de nieuwe, `onDone` toont hem. */
+export type Renew = { can: (i: Invite) => boolean; run: (i: Invite) => Promise<Invite>; onDone: (i: Invite) => void };
+
+/** Lijst met openstaande uitnodigingen: link kopiëren of intrekken; een verlopen uitnodiging vernieuwen. */
+export function InviteList({ invites, showWhere = true, renew }: { invites: Invite[]; showWhere?: boolean; renew?: Renew }) {
+  const [busy, setBusy] = useState('');
   if (!invites.length) return <p className="hint">Geen openstaande uitnodigingen.</p>;
+  const again = async (i: Invite) => {
+    if (!renew) return;
+    setBusy(i.id);
+    try { renew.onDone(await renew.run(i)); toast(`Uitnodiging vernieuwd: nieuwe link, ${INVITE_DAYS} dagen geldig`); }
+    catch (e: any) { toast(e?.code === 'permission-denied' ? 'Vernieuwen mag je niet. Vraag de beheerder om een nieuwe uitnodiging.' : 'Vernieuwen mislukt. Probeer het opnieuw.'); }
+    setBusy('');
+  };
   return <div className="invlist">{invites.map(i => {
     const exp = inviteExpired(i);
     return <div key={i.id} className="invrow">
@@ -54,6 +65,7 @@ export function InviteList({ invites, showWhere = true }: { invites: Invite[]; s
       </div>
       <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
         {!exp && <button className="btn sm ghost" onClick={() => copyText(inviteUrl(i.id))} title="Link kopiëren"><Copy size={14} />Link</button>}
+        {exp && renew?.can(i) && <button className="btn sm" disabled={busy === i.id} onClick={() => again(i)} title="Nieuwe link maken"><RotateCw size={14} />Vernieuwen</button>}
         <ConfirmBtn className="btn sm ghost danger" label={<><X size={14} />Intrekken</>} confirm="Zeker?" onConfirm={() => revokeInvite(i.id).then(() => toast('Uitnodiging ingetrokken')).catch(() => toast('Intrekken mislukt.'))} />
       </div>
     </div>;
