@@ -237,7 +237,6 @@ button.cday:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 .blk:hover .bdel, .blk.sel .bdel, .blk:focus-visible .bdel, .bdel:focus-visible { opacity: 1; }
 .blk.tiny .rs { height: 6px; }
 .blk.tiny .bdel { top: 50%; transform: translateY(-50%); width: 22px; height: 22px; }
-@media (pointer: coarse) { .bdel { opacity: .9; } }
 .toast.show.has-act { pointer-events: auto; }
 .toast button { margin-left: 14px; border: 0; background: transparent; color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 0; }
 
@@ -287,7 +286,7 @@ button.cday:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 .blk .cols3 { height: 100%; }
 .blk .c1 { padding: 6px 4px 6px 18px; min-width: 0; position: relative; }
 .blk .cl, .blk .c2 { padding: 6px 8px 6px 0; min-width: 0; font-size: 13px; overflow: hidden; }
-/* Namen lopen om de prullenbak rechtsboven heen, zodat die nooit op een naam ligt (op een telefoon staat hij altijd zichtbaar).
+/* Namen lopen om de prullenbak rechtsboven heen, zodat die nooit op een naam ligt (ook niet als hij bij aanwijzen of kiezen verschijnt).
    In een smal onderdeel (naast een ander) beginnen de namen daardoor onder de prullenbak. */
 .blk .c2::before { content: ''; float: right; width: 30px; height: 30px; }
 .blk .names { display: block; }
@@ -862,3 +861,31 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
   .prow .brief.none { padding: 6px 8px; }
   .prow .brief.none .btxt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
+
+/* Opkomstbouwer op de telefoon: details inklapbaar, tellers op één regel, knop naar de activiteitenbank */
+.metatoggle { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; border: 0; background: transparent; padding: 14px 18px; text-align: left; cursor: pointer; font: inherit; color: var(--ink); border-radius: 14px; }
+.metatoggle b { flex: none; }
+.metatoggle .hint { flex: 1 1 auto; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.metatoggle .chev { flex: none; transition: transform .15s; }
+.metatoggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.metatoggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.metatoggle[aria-expanded="true"] { padding-bottom: 4px; }
+.summary.mini { align-items: baseline; gap: 4px 18px; font-size: 14px; color: var(--muted); }
+.summary.mini b { color: var(--ink); }
+.summary.mini .linkbtn { font-weight: 700; }
+.summary.mini .linkbtn.warnc { color: var(--danger); text-decoration-color: var(--danger); }
+.plan-fab { position: fixed; z-index: 35; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+/* een melding onderin: de knop schuift erboven */
+body:has(.toast.show) .plan-fab { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+@media (max-width: 900px) { .side { scroll-margin-top: 112px; } }
+/* net ingepland of gesleept: even een rand eromheen (zoals een rij in de jaarplanning) */
+.blk.flash { box-shadow: inset 4px 0 0 var(--cc), 0 0 0 3px var(--accent), 4px 4px 0 2px var(--hard); z-index: 3; }
+
+/* Aanraakscherm: de prullenbak alleen op het gekozen onderdeel (een tik rechtsboven verwijdert nooit ongezien iets);
+   het bewerkpaneel heeft ook Verwijderen. De namen houden hun ruimte rechtsboven, dus er verspringt niets. */
+@media (pointer: coarse) {
+  .blk:not(.sel) .bdel, .blk:not(.sel):hover .bdel, .blk:not(.sel):focus-visible .bdel { opacity: 0; pointer-events: none; }
+}
+
+/* Telefoon: een lange paginakop van één woord (Activiteitenbank) past op één regel, zonder midden in het woord af te breken */
+@media (max-width: 600px) { h1.display { font-size: min(3rem, 10.4vw); } }

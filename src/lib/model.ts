@@ -156,6 +156,17 @@ export function newOpk(s: Settings): Opk {
   return { id: uid(), state: 'draft', srcId: null, kind: 'opkomst', cats: [], lead: '', title: '', short: '', group: s.speltak || '', location: '',
     start: s.defStart, end: s.defEnd, prep: s.prepMin, post: s.postMin, days: [], blocks: fixedBlocks(s, s.defStart, s.defEnd), createdAt: Date.now(), updatedAt: Date.now(), shared: true, fromShared: null };
 }
+/** Nog niets ingevuld: geen titel, beschrijving, locatie of categorie, en alleen de vaste blokken (kamp: dagen zonder onderdelen). */
+export const isBlankOpk = (o: Opk) => !o.title.trim() && !o.short.trim() && !o.location.trim() && !o.cats.length && allBlocks(o).every(isFixed);
+/** Zoektekst van een opkomst: titel, beschrijving, locatie en de onderdelen (zonder de vaste blokken). */
+export const opkSearchText = (o: Opk) => [o.title, o.short, o.location, ...allBlocks(o).filter(b => !isFixed(b)).map(b => b.title)].join(' ').toLowerCase();
+const TOPIC_SKIP = new Set(['opkomst', 'opkomsten', 'spel', 'spellen', 'avond', 'middag', 'ochtend', 'weekend', 'kamp', 'voor', 'naar', 'met', 'van', 'het', 'een', 'and', 'de', 'en', 'in', 'op']);
+const topicWords = (s: string, min: number) => (s || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length >= min && !TOPIC_SKIP.has(w));
+/** Past een opkomst bij het onderwerp van een datum? Een woord uit het onderwerp staat in de titel of beschrijving, of een woord uit de titel in het onderwerp. */
+export function fitsTopic(o: Pick<Opk, 'title' | 'short'>, topic: string) {
+  const t = (topic || '').toLowerCase(), own = (o.title + ' ' + o.short).toLowerCase();
+  return topicWords(t, 3).some(w => own.includes(w)) || (!!t.trim() && topicWords(o.title, 4).some(w => t.includes(w)));
+}
 export function kampDaysFor(n: number, firstISO: string | null, st?: number | null, en?: number | null): Day[] {
   const out: Day[] = [];
   for (let i = 0; i < n; i++) {

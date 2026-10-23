@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as M from '../../src/lib/model.ts';
-import { fmtT, isoWeek, parseNL } from '../../src/lib/time.ts';
+import { fmtT, isoWeek, parseNL, tidyNL } from '../../src/lib/time.ts';
 import type { Block, Opk, Plan, Settings } from '../../src/lib/model.ts';
 
 const S = (extra: Partial<Settings> = {}): Settings => ({ ...M.defaultSettings(), ...extra });
@@ -246,10 +246,47 @@ test('parseNL', () => {
   assert.equal(parseNL('17-10-202'), null, 'jaartal van 3 cijfers');
   assert.equal(parseNL('17-10-1999'), null);
   assert.equal(parseNL('morgen'), null);
+  // alleen cijfers (cijferpad op een iPhone heeft geen streepje)
+  assert.equal(parseNL('07112026'), '2026-11-07');
+  assert.equal(parseNL('071126'), '2026-11-07');
+  assert.equal(parseNL('0711', '2026-10-22'), '2026-11-07', 'zonder jaartal: eerstvolgende');
+  assert.equal(parseNL('0710', '2026-10-22'), '2027-10-07', 'al geweest: volgend jaar');
+  assert.equal(parseNL('2210', '2026-10-22'), '2026-10-22', 'vandaag telt mee');
+  assert.equal(parseNL('31022026'), null, 'bestaat niet');
+  assert.equal(parseNL('7112026'), null, '7 cijfers is niet eenduidig');
+  assert.equal(parseNL('07-11-2026', '2030-01-01'), '2026-11-07', 'met jaartal telt vandaag niet');
+});
+test('tidyNL', () => {
+  assert.equal(tidyNL('07112026'), '07-11-2026');
+  assert.equal(tidyNL('7/11/26'), '07-11-2026');
+  assert.equal(tidyNL('foutje'), 'foutje');
+  assert.equal(tidyNL(''), '');
 });
 test('isoWeek', () => {
   assert.equal(isoWeek('2026-01-01'), 1);
   assert.equal(isoWeek('2021-01-03'), 53, 'zondag hoort bij de week ervoor');
   assert.equal(isoWeek('2024-12-30'), 1, 'maandag in de eerste week van het nieuwe jaar');
   assert.equal(isoWeek('2026-10-22'), 43);
+});
+test('isBlankOpk: nieuwe, onaangeroerde opkomst', () => {
+  const o = M.newOpk(S());
+  assert.equal(M.isBlankOpk(o), true, 'alleen vaste blokken');
+  assert.equal(M.isBlankOpk({ ...o, title: 'Sluipspel' }), false);
+  assert.equal(M.isBlankOpk({ ...o, short: 'Iets' }), false);
+  assert.equal(M.isBlankOpk({ ...o, cats: ['c1'] }), false);
+  assert.equal(M.isBlankOpk({ ...o, blocks: [...o.blocks, M.normBlock({ title: '', start: 900, dur: 15, cat: 'spel' })] }), false, 'een eigen onderdeel');
+  const k = M.newKamp(S(), 3);
+  assert.equal(M.isBlankOpk(k), true, 'kamp zonder onderdelen');
+  k.days[1].blocks.push(M.normBlock({ title: 'Ontbijt', start: 510, dur: 30 }));
+  assert.equal(M.isBlankOpk(k), false);
+});
+test('fitsTopic', () => {
+  const o = (title: string, short = '') => ({ title, short });
+  assert.equal(M.fitsTopic(o('Sinterklaasopkomst'), 'Sinterklaas'), true);
+  assert.equal(M.fitsTopic(o('Sinterklaas'), 'Sinterklaasopkomst'), true, 'andersom');
+  assert.equal(M.fitsTopic(o('Pionieren met touw'), 'pionieren'), true, 'hoofdletters maken niet uit');
+  assert.equal(M.fitsTopic(o('Vossenjacht', 'In het bos met kompas'), 'Kompas'), true, 'ook in de beschrijving');
+  assert.equal(M.fitsTopic(o('Vossenjacht'), 'Sinterklaas'), false);
+  assert.equal(M.fitsTopic(o('Opkomst in het bos'), 'Sinterklaasopkomst'), false, 'algemene woorden tellen niet');
+  assert.equal(M.fitsTopic(o('Sinterklaasopkomst'), ''), false, 'geen onderwerp');
 });

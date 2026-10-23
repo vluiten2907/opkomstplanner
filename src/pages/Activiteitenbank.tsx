@@ -32,7 +32,7 @@ export default function Activiteitenbank() {
     document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h);
   });
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
-    <PageTitle title={plural(lib.length, 'activiteit', 'activiteiten')}>{edit && <button className="btn primary" onClick={create}><Plus size={16} />Nieuwe activiteit</button>}</PageTitle>
+    <PageTitle title="Activiteitenbank" sub={plural(lib.length, 'activiteit', 'activiteiten')}>{edit && <button className="btn primary" onClick={create}><Plus size={16} />Nieuwe activiteit</button>}</PageTitle>
     <div className="toolbar">
       <input className="inp" type="search" placeholder="Zoek op titel, beschrijving of locatie" aria-label="Zoek activiteit" value={q} onChange={e => setQ(e.target.value)} />
       <div className="catfilter" role="group" aria-label="Categorie"><Chip on={!cat} onClick={() => setCat('')}>Alle</Chip>{settings.categories.map(c => <Chip key={c.id} on={cat === c.id} onClick={() => setCat(c.id)}><Dot color={c.color} />{c.label}</Chip>)}</div>
@@ -40,7 +40,7 @@ export default function Activiteitenbank() {
     <div className="bank">
       <div>{items.length ? <div className="bank-grid">{items.map(l => { const c = catOf(settings, l.cat); return <BankCard key={l.id} what="Activiteit" onDelete={edit ? () => remove(l) : undefined}><button className={'bcard lift transition-[box-shadow] duration-150 ease-out' + (sel === l.id ? ' sel' : '')} onClick={() => setSel(l.id)}>
         <span className="bt"><Dot color={c.color} /><span>{l.title || 'Naamloos'}</span></span>
-        <span className="bm"><span>{c.label}</span><span className="mono">{fmtDur(l.dur)}</span><span>min. {l.minLeaders} leiding</span>{l.location && <span>{l.location}</span>}</span>
+        <span className="bm"><span>{c.label}</span><span className="mono">{fmtDur(l.dur)}</span>{l.minLeaders > 0 && <span>min. {l.minLeaders} leiding</span>}{l.location && <span>{l.location}</span>}</span>
         {l.short && <span className="bs">{l.short}</span>}
         <span className="hint">{uses[l.id] ? `${uses[l.id]}× gebruikt` : 'Nog niet gebruikt'}</span>
       </button></BankCard>; })}</div>

@@ -8,7 +8,8 @@ import { openModal, withFreeName } from '../store/modal';
 import { BankCard, Strip, CatTags, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, useSheetDialog } from '../components/ui';
 import { fmtDur, fmtT, plural } from '../lib/time';
-import { allBlocks, byTitle, catOf, copyOpk, freeName, isFixed, isKamp, nameTaken, minNeed, newOpk, opkCatList, opkCatOf, toBank, type Cat, type Opk } from '../lib/model';
+import { allBlocks, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, newOpk, opkCatList, opkCatOf, opkSearchText, toBank, type Cat, type Opk } from '../lib/model';
+import { markFresh } from '../store/fresh';
 import type { Gedeeld } from '../store/groepsbank';
 
 type Tab = 'own' | 'group';
@@ -75,9 +76,9 @@ export default function Opkomstenbank() {
   });
 
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
-    <PageTitle title={g ? plural(others.length, 'gedeelde opkomst', 'gedeelde opkomsten') : plural(total, 'opkomst', 'opkomsten')}
-      sub={g ? `Gedeeld door andere speltakken van ${sp?.groupName || 'de groep'}. Kopieer er een naar jullie eigen bank.` : undefined}>
-      {!g && can('build') && <button className="btn primary" onClick={() => guardLeave(() => { const o = newOpk(settings); saveOpk(o); nav(`/s/${sid}/bouwer/${o.id}`); })}><Plus size={16} />Nieuwe opkomst</button>}
+    <PageTitle title="Opkomstenbank"
+      sub={g ? `${plural(others.length, 'opkomst', 'opkomsten')} gedeeld door andere speltakken van ${sp?.groupName || 'de groep'}. Kopieer er een naar jullie eigen bank.` : plural(total, 'opkomst', 'opkomsten')}>
+      {!g && can('build') && <button className="btn primary" onClick={() => guardLeave(() => { const o = newOpk(settings); saveOpk(o); markFresh(o.id); nav(`/s/${sid}/bouwer/${o.id}`); })}><Plus size={16} />Nieuwe opkomst</button>}
     </PageTitle>
     {groupOn && <div className="tabs page" role="tablist" aria-label="Opkomstenbank">
       <button role="tab" aria-selected={!g} onClick={() => switchTab('own')}>Onze bank <span className="count">{total}</span></button>
@@ -127,9 +128,7 @@ export default function Opkomstenbank() {
 }
 
 /** Waarin gezocht wordt: titel, beschrijving, locatie en de onderdelen (zonder de vaste blokken). */
-function searchText(o: Opk) {
-  return [o.title, o.short, o.location, ...allBlocks(o).filter(b => !isFixed(b)).map(b => b.title)].join(' ').toLowerCase();
-}
+const searchText = opkSearchText;
 
 function CardMeta({ o, noGroup }: { o: Opk; noGroup?: boolean }) {
   return <span className="bm">{isKamp(o) ? <span className="pill kamp">Kamp · {plural(o.days.length, 'dag', 'dagen')}</span> : <span className="mono">{fmtT(o.start)}–{fmtT(o.end)}</span>}<span>{plural(allBlocks(o).length, 'onderdeel', 'onderdelen')}</span>{minNeed(o) ? <span>min. {minNeed(o)} leiding</span> : null}{!noGroup && o.group && <span>{o.group}</span>}</span>;

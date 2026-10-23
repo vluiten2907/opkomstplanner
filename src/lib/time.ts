@@ -23,16 +23,28 @@ export function fmtRange(d: string, end?: string | null, long?: boolean) {
   if (long) return `${DAYS[a.getDay()]} ${a.getDate()}${sameM ? '' : ' ' + MONTHS[a.getMonth()]} t/m ${DAYS[b.getDay()]} ${b.getDate()} ${MONTHS[b.getMonth()]} ${b.getFullYear()}`;
   return `${wd2(d)} ${a.getDate()}${sameM ? '' : ' ' + mon3(d)} – ${wd2(end)} ${b.getDate()} ${mon3(end)}`;
 }
-export function parseNL(s: string): string | null {
+/**
+ * Datum zoals je hem typt: dd-mm-jjjj (ook met . / of spatie, jaartal 2 of 4 cijfers), of alleen cijfers
+ * (een iPhone geeft bij een cijferveld geen streepje): ddmmjjjj, ddmmjj, of ddmm = de eerstvolgende keer vanaf `today`.
+ */
+export function parseNL(s: string, today = todayISO()): string | null {
+  const t = (s || '').trim();
   // jaartal: 2 of 4 cijfers (een tikfout als 202 geeft anders een rij in het jaar 202)
-  const m = /^\s*(\d{1,2})[-./ ](\d{1,2})[-./ ](\d{2}|\d{4})\s*$/.exec(s || '');
+  const m = /^(\d{1,2})[-./ ](\d{1,2})[-./ ](\d{2}|\d{4})$/.exec(t) || /^(\d{2})(\d{2})(\d{2}|\d{4})?$/.exec(t);
   if (!m) return null;
+  const day = +m[1], mon = +m[2];
+  const at = (y: number) => { const d = new Date(y, mon - 1, day, 12); return d.getMonth() === mon - 1 && d.getDate() === day ? toISO(d) : null; };
+  if (!m[3]) {
+    // zonder jaartal: dit jaar, of volgend jaar als de datum al voorbij is
+    const y0 = +today.slice(0, 4), a = at(y0);
+    return a && a >= today ? a : at(y0 + 1);
+  }
   let y = +m[3]; if (m[3].length === 2) y += 2000;
   if (y < 2000 || y > 2100) return null;
-  const d = new Date(y, +m[2] - 1, +m[1], 12);
-  if (d.getMonth() !== +m[2] - 1 || d.getDate() !== +m[1]) return null;
-  return toISO(d);
+  return at(y);
 }
+/** Een getypte datum netjes als dd-mm-jjjj zetten (bij wegklikken); klopt hij niet, dan blijft hij staan zoals hij is. */
+export const tidyNL = (s: string) => { const iso = s.trim() ? parseNL(s) : null; return iso ? fmtNL(iso) : s; };
 export function isoWeek(iso: string) {
   const d = fromISO(iso);
   const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));

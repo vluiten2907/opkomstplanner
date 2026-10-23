@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Mail, Plus, SquarePen, X } from 'lucide-react';
+import { Mail, Plus, SquarePen, Users, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal } from '../store/modal';
@@ -54,7 +54,8 @@ export default function Jaarplanning() {
   const presets: [string, string][] = [['prev', 'Vorig seizoen'], ['season', 'Dit seizoen'], ['next', 'Volgend seizoen'], ['3m', 'Komende 3 maanden'], ['year', 'Dit kalenderjaar']];
   const dayPlural = DAYS[settings.opkDay] + 'en';
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
-    <PageTitle title={isSeason ? 'Seizoen ' + seasonLabel(settings, Y) : 'Planning'} sub={`${fmtLong(range.from)} t/m ${fmtLong(range.to)} · ${opkDaysIn(settings, range.from, range.to).length} ${dayPlural}`}>
+    {/* de kop is altijd de naam uit het menu; het seizoen of het bereik staat eronder */}
+    <PageTitle title="Jaarplanning" sub={`${isSeason ? 'Seizoen ' + seasonLabel(settings, Y) : `${fmtLong(range.from)} t/m ${fmtLong(range.to)}`} · ${opkDaysIn(settings, range.from, range.to).length} ${dayPlural}`}>
       {can('plan') && <button className="btn" onClick={() => openModal({ kind: 'extra' })}><Plus size={16} />Extra datum</button>}
     </PageTitle>
     <div className="card rangebar">
@@ -89,12 +90,18 @@ function TopicInput({ keyId, value, placeholder, label, disabled }: { keyId: str
 }
 
 function PlanRow({ r, today }: { r: Row; today: string }) {
-  const { settings, opkOf, unlinkEntry, can, canLink, sid } = useSpeltak();
+  const { settings, opkOf, unlinkEntry, can, canLink, sid, latest } = useSpeltak();
   const nav = useNavigate();
   const e = r.e, d = rowDate(r), type = e ? e.type : 'opkomst', o = opkOf(e);
   const [st, en] = entryTimes(settings, e, o || null), past = rowEnd(r) < today, moved = !!(e && e.slot && e.date !== e.slot);
   const sub = type === 'opkomst' ? `wk ${isoWeek(d)} · ${fmtT(st)}–${fmtT(en)}` : type === 'kamp' ? `wk ${isoWeek(d)} · kamp / weekend` : `wk ${isoWeek(d)}`;
   const plan = can('plan');
+  // Ongedaan maken van ontkoppelen: dezelfde opkomst weer op dezelfde rij, met de nieuwste stand (de melding komt later)
+  const relink = (oid: string, eid: string) => {
+    const L = latest(), cur = L.getO(oid), row = L.plans.find(p => p.id === eid);
+    if (!cur || cur.state !== 'draft' || !row || row.opkId) { toast('Kan niet meer terug: de opkomst of de datum is intussen veranderd.'); return; }
+    L.linkOpk(cur, { ...row }, false, true); toast('Weer gekoppeld');
+  };
   const dateBtn = <button className="pdate" disabled={!plan} onClick={() => openModal({ kind: 'date', keyId: r.key })} title="Datum of soort aanpassen"><b>{fmtRange(d, e && e.endDate)}</b><span>{sub}</span>{moved && <span className="moved">verzet van {fmtShort(e!.slot!)}</span>}</button>;
   // gekoppeld: het onderwerp is de titel van de opkomst, en die aanpassen vraagt ook recht op opkomsten
   const topic = <TopicInput keyId={r.key} value={o ? o.title : (e ? e.topic : '')} disabled={!plan || (!!o && !(can('build') || can('bank')))} placeholder={type === 'geen' ? 'Reden, bijv. Herfstvakantie' : 'Onderwerp, bijv. Pionieren'} label={'Onderwerp ' + fmtShort(d)} />;
@@ -115,8 +122,8 @@ function PlanRow({ r, today }: { r: Row; today: string }) {
       <button className="plink" onClick={() => nav(`/s/${sid}/bouwer/${o.id}`)} title="Opkomst openen"><b>{o.title || 'Naamloze opkomst'}</b><span className="hint">{isKamp(o) ? 'kamp · ' : ''}{plural(allBlocks(o).length, 'onderdeel', 'onderdelen')}{minNeed(o) ? ' · min. ' + minNeed(o) : ''}</span>
         {o.cats.length > 0 && <span className="cdots">{o.cats.map(c => opkCatOf(settings, c)).filter(Boolean).map(c => <Dot key={c!.id} color={c!.color} />)}</span>}</button>
       <StatusPill o={o} />
-      {can('build') && <button className="iconbtn" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })} title="Leiding indelen" aria-label="Leiding indelen"><SquarePen size={15} /></button>}
-      {canLink && <ConfirmBtn className="iconbtn danger" label={<X size={15} />} confirm="Ontkoppelen?" title="Ontkoppelen" ariaLabel="Opkomst ontkoppelen" onConfirm={() => { unlinkEntry(e!); toast('Ontkoppeld. De opkomst staat nu bij de concepten in de opkomstenbank.'); }} />}
+      {can('build') && <button className="iconbtn" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })} title="Leiding indelen" aria-label="Leiding indelen"><Users size={15} /></button>}
+      {canLink && <ConfirmBtn className="iconbtn danger" label={<X size={15} />} confirm="Ontkoppelen?" title="Ontkoppelen" ariaLabel="Opkomst ontkoppelen" onConfirm={() => { unlinkEntry(e!); toast('Ontkoppeld. De opkomst staat nu bij de concepten in de opkomstenbank.', { label: 'Ongedaan maken', fn: () => relink(o.id, e!.id) }); }} />}
     </div> : <div className="pcell">{canLink ? <button className="btn sm" onClick={() => openModal({ kind: 'link', keyId: r.key })}><Plus size={14} />Koppelen</button> : <span className="hint">Nog geen programma</span>}</div>}</div>
     <div className="pf f-plan"><span className="plabel">Planning door</span>{people('planners', plannersOf(e, o))}</div>
     <div className={'pf f-abs' + (absent.length ? '' : ' none')}><span className="plabel">Afwezig</span>{people('absent', absent)}</div>

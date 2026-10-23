@@ -62,6 +62,8 @@ type Ctx = {
   practiceFrom: string | null;
   /** Gedeelde opkomst als kopie in de eigen opkomstenbank zetten; `dropped`: categorieën die je nog niet hebt en niet mag toevoegen. */
   importShared: (g: Gedeeld, title?: string) => { opk: Opk; dropped: string[] };
+  /** Nieuwste stand van alles (data en functies), voor acties die later komen, bijv. Ongedaan maken in een melding. */
+  latest: () => Ctx;
 };
 const C = createContext<Ctx>(null as any);
 
@@ -347,9 +349,12 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
     return { opk, dropped };
   };
 
+  const latestRef = useRef<Ctx>(null as any);
   const value: Ctx = { sid, sp, loading, denied, loadError, flushAll, canLink, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
     saveOpk, deleteOpk, removeOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
-    getO, latestO, opkOf, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null, practiceFrom };
+    getO, latestO, opkOf, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null, practiceFrom,
+    latest: () => latestRef.current };
+  latestRef.current = value;
   return <C.Provider value={value}>{children}</C.Provider>;
 }
 export const useSpeltak = () => useContext(C);

@@ -5,8 +5,8 @@ import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { Modal, TimePicker, Field, Chip, ConfirmBtn, useMedia } from './ui';
 import { PickOpk } from './shared';
-import { addDays, clone, fmtLong, fmtNL, fmtRange, parseNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, todayISO } from '../lib/time';
-import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, entryTimes, firstFree, fixedBlocks, isKamp, kampLength, kampStart, lanesLayout, minNeed, newEntry, newKamp, newOpk, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
+import { addDays, clone, fmtLong, fmtNL, fmtRange, parseNL, tidyNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, plural, todayISO } from '../lib/time';
+import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, entryTimes, firstFree, fitsTopic, fixedBlocks, isKamp, kampLength, kampStart, lanesLayout, minNeed, newEntry, newKamp, newOpk, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
 import { Ticks, PrepZones, blkGeom, blkLabel, lanesStyle } from './timeline';
 import type { NameSpec } from '../store/modal';
 
@@ -24,7 +24,9 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
   const [date, setDate] = useState(fmtNL(d0)); const [end, setEnd] = useState(e ? fmtNL(e.endDate) : '');
   const [st, setSt] = useState(st0); const [en, setEn] = useState(en0); const [note, setNote] = useState(e ? e.note : '');
   const base = slot || d0, mon = addDays(base, -((fromISO(base).getDay() + 6) % 7)), fri = addDays(mon, 4), sat = addDays(mon, 5), sun = addDays(mon, 6);
-  const quick: [string, string, string][] = [[DAYS[settings.opkDay] + ' (standaard)', base, ''], ['Vrijdag', fri, ''], ['Zaterdag', sat, ''], ['Zondag', sun, ''], ['Weekend vr–zo', fri, sun], ['Weekend za–zo', sat, sun]];
+  // de vaste dag als eigen knop alleen als hij nog niet bij vrijdag, zaterdag of zondag staat
+  const quick: [string, string, string][] = [...([5, 6, 0].includes(settings.opkDay) ? [] : [[DAYS[settings.opkDay] + ' (standaard)', base, ''] as [string, string, string]]),
+    ['Vrijdag', fri, ''], ['Zaterdag', sat, ''], ['Zondag', sun, ''], ['Weekend vr–zo', fri, sun], ['Weekend za–zo', sat, sun]];
   const save = () => {
     const iso = parseNL(date), endIso = end.trim() ? parseNL(end) : '';
     if (!iso) { toast('Typ de datum als dd-mm-jjjj.'); return; }
@@ -45,8 +47,8 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
   const clear = () => { if (!e) { onClose(); return; } if (e.opkId && !canOpk) { toast(NO_UNLINK); return; } if (e.opkId) unlinkEntry(e); deletePlan(e.id); onClose(); toast('Rij leeggemaakt'); };
   return <Modal title="Datum en soort" sub={slot ? 'Vaste ' + DAYS[settings.opkDay] + ': ' + fmtLong(slot) : 'Extra datum'} onClose={onClose}>
     <Field label="Soort"><div className="seg">{([['opkomst', 'Opkomst'], ['kamp', 'Kamp / weekend'], ['geen', 'Geen opkomst']] as const).map(([v, l]) => <Chip key={v} on={type === v} onClick={() => setType(v)}>{l}</Chip>)}</div></Field>
-    <div className="two"><Field label="Datum" htmlFor="md-date"><input id="md-date" value={date} onChange={e => setDate(e.target.value)} placeholder="dd-mm-jjjj" inputMode="numeric" /></Field>
-      <Field label="Tot en met" htmlFor="md-end"><input id="md-end" value={end} onChange={e => setEnd(e.target.value)} placeholder="leeg = één dag" inputMode="numeric" /></Field></div>
+    <div className="two"><Field label="Datum" htmlFor="md-date"><input id="md-date" value={date} onChange={e => setDate(e.target.value)} onBlur={() => setDate(tidyNL(date))} placeholder="dd-mm-jjjj" inputMode="numeric" /></Field>
+      <Field label="Tot en met" htmlFor="md-end"><input id="md-end" value={end} onChange={e => setEnd(e.target.value)} onBlur={() => setEnd(tidyNL(end))} placeholder="leeg = één dag" inputMode="numeric" /></Field></div>
     <Field label="Snel kiezen"><div className="row" style={{ gap: 6 }}>{quick.map(([l, a, b]) => <Chip key={l} onClick={() => { setDate(fmtNL(a)); setEnd(b ? fmtNL(b) : ''); if (b && type === 'opkomst') setType('kamp'); if (!b && type === 'kamp') setType('opkomst'); }}>{l}</Chip>)}</div></Field>
     {linked ? <p className="hint">De tijden komen uit de gekoppelde opkomst: {fmtT(st0)}–{fmtT(en0)}.</p>
       : <div className="two"><Field label="Begintijd / vertrek"><TimePicker value={st} onChange={setSt} /></Field><Field label="Eindtijd / terug"><TimePicker value={en} onChange={setEn} /></Field></div>}
@@ -58,19 +60,41 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
 
 /* ---------- Extra datum ---------- */
 export function ExtraModal({ onClose, onCreated }: { onClose: () => void; onCreated: (e: Plan) => void }) {
-  const { settings, savePlan } = useSpeltak();
+  const { settings, savePlan, peekEntry, entryFor } = useSpeltak();
   const [type, setType] = useState<Plan['type']>('opkomst'); const [date, setDate] = useState(''); const [end, setEnd] = useState(''); const [topic, setTopic] = useState('');
+  const geen = type === 'geen', day = DAYS[settings.opkDay];
   const save = () => {
     const iso = parseNL(date), endIso = end.trim() ? parseNL(end) : '';
     if (!iso) { toast('Typ de datum als dd-mm-jjjj.'); return; }
     if ((end.trim() && !endIso) || (endIso && endIso < iso)) { toast('Controleer "tot en met".'); return; }
+    // Geen opkomst (bijv. een vakantie): de vaste opkomstdagen in die periode zelf op Geen opkomst, geen aparte rij ernaast.
+    // Een dag met een opkomst of kamp blijft zoals hij is (nooit vanzelf ontkoppelen); een opkomst die naar een datum
+    // buiten de periode is verzet, valt er niet onder.
+    const to = endIso || iso, slots = geen ? opkDaysIn(settings, iso, to) : [];
+    if (slots.length) {
+      const done: Plan[] = []; let skipped = 0;
+      slots.forEach(d => {
+        const cur = peekEntry('s:' + d);
+        if (cur && (cur.date < iso || cur.date > to)) return;
+        if (cur && (cur.opkId || cur.type === 'kamp')) { skipped++; return; }
+        const en = { ...entryFor('s:' + d), type: 'geen' as const };
+        if (topic.trim()) en.topic = topic.trim();
+        savePlan(en); done.push(en);
+      });
+      const msg = done.length ? `${plural(done.length, day, day + 'en')} op Geen opkomst gezet` : 'Niets aangepast';
+      toast(msg + (skipped ? `. ${plural(skipped, 'datum', 'data')} met een opkomst of kamp overgeslagen.` : ''), undefined, skipped ? 6000 : undefined);
+      if (done.length) onCreated(done[0]);
+      onClose(); return;
+    }
     const e = newEntry(null, iso); e.endDate = endIso && endIso !== iso ? endIso : ''; e.type = type; e.topic = topic.trim();
     savePlan(e); onCreated(e); onClose();
   };
-  return <Modal title="Extra datum" sub={'Voor een opkomst, kamp of activiteit buiten de vaste ' + DAYS[settings.opkDay] + 'en.'} onClose={onClose}>
+  return <Modal title="Extra datum" sub={'Voor een opkomst, kamp of activiteit buiten de vaste ' + day + 'en, of een periode zonder opkomst.'} onClose={onClose}>
     <Field label="Soort"><div className="seg">{([['opkomst', 'Opkomst'], ['kamp', 'Kamp / weekend'], ['geen', 'Geen opkomst']] as const).map(([v, l]) => <Chip key={v} on={type === v} onClick={() => setType(v)}>{l}</Chip>)}</div></Field>
-    <div className="two"><Field label="Datum"><input value={date} onChange={e => setDate(e.target.value)} placeholder="dd-mm-jjjj" inputMode="numeric" /></Field><Field label="Tot en met"><input value={end} onChange={e => setEnd(e.target.value)} placeholder="leeg = één dag" inputMode="numeric" /></Field></div>
-    <Field label="Onderwerp"><input value={topic} onChange={e => setTopic(e.target.value)} placeholder="bijv. Groepsweekend" /></Field>
+    <div className="two"><Field label={geen ? 'Van' : 'Datum'} htmlFor="xd-date"><input id="xd-date" value={date} onChange={e => setDate(e.target.value)} onBlur={() => setDate(tidyNL(date))} placeholder="dd-mm-jjjj" inputMode="numeric" /></Field>
+      <Field label="Tot en met" htmlFor="xd-end"><input id="xd-end" value={end} onChange={e => setEnd(e.target.value)} onBlur={() => setEnd(tidyNL(end))} placeholder="leeg = één dag" inputMode="numeric" /></Field></div>
+    {geen && <p className="hint">Alle {day}en in deze periode worden Geen opkomst. Een {day} met een opkomst of kamp blijft staan.</p>}
+    <Field label={geen ? 'Reden' : 'Onderwerp'} htmlFor="xd-topic"><input id="xd-topic" value={topic} onChange={e => setTopic(e.target.value)} placeholder={geen ? 'bijv. Herfstvakantie' : 'bijv. Groepsweekend'} /></Field>
     <div className="row"><button className="btn primary" onClick={save}>Toevoegen</button><button className="btn ghost" onClick={onClose}>Annuleren</button></div>
   </Modal>;
 }
@@ -113,7 +137,7 @@ export function LetterModal({ keyId, onClose }: { keyId: string; onClose: () => 
   };
   return <Modal title="Brief" sub={fmtRange(d, e && e.endDate, true)} onClose={onClose}>
     <label className="toggle"><input type="checkbox" checked={needed} onChange={e => setNeeded(e.target.checked)} /><span><b>Er moet een brief uit</b><br /><span className="hint">Het dashboard meldt dit vanaf {settings.letterNotice} dagen voor de verzenddatum.</span></span></label>
-    <Field label="Brief versturen vóór" hint={`Standaard ${settings.letterDays} dagen voor de opkomst: ${fmtNL(def)}.`}><input value={due} onChange={e => setDue(e.target.value)} placeholder="dd-mm-jjjj" inputMode="numeric" /></Field>
+    <Field label="Brief versturen vóór" hint={`Standaard ${settings.letterDays} dagen voor de opkomst: ${fmtNL(def)}.`}><input value={due} onChange={e => setDue(e.target.value)} onBlur={() => setDue(tidyNL(due))} placeholder="dd-mm-jjjj" inputMode="numeric" /></Field>
     <label className="toggle"><input type="checkbox" checked={sent} onChange={e => setSent(e.target.checked)} /><span><b>De brief is verstuurd</b></span></label>
     <div className="row"><button className="btn primary" onClick={save}>Opslaan</button><button className="btn ghost" onClick={onClose}>Annuleren</button></div>
   </Modal>;
@@ -124,7 +148,14 @@ export function LinkModal({ keyId, onClose, onTakeover }: { keyId: string; onClo
   const { settings, opks, peekEntry, entryFor, linkOpk, offerPlanTimes, saveOpk, sid } = useSpeltak();
   const nav = useNavigate();
   const e = peekEntry(keyId); const d = e ? e.date : keyId.slice(2);
-  const bank = opks.filter(o => o.state === 'bank').sort(byTitle), drafts = opks.filter(o => o.state === 'draft').sort((a, b) => b.updatedAt - a.updatedAt);
+  const [q, setQ] = useState('');
+  // zoeken in titel, beschrijving, locatie en onderdelen; wat bij het onderwerp van de datum past komt bovenaan
+  const topic = (e && e.topic) || '', ql = q.trim().toLowerCase();
+  const fit = (o: Opk) => fitsTopic(o, topic), hit = (o: Opk) => !ql || opkSearchText(o).includes(ql);
+  const top = (list: Opk[]) => [...list.filter(fit), ...list.filter(o => !fit(o))];
+  const allBank = opks.filter(o => o.state === 'bank'), allDrafts = opks.filter(o => o.state === 'draft');
+  const bank = top(allBank.filter(hit).sort(byTitle)), drafts = top(allDrafts.filter(hit).sort((a, b) => b.updatedAt - a.updatedAt));
+  const fitTag = (o: Opk) => fit(o) ? <span className="pill good">Past bij onderwerp</span> : undefined;
   const isKampRow = e && e.type === 'kamp';
   const newOne = (kamp: boolean) => {
     const en = { ...entryFor(keyId) };
@@ -138,11 +169,14 @@ export function LinkModal({ keyId, onClose, onTakeover }: { keyId: string; onClo
     }
     o.title = en.topic; saveOpk(o); linkOpk(o, en, false, true); onClose(); nav(`/s/${sid}/bouwer/${o.id}`);
   };
-  return <Modal title="Opkomst koppelen" sub={fmtRange(d, e && e.endDate, true)} onClose={onClose}>
+  return <Modal title="Opkomst koppelen" sub={fmtRange(d, e && e.endDate, true) + (topic.trim() ? ' · ' + topic.trim() : '')} onClose={onClose}>
     <div className="row"><button className={'btn' + (isKampRow ? '' : ' primary')} onClick={() => newOne(false)}><Plus size={16} />Nieuwe opkomst</button><button className={'btn' + (isKampRow ? ' primary' : '')} onClick={() => newOne(true)}><Tent size={16} />Weekendkamp</button></div>
+    {allBank.length + allDrafts.length > 0 && <input className="inp" type="search" value={q} onChange={ev => setQ(ev.target.value)} placeholder="Zoek op titel, beschrijving of onderdeel" aria-label="Zoek opkomst" />}
     <h3 className="gap-lg">Uit de opkomstenbank</h3>
-    {bank.length ? <div className="picklist">{bank.map(o => <PickOpk key={o.id} o={o} label="Kiezen" onPick={() => { const en = { ...entryFor(keyId) }; const linked = linkOpk(o, en, true, false); onClose(); onTakeover(linked.id, true); offerPlanTimes(linked, en); }} />)}</div> : <div className="empty">De opkomstenbank is nog leeg.</div>}
-    {drafts.length > 0 && <><h3 className="gap-lg">Concepten</h3><div className="picklist">{drafts.map(o => <PickOpk key={o.id} o={o} label="Kiezen" onPick={() => { const en = { ...entryFor(keyId) }; linkOpk(o, en, false, true); onClose(); if (!offerPlanTimes(o, en, 'Gekoppeld.')) toast('Gekoppeld', { label: 'Opkomst openen', fn: () => nav(`/s/${sid}/bouwer/${o.id}`) }); }} />)}</div></>}
+    {bank.length ? <div className="picklist">{bank.map(o => <PickOpk key={o.id} o={o} label="Kiezen" kicker={fitTag(o)} onPick={() => { const en = { ...entryFor(keyId) }; const linked = linkOpk(o, en, true, false); onClose(); onTakeover(linked.id, true); offerPlanTimes(linked, en); }} />)}</div>
+      : <div className="empty">{allBank.length ? 'Niets gevonden in de opkomstenbank.' : 'De opkomstenbank is nog leeg.'}</div>}
+    {(drafts.length > 0 || (ql && allDrafts.length > 0)) && <><h3 className="gap-lg">Concepten</h3>{drafts.length ? <div className="picklist">{drafts.map(o => <PickOpk key={o.id} o={o} label="Kiezen" kicker={fitTag(o)} onPick={() => { const en = { ...entryFor(keyId) }; linkOpk(o, en, false, true); onClose(); if (!offerPlanTimes(o, en, 'Gekoppeld.')) toast('Gekoppeld', { label: 'Opkomst openen', fn: () => nav(`/s/${sid}/bouwer/${o.id}`) }); }} />)}</div>
+      : <p className="hint">Geen concepten gevonden.</p>}</>}
   </Modal>;
 }
 
@@ -176,7 +210,7 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
     {rows.length ? <div className="picklist">{rows.map(r => { const e = r.e, d = rowDate(r); return <div key={r.key} className="pick"><div className="info"><b>{shown(d, e && e.endDate)}</b>
       <span className="hint">{e && e.topic ? e.topic + ' · ' : ''}{e && e.planners.length ? 'planning: ' + e.planners.join(', ') : 'nog niemand toegewezen'}</span></div>
       <button className="btn sm primary" onClick={() => go(entryFor(r.key))}>Hier inplannen</button></div>; })}</div> : <p className="hint">Geen vrije data gevonden in de komende maanden.</p>}
-    <div className="row"><input className="inp" value={custom} onChange={e => setCustom(e.target.value)} placeholder="Andere datum: dd-mm-jjjj" aria-label="Andere datum" inputMode="numeric" style={{ flex: '1 1 180px' }} /><button className="btn" onClick={() => { const iso = parseNL(custom); if (!iso) { toast('Typ de datum als dd-mm-jjjj.'); return; } go(entryForDate(iso)); }}>Op deze datum</button></div>
+    <div className="row"><input className="inp" value={custom} onChange={e => setCustom(e.target.value)} onBlur={() => setCustom(tidyNL(custom))} placeholder="Andere datum: dd-mm-jjjj" aria-label="Andere datum" inputMode="numeric" style={{ flex: '1 1 180px' }} /><button className="btn" onClick={() => { const iso = parseNL(custom); if (!iso) { toast('Typ de datum als dd-mm-jjjj.'); return; } go(entryForDate(iso)); }}>Op deze datum</button></div>
   </Modal>;
 }
 

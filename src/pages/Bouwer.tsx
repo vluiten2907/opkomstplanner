@@ -1,19 +1,20 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Bookmark, CalendarDays, Copy, Download, Plus, Tent, Trash2, X } from 'lucide-react';
+import { Bookmark, CalendarDays, ChevronRight, Copy, Download, Plus, Tent, Trash2, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal, withFreeName } from '../store/modal';
 import { guardLeave, setUnsaved, useDirty } from '../store/unsaved';
+import { isFresh, markFresh, watchFresh } from '../store/fresh';
 import { Strip, PickOpk, usePdf, PageTitle, SaveBar, StatusPill } from '../components/shared';
-import { Chip, ConfirmBtn, Dot, Field, TimePicker, useSheetDialog } from '../components/ui';
+import { Chip, ConfirmBtn, Dot, Field, TimePicker, useMedia, useSheetDialog } from '../components/ui';
 import { Ticks, PrepZones, blkGeom, blkLabel, lanesStyle } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, todayISO, uid, DAYS } from '../lib/time';
-import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, LIB_FIELDS, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isBlankOpk, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, LIB_FIELDS, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /** Titel van de opkomst: loopt door op een volgende regel in plaats van af te breken (smal scherm), zonder echte regeleinden. */
-function TitleArea({ value, readOnly, onChange, placeholder }: { value: string; readOnly: boolean; onChange: (v: string) => void; placeholder: string }) {
+function TitleArea({ value, readOnly, onChange, placeholder, autoFocus }: { value: string; readOnly: boolean; onChange: (v: string) => void; placeholder: string; autoFocus?: boolean }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const el = ref.current; if (!el) return;
@@ -23,7 +24,7 @@ function TitleArea({ value, readOnly, onChange, placeholder }: { value: string; 
     document.fonts?.ready.then(fit).catch(() => {});
     return () => window.removeEventListener('resize', fit);
   }, [value]);
-  return <textarea ref={ref} id="om-title" rows={1} value={value} readOnly={readOnly} aria-label="Opkomst titel" placeholder={placeholder}
+  return <textarea ref={ref} id="om-title" rows={1} value={value} readOnly={readOnly} aria-label="Opkomst titel" placeholder={placeholder} autoFocus={autoFocus}
     onKeyDown={ev => { if (ev.key === 'Enter' && !ev.nativeEvent.isComposing) ev.preventDefault(); }} onChange={ev => onChange(ev.target.value.replace(/[\r\n]+/g, ' '))} />;
 }
 
@@ -46,7 +47,7 @@ export default function Bouwer() {
   const coming = opks.filter(x => x.state === 'planned').map(x => ({ x, e: entryOfOpk(x) }))
     .filter((r): r is { x: Opk; e: NonNullable<typeof r.e> } => !!r.e && (r.e.endDate || r.e.date) >= today)
     .sort((a, b) => a.e.date.localeCompare(b.e.date)).slice(0, 6);
-  const create = (kamp: boolean) => { const n = kamp ? newKamp(settings, 3) : newOpk(settings); saveOpk(n); nav(`/s/${sid}/bouwer/${n.id}`); };
+  const create = (kamp: boolean) => { const n = kamp ? newKamp(settings, 3) : newOpk(settings); saveOpk(n); markFresh(n.id); nav(`/s/${sid}/bouwer/${n.id}`); };
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title="Opkomstbouwer" />
     {oid && !o && <div className="ctx">Deze opkomst bestaat niet (meer).</div>}
@@ -77,9 +78,32 @@ type Ctx = { o: Opk; D: { start: number; end: number; blocks: Block[]; label?: s
 
 function Builder({ o: stored }: { o: Opk }) {
   const S = useSpeltak();
-  const { settings, leaders, opks, saveOpk, savePlan, saveLib, entryOfOpk, presentFor, getO, sid, can, canLink, dropAbsent, removeOpk } = S;
+  const { settings, leaders, opks, saveOpk, savePlan, saveLib, entryOfOpk, presentFor, getO, sid, can, canLink, dropAbsent, removeOpk, latest } = S;
   const nav = useNavigate(); const pdf = usePdf();
   const [, bump] = useState(0);
+  // Nieuwe opkomst: titel meteen klaar om te typen; ga je weg zonder iets in te vullen, dan blijft er geen leeg concept staan.
+  // Nooit bij een opkomst die al ingepland is, in de bank staat of al eerder bestond (die is niet nieuw).
+  const [fresh] = useState(() => isFresh(stored.id));
+  useEffect(() => watchFresh(stored.id, () => {
+    const L = latest(), cur = L.getO(stored.id);
+    if (cur && cur.state === 'draft' && isBlankOpk(cur) && !L.entryOfOpk(cur)) L.deleteOpk(cur.id);
+  }), [stored.id]);
+  // smal scherm (telefoon): details van een bestaande opkomst ingeklapt, zodat de tijdlijn en de activiteitenbank sneller in beeld zijn
+  const narrow = useMedia('(max-width: 900px)');
+  const [metaOpen, setMetaOpen] = useState(() => fresh || !stored.title.trim());
+  // net ingepland of gesleept onderdeel: in beeld brengen en even laten oplichten
+  const [flashId, setFlashId] = useState<string | null>(null);
+  useEffect(() => { if (!flashId) return; const t = setTimeout(() => setFlashId(null), 1600); return () => clearTimeout(t); }, [flashId]);
+  const showNew = (id: string) => {
+    setFlashId(id);
+    setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(blkSel(id)); if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (r.top < 120 || r.bottom > window.innerHeight - 40) el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+    }, 30);
+  };
+  // de activiteitenbank (zijpaneel) in beeld? Dan is de knop "+ Activiteit" onderin niet nodig
+  const [sideSeen, setSideSeen] = useState(false);
   // Een opkomst uit de bank bewerk je als kladversie: pas bij Opslaan (of Opslaan als kopie) gaat hij naar de bank.
   const bankEdit = stored.state === 'bank';
   const [draft, setDraft] = useState<Opk | null>(() => bankEdit ? normOpk(clone(stored)) : null);
@@ -94,6 +118,13 @@ function Builder({ o: stored }: { o: Opk }) {
   const [sideTab, setSideTab] = useState<'bank' | 'check'>('bank');
   const lanesRef = useRef<HTMLDivElement>(null);
   const sideRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = sideRef.current; if (!el || typeof IntersectionObserver === 'undefined') return;
+    // pas "in beeld" als het paneel een stukje het scherm in staat, niet bij de eerste pixel onderaan
+    const io = new IntersectionObserver(([en]) => setSideSeen(en.isIntersecting), { rootMargin: '0px 0px -25% 0px' });
+    io.observe(el); return () => io.disconnect();
+  }, []);
+  const toSide = (tab: 'bank' | 'check') => { setSelId(null); setSideTab(tab); setTimeout(() => sideRef.current?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }), 0); };
   // Een opkomst uit de bank bewerk je met het recht Banken, de rest met Opkomsten (zoals de uitleg bij de rechten zegt).
   const readOnly = o.state === 'bank' ? !can('bank') : !can('build');
   const kamp = isKamp(o), row = useRowHeight(kamp);
@@ -208,14 +239,17 @@ function Builder({ o: stored }: { o: Opk }) {
           {/* kop van de pagina voor schermlezers; de zichtbare titel is het invoerveld eronder */}
           <h1 className="sr-only">{kamp ? 'Weekendkamp' : 'Opkomst'}: {o.title.trim() || 'zonder titel'}</h1>
           <div className="row"><span className="eyebrow">{kamp ? 'Weekendkampplanner' : 'Opkomstbouwer'}</span>{kamp && <span className="pill kamp">Kamp</span>}{pill}{readOnly && <span className="pill neutral">Alleen lezen</span>}</div>
-          <TitleArea value={o.title} readOnly={readOnly} onChange={v => upd(() => { o.title = v; if (e) savePlan({ ...e, topic: v }); })} placeholder={kamp ? 'Titel van het kamp' : 'Opkomst titel'} />
+          <TitleArea value={o.title} readOnly={readOnly} onChange={v => upd(() => { o.title = v; if (e) savePlan({ ...e, topic: v }); })} placeholder={kamp ? 'Titel van het kamp' : 'Opkomst titel'} autoFocus={fresh && !readOnly} />
         </div>
         <div className="row">{actions}<button className="btn ghost" onClick={() => go(`/s/${sid}/bouwer`)} title="Nieuwe opkomst of weekendkamp"><Plus size={16} />Nieuw</button></div>
       </div>
       {o.state === 'planned' && e && <div className="ctx">{!readOnly && <button className="btn sm" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })}>Leiding indelen</button>}Ingepland op <b>{fmtRange(e.date, e.endDate, true)}</b><span>week {isoWeek(e.date)}</span><span>planning door: <b>{plannersOf(e, o).join(', ') || 'nog niemand'}</b></span>
         {src && can('bank') && <span>uit de opkomstenbank: {src.title || 'naamloos'} · <ConfirmBtn className="linkbtn" label="bank bijwerken met deze versie" confirm="Klik nogmaals: bank overschrijven" onConfirm={updBank} /></span>}</div>}
       <div className="card">
-        <div className="meta">
+        {narrow && <button className="metatoggle" aria-expanded={metaOpen} aria-controls="om-meta" onClick={() => setMetaOpen(v => !v)}>
+          <ChevronRight size={18} className="chev" aria-hidden="true" /><b>Details</b>
+          <span className="hint">{[!kamp && fmtT(o.start) + '–' + fmtT(o.end), o.location.trim(), o.cats.length ? plural(o.cats.length, 'categorie', 'categorieën') : '', e && plural(present.length, 'leiding', 'leiding') + ' aanwezig'].filter(Boolean).join(' · ')}</span></button>}
+        {(!narrow || metaOpen) && <div className="meta" id="om-meta">
           <Field label="Korte beschrijving" htmlFor="om-short" className="wide"><textarea id="om-short" rows={2} value={o.short} readOnly={readOnly} onChange={ev => upd(() => { o.short = ev.target.value; })} placeholder="Waar gaat deze opkomst over? Komt op het dashboard en in de bank." /></Field>
           <div className="field wide"><span className="lbl">Categorieën van de {kamp ? 'activiteit' : 'opkomst'}</span>
             <div className="row" style={{ gap: 6 }}>{opkCatList(settings).map(c => <Chip key={c.id} on={o.cats.includes(c.id)} disabled={readOnly} onClick={() => upd(() => { o.cats = o.cats.includes(c.id) ? o.cats.filter(x => x !== c.id) : [...o.cats, c.id]; })}><Dot color={c.color} />{c.label}</Chip>)}</div></div>
@@ -227,27 +261,30 @@ function Builder({ o: stored }: { o: Opk }) {
             <Field label="Voorbereiding" hint={o.prep ? 'Leiding om ' + fmtT(o.start - o.prep) : 'Geen tijd vooraf'}><select value={o.prep} disabled={readOnly} onChange={ev => upd(() => { o.prep = +ev.target.value; })}>{PREP_OPTS.map(m => <option key={m} value={m}>{prepLabel(m)}{m ? ' vooraf' : ''}</option>)}</select></Field>
             <Field label="Nabespreking" hint={o.post ? 'Klaar om ' + fmtT(o.end + o.post) : 'Geen tijd achteraf'}><select value={o.post} disabled={readOnly} onChange={ev => upd(() => { o.post = +ev.target.value; })}>{PREP_OPTS.map(m => <option key={m} value={m}>{prepLabel(m)}{m ? ' achteraf' : ''}</option>)}</select></Field>
           </>}
-        </div>
+        </div>}
         {kamp && <DaysBar o={o} di={di} setDayIdx={setDayIdx} upd={upd} date={e ? e.date : null} readOnly={readOnly} />}
-        {e && <div className="present"><span className="lbl" style={{ marginRight: 6 }}>Aanwezige leiding</span>
+        {e && (!narrow || metaOpen) && <div className="present"><span className="lbl" style={{ marginRight: 6 }}>Aanwezige leiding</span>
           {leaders.length ? leaders.map(n => <Chip key={n} on={!e.absent.includes(n)} disabled={!can('plan')} onClick={() => { const en = { ...e, absent: e.absent.includes(n) ? e.absent.filter(x => x !== n) : [...e.absent, n] }; dropAbsent(en); savePlan(en); }}>{n}</Chip>) : <span className="hint">Nog geen leidingteam.</span>}
           {present.filter(n => !leaders.includes(n)).map(n => <Chip key={n} on disabled title="Met de hand ingedeeld">{n}</Chip>)}</div>}
       </div>
     </section>
-    <div className="card"><div className="summary">
+    <div className="card">{narrow ? <div className="summary mini">
+      <span>Nog vrij <b>{A.free ? fmtDur(A.free) : '0 min'}</b></span>
+      <button className={'linkbtn' + (w ? ' warnc' : '')} onClick={() => toSide('check')}>{plural(w, 'aandachtspunt', 'aandachtspunten')}{kamp ? ' (kamp)' : ''}</button>
+    </div> : <div className="summary">
       {kamp && <span className="stat">Dag<b>{(D as Day).label}</b></span>}
       <span className="stat">Duur<b>{fmtDur(A.total)}</b></span><span className="stat">Ingepland<b>{fmtDur(A.planned)}</b></span>
       <span className="stat">Nog vrij<b>{A.free ? fmtDur(A.free) : '0 min'}</b></span><span className="stat">Onderdelen<b>{D.blocks.length}</b></span>
       <span className="stat">Minimaal leiding<b>{minNeed(o)}</b></span>
       {!nn && <span className={'stat' + (minNeed(o) > A.present.length ? ' warnc' : '')}>Leiding{o.state === 'planned' ? ' aanwezig' : ''}<b>{A.present.length}</b></span>}
       <button className={'stat' + (w ? ' warnc' : '')} style={{ border: 0, cursor: 'pointer', textAlign: 'left' }} onClick={() => { setSelId(null); setSideTab('check'); }}>Aandachtspunten{kamp ? ' (kamp)' : ''}<b>{w}</b></button>
-    </div><div style={{ padding: '0 16px 16px' }}><Strip o={D as Day} /></div></div>
+    </div>}<div style={{ padding: '0 16px 16px' }}><Strip o={D as Day} /></div></div>
     <div className="plan-main">
       <section className="card" aria-label="Tijdlijn">
         <div className="tl-top"><span className="eyebrow">Tijdlijn{kamp ? ' · ' + (D as Day).label : ''}</span>
           {!readOnly && <button id="bf-add" className="btn sm" onClick={() => addAt(firstFree(D, 15) ?? firstFree(D, 5) ?? D.start)}><Plus size={14} />Onderdeel</button>}</div>
         <div className="tl-head"><span /><div className="cols3"><span>Programma-onderdeel</span><span className="cl">Locatie</span><span>{nn ? 'Minimaal leiding' : 'Verantwoordelijk'}</span></div></div>
-        <div className="tl-scroll"><Timeline ctx={ctx} A={A} selId={selId} lanesRef={lanesRef} onSelect={select} onDelete={deleteBlock} onAdd={addAt} onChange={() => upd(() => {})} /></div>
+        <div className="tl-scroll"><Timeline ctx={ctx} A={A} selId={selId} flashId={flashId} lanesRef={lanesRef} onSelect={select} onDelete={deleteBlock} onAdd={addAt} onChange={() => upd(() => {})} /></div>
         <div className="tl-foot">{readOnly ? 'Je kunt deze opkomst bekijken, maar niet aanpassen.' : 'Klik in de tijdlijn of gebruik + Onderdeel om iets toe te voegen.'}</div>
       </section>
       <aside ref={sideRef} className={'card side sheet' + (sel ? ' editing' : '')} aria-label="Zijpaneel">
@@ -256,11 +293,13 @@ function Builder({ o: stored }: { o: Opk }) {
           upd(() => { D.blocks.push(c); }); select(c.id); toast(fits ? 'Kopie direct erna gezet' : 'Kopie op dezelfde tijd gezet');
         }} saveLib={saveLib} /></div>
           : <SidePanel tab={sideTab} setTab={t => { setSideTab(t); if (window.matchMedia('(max-width: 900px)').matches) sideRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} ctx={ctx} A={whole} lanesRef={lanesRef} onSelect={select}
-            onPlan={l => { const f = firstFree(D, Math.min(l.dur, D.end - D.start)); const b = insertLib(l, f == null ? D.start : f); toast(f == null ? 'Geen vrij moment lang genoeg; gezet op ' + fmtT(b.start) : 'Ingepland om ' + fmtT(b.start)); }}
-            onDrop={(l, m) => { const b = insertLib(l, m); toast('Ingepland om ' + fmtT(b.start)); }} />}
+            onPlan={l => { const f = firstFree(D, Math.min(l.dur, D.end - D.start)); const b = insertLib(l, f == null ? D.start : f); showNew(b.id); toast(f == null ? 'Geen vrij moment lang genoeg; gezet op ' + fmtT(b.start) : 'Ingepland om ' + fmtT(b.start)); }}
+            onDrop={(l, m) => { const b = insertLib(l, m); showNew(b.id); toast('Ingepland om ' + fmtT(b.start)); }} />}
       </aside>
       <div className={'scrim' + (sel ? ' on' : '')} onClick={closeEditor} />
     </div>
+    {/* telefoon: de activiteitenbank staat onder de tijdlijn; deze knop brengt je er in één tik heen (niet bij bewerken uit de bank: daar staat de opslaan-balk onderin) */}
+    {narrow && !readOnly && !sel && !sideSeen && !draft && <button className="btn primary plan-fab" onClick={() => toSide('bank')}><Plus size={16} />Activiteit</button>}
     {draft && !readOnly && <SaveBar sticky dirty={dirty} title={o.title} taken={(n, c) => nameTaken(bankOpks, n, c ? null : o.id)} suggest={freeName(bankOpks, o.title || stored.title)} onCancel={cancelBank} onSave={saveBank} onCopy={copyBank} />}
   </div>;
 }
@@ -304,7 +343,7 @@ function DaysBar({ o, di, setDayIdx, upd, date, readOnly }: { o: Opk; di: number
 }
 
 /* ============ Tijdlijn ============ */
-function Timeline({ ctx, A, selId, lanesRef, onSelect, onDelete, onAdd, onChange }: { ctx: Ctx; A: Analysis; selId: string | null; lanesRef: React.RefObject<HTMLDivElement | null>; onSelect: (id: string, kb?: boolean) => void; onDelete: (id: string) => void; onAdd: (m: number) => void; onChange: () => void }) {
+function Timeline({ ctx, A, selId, flashId, lanesRef, onSelect, onDelete, onAdd, onChange }: { ctx: Ctx; A: Analysis; selId: string | null; flashId: string | null; lanesRef: React.RefObject<HTMLDivElement | null>; onSelect: (id: string, kb?: boolean) => void; onDelete: (id: string) => void; onAdd: (m: number) => void; onChange: () => void }) {
   const { settings } = useSpeltak();
   const { o, D, T0, T1, row, nn, readOnly } = ctx;
   const [, bump] = useState(0);
@@ -344,7 +383,7 @@ function Timeline({ ctx, A, selId, lanesRef, onSelect, onDelete, onAdd, onChange
       <PrepZones o={o} T0={T0} row={row} />
       {D.blocks.filter(b => b.start + b.dur > T0 && b.start < T1).map(b => {
         const g = blkGeom(pos[b.id], b, T0, row, b.id === selId), c = catOf(settings, b.cat);
-        const cls = [...g.cls, drag.current?.id === b.id && drag.current.moved ? 'dragging' : ''].join(' ');
+        const cls = [...g.cls, drag.current?.id === b.id && drag.current.moved ? 'dragging' : '', b.id === flashId ? 'flash' : ''].join(' ');
         const under = b.minLeaders && b.names.length < b.minLeaders, mats = splitLines(b.materials).length;
         return <div key={b.id} className={cls} data-bid={b.id} tabIndex={0} role="button" aria-label={blkLabel(b, nn)}
           style={{ ['--c' as any]: c.color, ...g.style }}
@@ -413,7 +452,7 @@ function SidePanel({ tab, setTab, ctx, A, lanesRef, onSelect, onPlan, onDrop }: 
       <div className="libs">{items.length ? items.map(l => <div key={l.id} className="lib lift transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-0.5" style={{ ['--c' as any]: catOf(settings, l.cat).color }}
         onPointerDown={ev => { if (readOnly || ev.button || (ev.target as HTMLElement).closest('button')) return; const grip = !!(ev.target as HTMLElement).closest('.lgrip'); if (ev.pointerType !== 'mouse' && !grip) return; ld.current = { l, x0: ev.clientX, y0: ev.clientY, started: false, m: null }; document.body.style.userSelect = 'none'; if (grip) ev.preventDefault(); }}>
         <span className="lgrip" title="Sleep naar de tijdlijn" />
-        <div style={{ minWidth: 0 }}><div className="lt">{l.title || 'Naamloos'}</div><div className="lm">{fmtDur(l.dur)} · min. {l.minLeaders} leiding{l.location ? ' · ' + l.location : ''}</div>{l.short && <div className="ls">{l.short}</div>}</div>
+        <div style={{ minWidth: 0 }}><div className="lt">{l.title || 'Naamloos'}</div><div className="lm">{fmtDur(l.dur)}{l.minLeaders > 0 ? ` · min. ${l.minLeaders} leiding` : ''}{l.location ? ' · ' + l.location : ''}</div>{l.short && <div className="ls">{l.short}</div>}</div>
         {!readOnly && <button className="btn sm" onClick={() => onPlan(l)} title="Op het eerste vrije moment inplannen">Inplannen</button>}
       </div>) : <p className="hint">{lib.length ? 'Geen activiteiten gevonden.' : 'Nog geen activiteiten.'}</p>}</div>
     </div>

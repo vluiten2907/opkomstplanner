@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Download, ExternalLink, Mail, Plus, Tent, Us
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal } from '../store/modal';
+import { markFresh } from '../store/fresh';
 import { Strip, StatusPill, CatTags, PeopleChips, usePdf, PageTitle } from '../components/shared';
 import { Dot, TimePicker } from '../components/ui';
 import { addDays, cap, dayDiff, fmtLong, fmtRange, fmtShort, fmtT, fromISO, isoWeek, mon3, plural, todayISO, toISO, DAYS, MONTHS } from '../lib/time';
@@ -20,7 +21,7 @@ export default function Dashboard() {
   const letters = plans.filter(e => e.letter.needed && !e.letter.sent && e.type !== 'geen' && (e.endDate || e.date) >= today)
     .map(e => ({ e, due: letterDue(settings, e) })).filter(x => today >= addDays(x.due, -settings.letterNotice)).sort((a, b) => a.due.localeCompare(b.due));
   const empty = !opks.length && !lib.length && !plans.length;
-  const create = (kamp: boolean) => { const o = kamp ? newKamp(settings, 3) : newOpk(settings); saveOpk(o); nav(`/s/${sid}/bouwer/${o.id}`); };
+  const create = (kamp: boolean) => { const o = kamp ? newKamp(settings, 3) : newOpk(settings); saveOpk(o); markFresh(o.id); nav(`/s/${sid}/bouwer/${o.id}`); };
   return <div className="stack pt-6 md:pt-8" style={{ gap: 20 }}>
     <PageTitle kicker={<>{settings.groupName && <span>{settings.groupName}</span>}{!S.practice && <Link className="kicker-switch" to="/speltakken"><Users size={13} />Andere speltak</Link>}</>} title={S.sp?.name || settings.speltak || 'Overzicht'} sub={`${cap(fmtLong(today))}, week ${isoWeek(today)}`}>
       {can('build') && <><button className="btn" onClick={() => create(true)}><Tent size={16} />Weekendkamp</button><button className="btn primary" onClick={() => create(false)}><Plus size={16} />Nieuwe opkomst</button></>}
