@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { useSpeltak } from '../store/speltak';
 import { allBlocks, analyze, catOf, isKamp, minNeed, opkCatOf, type Cat, type Opk, type Day } from '../lib/model';
 import { fmtDur, fmtT, plural } from '../lib/time';
@@ -57,9 +57,10 @@ export function OpkMeta({ o }: { o: Opk }) {
   return <span className="hint">{isKamp(o) ? 'Weekendkamp · ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(allBlocks(o).length, 'onderdeel', 'onderdelen')}{n ? ' · min. ' + n + ' leiding' : ''}{o.short ? ' · ' + o.short : ''}</span>;
 }
 
-export function PickOpk({ o, label, onPick, primary = true, extra }: { o: Opk; label: string; onPick: () => void; primary?: boolean; extra?: ReactNode }) {
+/** Opkomst in een keuzelijst. `kicker`: regel boven de titel, bijv. de datum en de status van een ingeplande opkomst. */
+export function PickOpk({ o, label, onPick, primary = true, extra, kicker }: { o: Opk; label: string; onPick: () => void; primary?: boolean; extra?: ReactNode; kicker?: ReactNode }) {
   const btn = <button className={'btn sm' + (primary ? ' primary' : '')} onClick={onPick}>{label}</button>;
-  return <div className="pick"><div className="info"><b>{o.title || 'Naamloze opkomst'}</b><OpkMeta o={o} /><CatTags o={o} /><Strip o={o} /></div>
+  return <div className="pick"><div className="info">{kicker && <span className="pick-kicker">{kicker}</span>}<b>{o.title || 'Naamloze opkomst'}</b><OpkMeta o={o} /><CatTags o={o} /><Strip o={o} /></div>
     {extra ? <div className="row">{btn}{extra}</div> : btn}</div>;
 }
 
@@ -70,17 +71,20 @@ export function SaveBar({ dirty, isNew, title, taken, suggest, onCancel, onSave,
 }) {
   const [copying, setCopying] = useState(false);
   const [name, setName] = useState('');
+  const errId = useId();
   const why = (n: string, copy = false) => !n.trim() ? 'Geef een titel op.' : taken(n, copy) ? 'Deze naam bestaat al in de bank. Kies een andere naam.' : '';
   const saveErr = dirty || isNew ? why(title) : '';
   const copyErr = why(name, true);
   return <div className={'savebar' + (sticky ? ' sticky' : '') + (dirty || isNew ? ' on' : '')} role="group" aria-label="Opslaan">
     {copying ? <>
       <label htmlFor="sb-name" className="lbl">Naam van de kopie</label>
-      <input id="sb-name" className="inp" value={name} autoFocus onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !copyErr) { setCopying(false); onCopy(name.trim()); } if (e.key === 'Escape') setCopying(false); }} />
-      {copyErr && <span className="sb-err">{copyErr}</span>}
+      <input id="sb-name" className="inp" value={name} autoFocus aria-invalid={!!copyErr} aria-describedby={errId} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !copyErr) { setCopying(false); onCopy(name.trim()); } if (e.key === 'Escape') setCopying(false); }} />
+      {/* altijd aanwezig, alleen de tekst verandert: zo leest een schermlezer de fout voor tijdens het typen */}
+      <span className="sb-err" id={errId} aria-live="polite">{copyErr}</span>
       <div className="row"><button className="btn ghost" onClick={() => setCopying(false)}>Terug</button><button className="btn primary" disabled={!!copyErr} onClick={() => { setCopying(false); onCopy(name.trim()); }}>Kopie opslaan</button></div>
     </> : <>
-      {(dirty || isNew) ? (saveErr ? <span className="sb-err">{saveErr}</span> : <span className="sb-msg">{isNew ? 'Nog niet in de bank.' : 'Niet opgeslagen wijzigingen.'}</span>) : null}
+      <span className="sb-err" id={errId} aria-live="polite">{saveErr}</span>
+      {(dirty || isNew) && !saveErr ? <span className="sb-msg">{isNew ? 'Nog niet in de bank.' : 'Niet opgeslagen wijzigingen.'}</span> : null}
       <div className="row">
         <button className="btn ghost" disabled={!dirty && !isNew} onClick={onCancel}>Annuleren</button>
         <button className="btn primary" disabled={(!dirty && !isNew) || !!saveErr} onClick={onSave}>Opslaan</button>

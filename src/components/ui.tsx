@@ -17,11 +17,11 @@ export function Toast() {
 }
 
 /** Klik twee keer om te bevestigen (geen alert/confirm in de browser). */
-export function ConfirmBtn({ label, confirm, onConfirm, className = 'btn ghost', title, ariaLabel }: { label: ReactNode; confirm: string; onConfirm: () => void; className?: string; title?: string; ariaLabel?: string }) {
+export function ConfirmBtn({ label, confirm, onConfirm, className = 'btn ghost', title, ariaLabel, role, tabIndex }: { label: ReactNode; confirm: string; onConfirm: () => void; className?: string; title?: string; ariaLabel?: string; role?: string; tabIndex?: number }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => { if (!armed) return; const t = setTimeout(() => setArmed(false), 3000); return () => clearTimeout(t); }, [armed]);
   // aria-label alleen in rust (bijv. een knop met alleen een pictogram); gewapend is de zichtbare vraag de naam
-  return <button type="button" className={className} data-armed={armed || undefined} title={title} aria-label={armed ? undefined : ariaLabel} onClick={() => { if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}>{armed ? confirm : label}</button>;
+  return <button type="button" className={className} role={role} tabIndex={tabIndex} data-armed={armed || undefined} title={title} aria-label={armed ? undefined : ariaLabel} onClick={() => { if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}>{armed ? confirm : label}</button>;
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';

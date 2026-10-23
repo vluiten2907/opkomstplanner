@@ -177,6 +177,19 @@ export function kampLength(date: string, endDate?: string | null) {
 }
 /** Is de naam van een kampdag gewoon een weekdag ("Zaterdag")? Dan volgt hij de datum. */
 export const isWeekdayLabel = (l: string) => DAYS.includes((l || '').trim().toLowerCase());
+/**
+ * Begindatum van een kamp dat op `date` wordt ingepland (een rij zonder "tot en met").
+ * Heet de eerste dag naar een weekdag die vlak vóór `date` ligt, dan begint het kamp op die dag:
+ * een kamp vr–zo op de vaste zaterdag loopt van de vrijdag ervoor t/m zondag. Valt `date` dan niet meer
+ * binnen het kamp (bijv. vr–zo op een donderdag), of heet de eerste dag niet naar een weekdag, dan blijft `date`.
+ */
+export function kampStart(o: Opk, date: string) {
+  if (!isKamp(o) || !o.days.length || isNaN(fromISO(date).getTime())) return date;
+  const w = DAYS.indexOf((o.days[0].label || '').trim().toLowerCase());
+  if (w < 0) return date;
+  const back = (fromISO(date).getDay() - w + 7) % 7;
+  return back > 0 && back < o.days.length ? addDays(date, -back) : date;
+}
 /** Kampdagen die een weekdag heten krijgen de weekdag van hun datum (vanaf firstISO). Geeft true als er iets veranderde. */
 export function relabelDays(o: Opk, firstISO: string) {
   if (!isKamp(o) || isNaN(fromISO(firstISO).getTime())) return false;

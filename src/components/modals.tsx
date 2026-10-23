@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Tent, Trash2, SquarePen } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
-import { Modal, TimePicker, Field, Chip, ConfirmBtn } from './ui';
+import { Modal, TimePicker, Field, Chip, ConfirmBtn, useMedia } from './ui';
 import { PickOpk } from './shared';
 import { addDays, clone, fmtLong, fmtNL, fmtRange, parseNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, todayISO } from '../lib/time';
-import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, entryTimes, firstFree, fixedBlocks, isKamp, kampLength, lanesLayout, minNeed, newEntry, newKamp, newOpk, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
-import { Ticks, PrepZones, blkGeom, lanesStyle } from './timeline';
+import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, entryTimes, firstFree, fixedBlocks, isKamp, kampLength, kampStart, lanesLayout, minNeed, newEntry, newKamp, newOpk, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
+import { Ticks, PrepZones, blkGeom, blkLabel, lanesStyle } from './timeline';
 import type { NameSpec } from '../store/modal';
 
 const NO_UNLINK = 'Hier hangt een opkomst aan. Ontkoppelen kan alleen met het recht Opkomsten of Banken.';
@@ -155,18 +155,25 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
   const [custom, setCustom] = useState('');
   // Vanuit de bouwer blijft de ingedeelde leiding staan; alleen uit de bank komt een kopie zonder namen.
   const keep = o.state !== 'bank';
+  // een kamp loopt over meer dagen: toon het bereik zoals het wordt ingepland (vr–zo op de vaste zaterdag, zie linkOpk)
+  const shown = (d: string, end: string | null | undefined) => {
+    if (!isKamp(o) || end) return fmtRange(d, end, true);
+    const s = kampStart(o, d); return fmtRange(s, o.days.length > 1 ? addDays(s, o.days.length - 1) : '', true);
+  };
   const go = (e: Plan) => {
     if (e.opkId) { toast('Op die datum staat al een opkomst. Ontkoppel die eerst in de jaarplanning.'); return; }
     const fromBank = o.state === 'bank';
-    const linked = linkOpk(o, { ...e }, o.state !== 'draft', keep);
+    // linkOpk past de rij aan (een kamp krijgt bijv. een andere begindatum en een einddatum): de melding volgt de aangepaste rij
+    const en = { ...e };
+    const linked = linkOpk(o, en, o.state !== 'draft', keep);
     onClose();
-    if (fromBank) { onTakeover(linked.id, true); offerPlanTimes(linked, e); return; }
-    const msg = 'Ingepland op ' + fmtRange(e.date, e.endDate, true);
-    if (offerPlanTimes(linked, e, msg + '.')) return;
+    if (fromBank) { onTakeover(linked.id, true); offerPlanTimes(linked, en); return; }
+    const msg = 'Ingepland op ' + fmtRange(en.date, en.endDate, true);
+    if (offerPlanTimes(linked, en, msg + '.')) return;
     if (linked !== o) toast(msg + '. Er is een kopie gemaakt.', { label: 'Kopie openen', fn: () => nav(`/s/${sid}/bouwer/${linked.id}`) }); else toast(msg);
   };
   return <Modal title="Inplannen" sub={o.state === 'bank' ? 'Er wordt een kopie ingepland zonder namen; de opkomst in de bank blijft zoals hij is.' : 'Kies een datum waar nog geen opkomst aan gekoppeld is. De ingedeelde leiding gaat mee.'} onClose={onClose}>
-    {rows.length ? <div className="picklist">{rows.map(r => { const e = r.e, d = rowDate(r); return <div key={r.key} className="pick"><div className="info"><b>{fmtRange(d, e && e.endDate, true)}</b>
+    {rows.length ? <div className="picklist">{rows.map(r => { const e = r.e, d = rowDate(r); return <div key={r.key} className="pick"><div className="info"><b>{shown(d, e && e.endDate)}</b>
       <span className="hint">{e && e.topic ? e.topic + ' · ' : ''}{e && e.planners.length ? 'planning: ' + e.planners.join(', ') : 'nog niemand toegewezen'}</span></div>
       <button className="btn sm primary" onClick={() => go(entryFor(r.key))}>Hier inplannen</button></div>; })}</div> : <p className="hint">Geen vrije data gevonden in de komende maanden.</p>}
     <div className="row"><input className="inp" value={custom} onChange={e => setCustom(e.target.value)} placeholder="Andere datum: dd-mm-jjjj" aria-label="Andere datum" inputMode="numeric" style={{ flex: '1 1 180px' }} /><button className="btn" onClick={() => { const iso = parseNL(custom); if (!iso) { toast('Typ de datum als dd-mm-jjjj.'); return; } go(entryForDate(iso)); }}>Op deze datum</button></div>
@@ -181,6 +188,8 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
   const [libId, setLibId] = useState(''); const [libDay, setLibDay] = useState(0);
   // alle hooks vóór het stoppen hieronder: de opkomst kan elders verwijderd worden terwijl dit venster open staat
   const [selId, setSelId] = useState<string | null>(null);
+  // aanraakscherm: de namen zijn daar groter (beter te raken), dus de tijdlijn iets hoger zodat er evenveel in een onderdeel passen
+  const coarse = useMedia('(pointer: coarse)');
   const o = getO(oid); if (!o) return null;
   const e = entryOfOpk(o), present = e ? presentForEntry(e, o) : [...leaders];
   const A = analyze(o, present, leaders), need = minNeed(o);
@@ -199,7 +208,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
     } });
   };
   /* Compacte tijdlijn: onderdelen die tegelijk zijn staan naast elkaar, net als in de bouwer. */
-  const ROW = 20;
+  const ROW = coarse ? 26 : 20;
   const timeline = (C: typeof containers[0]) => {
     const T0 = C.lo, T1 = C.hi, pos = lanesLayout(C.d.blocks);
     return <div className="tl tk-tl">
@@ -209,7 +218,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
         {C.d.blocks.filter(b => b.start + b.dur > T0 && b.start < T1).map(b => {
           const g = blkGeom(pos[b.id], b, T0, ROW, b.id === selId), c = catOf(settings, b.cat);
           const short = !!b.minLeaders && b.names.length < b.minLeaders, extra = b.names.filter(n => !leaders.includes(n));
-          return <div key={b.id} className={g.cls.join(' ')} role="button" tabIndex={0} aria-label={`${b.title || 'Naamloos onderdeel'}, ${fmtT(b.start)} tot ${fmtT(b.start + b.dur)}`}
+          return <div key={b.id} className={g.cls.join(' ')} role="button" tabIndex={0} aria-label={blkLabel(b)}
             style={{ ['--c' as any]: c.color, ...g.style }}
             onClick={() => setSelId(b.id === selId ? null : b.id)} onKeyDown={ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setSelId(b.id === selId ? null : b.id); } }}>
             <div className="cols3">
@@ -240,7 +249,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
       return <div className="tk-sel"><b>{b.title || 'Naamloos onderdeel'}</b>
         <Field label="Begin"><TimePicker value={b.start} onChange={v => upd(() => { b.start = v; b.dur = Math.max(5, Math.min(b.dur, C.hi - b.start)); })} from={C.lo} to={C.hi - 5} extra /></Field>
         <Field label="Duur"><select className="inp" value={b.dur} onChange={ev => upd(() => { b.dur = +ev.target.value; })}>{durs.map(d => <option key={d} value={d}>{fmtDur(d)}</option>)}</select></Field>
-        <button className="btn sm ghost" onClick={() => setSelId(null)}>Sluiten</button></div>;
+        <div className="row"><button className="btn sm ghost" onClick={() => delBlock(C, b)}><Trash2 size={14} />Verwijderen</button><button className="btn sm ghost" onClick={() => setSelId(null)}>Sluiten</button></div></div>;
     }
     return null;
   };
@@ -295,8 +304,9 @@ export function NameModal({ spec, onClose }: { spec: NameSpec; onClose: () => vo
   const err = !name.trim() ? 'Geef een titel op.' : spec.taken(name) ? 'Deze naam bestaat al in de bank. Kies een andere naam.' : '';
   const ok = () => { if (err) return; onClose(); spec.ok(name.trim()); };
   return <Modal title={spec.title} sub={spec.sub} onClose={onClose}>
-    <Field label={spec.label} htmlFor="nm-name"><input id="nm-name" value={name} autoFocus onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') ok(); }} /></Field>
-    {err && <span className="sb-err">{err}</span>}
+    <Field label={spec.label} htmlFor="nm-name"><input id="nm-name" value={name} autoFocus aria-invalid={!!err} aria-describedby="nm-err" onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') ok(); }} /></Field>
+    {/* altijd aanwezig, alleen de tekst verandert: zo leest een schermlezer de fout voor tijdens het typen */}
+    <span className="sb-err" id="nm-err" aria-live="polite">{err}</span>
     <div className="row"><button className="btn primary" disabled={!!err} onClick={ok}>{spec.okLabel}</button><button className="btn ghost" onClick={onClose}>Annuleren</button></div>
   </Modal>;
 }

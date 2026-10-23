@@ -808,3 +808,57 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
 
 /* Foutmelding als een pagina niet getoond kan worden */
 .crash { margin: 40px auto 0; }
+
+/* Toetsenbord: de eerste link springt over de menubalk naar de inhoud; alleen zichtbaar met focus */
+.skiplink { position: absolute; left: 16px; top: -80px; z-index: 100; padding: 10px 14px; border-radius: 10px; background: var(--paper); color: var(--ink); font-weight: 700; text-decoration: none; box-shadow: 0 0 0 2px var(--edge), 4px 4px 0 2px var(--hard); }
+.skiplink:focus { top: 12px; }
+#inhoud:focus { outline: none; }
+/* Inloggen: de kop is een h1 met het uiterlijk van een h2 */
+.auth-card .auth-h { font-size: 21px; font-weight: 700; letter-spacing: -.015em; }
+/* Foutmelding die altijd in de pagina staat (zodat een schermlezer hem voorleest): leeg neemt hij geen ruimte in */
+.sb-err:empty { position: absolute; }
+/* Opkomstbouwer: komende opkomsten met datum en status boven de titel */
+.pick-kicker { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 2px; }
+.pk-when { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 13.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* Aanraakscherm: grotere raakvlakken waar je snel mistikt, zonder het ontwerp te veranderen */
+@media (pointer: coarse) {
+  /* blokjes van 5 minuten: geen prullenbak op het blokje zelf; verwijderen kan in het bewerkvenster */
+  .blk.tiny .bdel { display: none; }
+  /* Leiding indelen: naamknoppen hoger en verder uit elkaar */
+  .tk-names .nm { min-height: 28px; padding: 4px 10px; }
+  .tk-tl .blk .names > * { margin: 0 6px 6px 0; }
+  /* dashboard: tijden en locatie (dubbel tikken) krijgen een groter raakvlak; de kaart verschuift niet */
+  .hero .facts > [data-editable] { padding-block: 7px; margin-block: -7px; }
+}
+
+/* Jaarplanning op de telefoon: compacte rij zonder kolomkoppen. Datum en onderwerp naast elkaar,
+   daaronder de opkomst, dan wie plant, afwezig en de brief (een lege brief is alleen een envelop). */
+.addtxt { display: none; }
+@media (max-width: 600px) {
+  /* de rijen mogen de tabel nooit breder maken dan het scherm */
+  .ptable { grid-template-columns: minmax(0, 1fr); }
+  .prow, .prow.geen { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px; min-width: 0; }
+  .prow .pdate { width: auto; flex: 0 0 auto; padding: 6px 9px; }
+  .prow .pf { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+  .prow .pf > .pcell { flex: 0 1 auto; }
+  .prow .f-topic { flex: 1 1 140px; }
+  .prow .f-topic .ptopic { flex: 1 1 auto; width: auto; }
+  .prow.geen .f-topic > .pcell { flex: 1 1 auto; }
+  .prow .f-opk { flex: 1 1 100%; }
+  .prow .f-opk > .pcell { flex: 1 1 auto; flex-wrap: nowrap; }
+  .prow .plink { flex: 0 1 auto; grid-template-columns: minmax(0, 1fr) auto; column-gap: 6px; align-items: center; }
+  .prow .plink b { grid-column: 1 / -1; }
+  .prow .plink .hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prow .plink .cdots { margin-top: 0; }
+  .prow .f-opk .pill { flex: none; }
+  .prow .f-plan { flex: 0 1 auto; }
+  .prow .f-abs { flex: 0 1 auto; }
+  .prow .f-brief { flex: 0 0 auto; margin-left: auto; }
+  .prow .f-topic .plabel, .prow .f-opk .plabel, .prow .f-brief .plabel, .prow .f-abs.none .plabel { display: none; }
+  .prow .f-plan:not(:has(.pchip, .addbtn)), .prow .f-abs.none:not(:has(.addbtn)) { display: none; }
+  .prow .f-abs.none .addbtn { width: auto; padding: 0 10px 0 7px; gap: 3px; display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 700; }
+  .prow .f-abs.none .addtxt { display: inline; }
+  .prow .brief.none { padding: 6px 8px; }
+  .prow .brief.none .btxt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}

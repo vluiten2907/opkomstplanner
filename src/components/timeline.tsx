@@ -39,3 +39,13 @@ export function blkGeom(p: { lane: number; n: number }, b: Block, T0: number, ro
     style: { top: top + 1.5, height: h, left: `calc(${p.lane / p.n * 100}% + 4px)`, width: `calc(${100 / p.n}% - 8px)` },
   };
 }
+
+/**
+ * Naam van een onderdeel voor schermlezers: titel, tijd, leiding (met namen) en locatie,
+ * bijv. "Pietendiploma halen, 14:05 tot 14:50, 0 van 1 leiding, nog niemand, Grasveld". `nn`: zonder namen (opkomstenbank).
+ */
+export function blkLabel(b: Block, nn = false) {
+  const who = b.names.length ? b.names.join(', ') : 'nog niemand';
+  const lead = nn ? (b.minLeaders ? `minimaal ${b.minLeaders} leiding` : '') : b.minLeaders ? `${b.names.length} van ${b.minLeaders} leiding, ${who}` : who;
+  return [b.title || 'Naamloos onderdeel', `${fmtT(b.start)} tot ${fmtT(b.start + b.dur)}`, lead, b.location.trim()].filter(Boolean).join(', ');
+}

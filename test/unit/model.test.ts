@@ -182,6 +182,16 @@ test('kampDaysFor en kampLength', () => {
   assert.equal(M.kampLength('2026-10-16', '2026-10-20'), 5);
   assert.equal(M.kampLength('2026-10-01', '2026-12-01'), 14, 'hooguit 14 dagen');
 });
+test('kampStart: een kamp vr–zo op de vaste zaterdag begint op de vrijdag ervoor', () => {
+  const k = M.newKamp(S(), 3); // Vrijdag, Zaterdag, Zondag
+  assert.equal(M.kampStart(k, '2026-11-07'), '2026-11-06', 'zaterdag → vrijdag ervoor');
+  assert.equal(M.kampStart(k, '2026-11-08'), '2026-11-06', 'zondag → vrijdag ervoor');
+  assert.equal(M.kampStart(k, '2026-11-06'), '2026-11-06', 'vrijdag blijft');
+  assert.equal(M.kampStart(k, '2026-11-05'), '2026-11-05', 'donderdag valt er niet in: datum blijft');
+  const eigen = M.newKamp(S(), 3); eigen.days[0].label = 'Aankomst';
+  assert.equal(M.kampStart(eigen, '2026-11-07'), '2026-11-07', 'eerste dag zonder weekdagnaam: datum blijft');
+  assert.equal(M.kampStart(opk(), '2026-11-07'), '2026-11-07', 'gewone opkomst: datum blijft');
+});
 test('kampdag mag doorlopen tot na middernacht (26:00)', () => {
   const d = M.normDay({ label: 'Zaterdag', start: 1200, end: 1560, blocks: [blk('nacht', 1440, 60)] });
   assert.equal(d.end, 1560); assert.equal(fmtT(d.end), '02:00');

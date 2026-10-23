@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { GraduationCap, TentTree } from 'lucide-react';
 import { useAuth, authError } from '../store/auth';
@@ -10,6 +10,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'reset' }) {
   const next = (loc.state as any)?.next || '/';
   const [email, setEmail] = useState(''); const [pw, setPw] = useState('');
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false); const [done, setDone] = useState(false);
+  const heading = mode === 'login' ? 'Inloggen' : 'Wachtwoord vergeten';
+  useEffect(() => { document.title = heading + ' · Opkomstplanner'; }, [heading]);
   // Na inloggen/registreren zet de auth-store de gebruiker; dan sturen we hier door.
   if (ready && user && mode !== 'reset') return <Navigate to={next} replace />;
   const submit = async (e: FormEvent) => {
@@ -20,13 +22,15 @@ export default function AuthPage({ mode }: { mode: 'login' | 'reset' }) {
     } catch (e: any) { setErr(authError(e)); }
     setBusy(false);
   };
-  return <div className="auth-wrap">
+  // foutmelding: wordt voorgelezen (role=alert) en hoort bij de velden
+  const errProps = err ? { 'aria-invalid': true, 'aria-describedby': 'a-err' } as const : {};
+  return <main className="auth-wrap">
     <form className="card pad stack auth-card" onSubmit={submit}>
       <div className="brand flex items-center gap-2.5" style={{ paddingBottom: 0 }}><TentTree size={26} strokeWidth={1.9} /><span className="brand-txt"><span>Opkomstplanner</span><small>voor scoutinggroepen</small></span></div>
-      <h2>{mode === 'login' ? 'Inloggen' : 'Wachtwoord vergeten'}</h2>
-      <Field label="E-mailadres" htmlFor="a-email"><input id="a-email" type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required /></Field>
-      {mode !== 'reset' && <Field label="Wachtwoord" htmlFor="a-pw"><input id="a-pw" type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete="current-password" minLength={6} required /></Field>}
-      {err && <p className="hint err">{err}</p>}
+      <h1 className="auth-h">{heading}</h1>
+      <Field label="E-mailadres" htmlFor="a-email"><input id="a-email" type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required {...errProps} /></Field>
+      {mode !== 'reset' && <Field label="Wachtwoord" htmlFor="a-pw"><input id="a-pw" type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete="current-password" minLength={6} required {...errProps} /></Field>}
+      {err && <p className="hint err" id="a-err" role="alert">{err}</p>}
       {done && <p className="hint" style={{ color: 'var(--good)', fontWeight: 700 }}>Als dit adres bekend is, staat er een e-mail klaar om een nieuw wachtwoord te kiezen. Niets ontvangen? Kijk ook in je spammap.</p>}
       <button className="btn primary" disabled={busy}>{mode === 'login' ? 'Inloggen' : 'E-mail sturen'}</button>
       <div className="row between" style={{ fontSize: 14 }}>
@@ -35,5 +39,5 @@ export default function AuthPage({ mode }: { mode: 'login' | 'reset' }) {
       {mode === 'login' && <p className="hint">Nog geen account? Dat maak je aan via de uitnodigingslink die je van je teamleider of beheerder krijgt.</p>}
       {mode === 'login' && <div className="oefenlink"><span className="hint">Eerst rondkijken? Probeer alles uit met voorbeelddata, zonder account.</span><Link className="btn" to="/s/oefen"><GraduationCap size={16} />Oefenomgeving</Link></div>}
     </form>
-  </div>;
+  </main>;
 }

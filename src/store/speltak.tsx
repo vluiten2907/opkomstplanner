@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import * as F from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './auth';
-import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, copyOpk, isKamp, presentNames, relabelDays, planTimesDiffer, applyPlanTimes } from '../lib/model';
+import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, copyOpk, isKamp, presentNames, relabelDays, kampStart, planTimesDiffer, applyPlanTimes } from '../lib/model';
 import { isTeamleider, normPerms, normSpeltak, type Member, type PermKey, type Speltak, type Invite, type Perms } from '../lib/types';
 import { useRoles } from './roles';
 import { createInvite as mkInvite } from './beheer';
@@ -269,8 +269,13 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
       if (src.state === 'bank') { o.lead = ''; if (!isKamp(o)) { o.prep = settings.prepMin; o.post = settings.postMin; } }
     }
     if (!keepNames) allBlocks(o).forEach(b => b.names = []);
-    // kamp: de jaarplanning gaat voor; dagen die een weekdag heten krijgen de weekdag van hun datum
-    if (isKamp(o)) { e.type = 'kamp'; if (!e.endDate && o.days.length > 1) e.endDate = addDays(e.date, o.days.length - 1); relabelDays(o, e.date); }
+    // kamp: de jaarplanning gaat voor; dagen die een weekdag heten krijgen de weekdag van hun datum.
+    // Zonder "tot en met" begint een kamp vr–zo op de vaste zaterdag op de vrijdag ervoor (de vaste dag blijft staan: "verzet van za …").
+    if (isKamp(o)) {
+      e.type = 'kamp';
+      if (!e.endDate) { e.date = kampStart(o, e.date); if (o.days.length > 1) e.endDate = addDays(e.date, o.days.length - 1); }
+      relabelDays(o, e.date);
+    }
     if (e.opkId && e.opkId !== o.id) { const prev = getO(e.opkId); if (prev) saveOpk({ ...prev, state: 'draft' }); }
     const old = entryOfOpk(o); if (old && old !== e) savePlan({ ...old, opkId: null });
     o.state = 'planned'; e.opkId = o.id; if (e.type === 'geen') e.type = 'opkomst';

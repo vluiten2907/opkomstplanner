@@ -5,11 +5,11 @@ import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal, withFreeName } from '../store/modal';
 import { guardLeave, setUnsaved, useDirty } from '../store/unsaved';
-import { Strip, PickOpk, usePdf, PageTitle, SaveBar } from '../components/shared';
+import { Strip, PickOpk, usePdf, PageTitle, SaveBar, StatusPill } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, TimePicker, useSheetDialog } from '../components/ui';
-import { Ticks, PrepZones, blkGeom, lanesStyle } from '../components/timeline';
+import { Ticks, PrepZones, blkGeom, blkLabel, lanesStyle } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
-import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, uid, DAYS } from '../lib/time';
+import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, todayISO, uid, DAYS } from '../lib/time';
 import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, LIB_FIELDS, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /** Titel van de opkomst: loopt door op een volgende regel in plaats van af te breken (smal scherm), zonder echte regeleinden. */
@@ -36,16 +36,26 @@ const blkSel = (id: string) => `.lanes [data-bid="${CSS.escape(id)}"]`;
 /* ============ Startscherm ============ */
 export default function Bouwer() {
   const { oid } = useParams();
-  const { opks, settings, saveOpk, sid, can, getO, removeOpk } = useSpeltak();
+  const { opks, settings, saveOpk, sid, can, getO, removeOpk, entryOfOpk } = useSpeltak();
   const nav = useNavigate();
   const o = oid ? getO(oid) : undefined;
   if (oid && o) return <Builder key={o.id} o={o} />;
   const bank = opks.filter(x => x.state === 'bank').sort(byTitle), drafts = opks.filter(x => x.state === 'draft').sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  // de eerstvolgende ingeplande opkomsten en kampen (een kamp dat nu loopt telt mee), zodat je die hier meteen vindt
+  const today = todayISO();
+  const coming = opks.filter(x => x.state === 'planned').map(x => ({ x, e: entryOfOpk(x) }))
+    .filter((r): r is { x: Opk; e: NonNullable<typeof r.e> } => !!r.e && (r.e.endDate || r.e.date) >= today)
+    .sort((a, b) => a.e.date.localeCompare(b.e.date)).slice(0, 6);
   const create = (kamp: boolean) => { const n = kamp ? newKamp(settings, 3) : newOpk(settings); saveOpk(n); nav(`/s/${sid}/bouwer/${n.id}`); };
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title="Opkomstbouwer" />
     {oid && !o && <div className="ctx">Deze opkomst bestaat niet (meer).</div>}
     {can('build') && <div className="row"><button className="btn primary" onClick={() => create(false)}><Plus size={16} />Nieuwe opkomst</button><button className="btn" onClick={() => create(true)}><Tent size={16} />Weekendkamp</button></div>}
+    {coming.length > 0 && <section className="stack" style={{ gap: 10 }} aria-labelledby="bw-coming">
+      <div className="row between"><h2 id="bw-coming">Komende opkomsten</h2><button className="linkbtn" onClick={() => nav(`/s/${sid}/jaarplanning`)}>Hele jaarplanning</button></div>
+      <div className="picklist coming">{coming.map(({ x, e }) => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
+        kicker={<><span className="pk-when"><CalendarDays size={14} aria-hidden="true" />{fmtRange(e.date, e.endDate)}</span><StatusPill o={x} /></>} />)}</div>
+    </section>}
     {drafts.length > 0 && <><h2>Concepten</h2><div className="picklist">{drafts.map(x => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
       extra={can('build') ? <ConfirmBtn className="btn sm ghost" label={<><Trash2 size={14} />Verwijderen</>} confirm="Klik nogmaals" title="Concept verwijderen" onConfirm={() => removeOpk(x)} /> : undefined} />)}</div></>}
     {bank.length > 0 && <><h2>Uit de opkomstenbank</h2><div className="picklist">{bank.map(x => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
@@ -195,6 +205,8 @@ function Builder({ o: stored }: { o: Opk }) {
     <section className="plan-head">
       <div className="row between" style={{ alignItems: 'flex-end' }}>
         <div style={{ flex: '1 1 340px', minWidth: 0, display: 'grid', gap: 2 }}>
+          {/* kop van de pagina voor schermlezers; de zichtbare titel is het invoerveld eronder */}
+          <h1 className="sr-only">{kamp ? 'Weekendkamp' : 'Opkomst'}: {o.title.trim() || 'zonder titel'}</h1>
           <div className="row"><span className="eyebrow">{kamp ? 'Weekendkampplanner' : 'Opkomstbouwer'}</span>{kamp && <span className="pill kamp">Kamp</span>}{pill}{readOnly && <span className="pill neutral">Alleen lezen</span>}</div>
           <TitleArea value={o.title} readOnly={readOnly} onChange={v => upd(() => { o.title = v; if (e) savePlan({ ...e, topic: v }); })} placeholder={kamp ? 'Titel van het kamp' : 'Opkomst titel'} />
         </div>
@@ -334,7 +346,7 @@ function Timeline({ ctx, A, selId, lanesRef, onSelect, onDelete, onAdd, onChange
         const g = blkGeom(pos[b.id], b, T0, row, b.id === selId), c = catOf(settings, b.cat);
         const cls = [...g.cls, drag.current?.id === b.id && drag.current.moved ? 'dragging' : ''].join(' ');
         const under = b.minLeaders && b.names.length < b.minLeaders, mats = splitLines(b.materials).length;
-        return <div key={b.id} className={cls} data-bid={b.id} tabIndex={0} role="button" aria-label={`${b.title || 'Naamloos onderdeel'}, ${fmtT(b.start)} tot ${fmtT(b.start + b.dur)}`}
+        return <div key={b.id} className={cls} data-bid={b.id} tabIndex={0} role="button" aria-label={blkLabel(b, nn)}
           style={{ ['--c' as any]: c.color, ...g.style }}
           onPointerDown={ev => { const t = ev.target as HTMLElement; if (t.closest('.bdel')) return; const rs = !!t.closest('.rs'), grip = !!t.closest('.grip'); startDrag(ev, b, rs ? 'resize' : 'move', rs || grip); }}
           onClick={ev => { ev.stopPropagation(); if (suppress.current) return; onSelect(b.id); }}

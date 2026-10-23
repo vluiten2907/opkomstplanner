@@ -78,6 +78,10 @@ with sync_playwright() as p:
     pg.goto(BASE + '/registreren'); w()
     check('/inloggen' in pg.url, 'registreren zonder uitnodiging bestaat niet meer')
     check(pg.locator('text=Nieuw account').count() == 0, 'inlogpagina heeft geen knop Nieuw account')
+    check(pg.locator('main h1:text-is("Inloggen")').count() == 1 and pg.title() == 'Inloggen · Opkomstplanner', 'inlogpagina: kop (h1) in main en eigen paginatitel')
+    pg.fill('input[type=email]', 'vluiten2907@gmail.com'); pg.fill('input[type=password]', 'foutje1'); pg.click('.btn.primary'); w(600)
+    check(pg.locator('#a-err[role=alert]:has-text("klopt niet")').count() == 1 and pg.get_attribute('#a-pw', 'aria-invalid') == 'true' and pg.get_attribute('#a-pw', 'aria-describedby') == 'a-err',
+          'fout wachtwoord: melding wordt voorgelezen (role=alert) en hoort bij het veld')
 
     # --- Beheer (totaal): groep, speltak en uitnodigingen
     pg.fill('input[type=email]', 'vluiten2907@gmail.com'); pg.fill('input[type=password]', 'demo123'); pg.click('.btn.primary'); w(1200)
@@ -383,6 +387,8 @@ with sync_playwright() as p:
     pg.fill('#om-title', 'Nachtspel'); w(200); shot('13-opslaan-balk', False)
     sb('Opslaan als kopie').click(); w(200); pg.fill('#sb-name', 'sluipspel '); w(200)
     check(pg.locator('.savebar >> text=bestaat al').count() == 1 and sb('Kopie opslaan').is_disabled(), 'kopie met bestaande naam (hoofdletters/spaties) geweigerd')
+    sb_err = pg.evaluate("(() => { const i = document.getElementById('sb-name'), e = document.getElementById(i.getAttribute('aria-describedby')); return [i.getAttribute('aria-invalid'), e && e.getAttribute('aria-live'), e && e.textContent]; })()")
+    check(sb_err[0] == 'true' and sb_err[1] == 'polite' and 'bestaat al' in (sb_err[2] or ''), f'kopie met bestaande naam: veld ongeldig, fout gekoppeld en voorgelezen ({sb_err})')
     pg.fill('#sb-name', 'Nachtspel'); sb('Kopie opslaan').click(); w(700)
     check(pg.locator('#om-title').input_value() == 'Nachtspel', 'opslaan als kopie opent de kopie')
     pg.fill('#om-short', 'Spel in het donker'); w(200); sb('Opslaan').click(); w(500)
@@ -478,6 +484,16 @@ with sync_playwright() as p:
     pg.click('nav >> text=Opkomstbouwer'); w(300); pg.click('text=Weekendkamp'); w(600)
     pg.fill('#om-title', 'Herfstkamp'); pg.click('.daytab >> nth=1'); w(300); pg.click('text=Maaltijden toevoegen'); w(400)
     check(pg.locator('.blk').count() == 3, 'weekendkamp: 3 maaltijden op zaterdag'); shot('06-kamp')
+    # kamp vr–zo inplannen op een zaterdag (5 juni 2027): vrijdag 4 t/m zondag 6 juni, de dagen kloppen, de vaste zaterdag blijft als "verzet van"
+    pg.click('.plan-head >> text=Inplannen'); w(300)
+    check(all(' t/m ' in t for t in pg.locator('.modal .pick .info b').all_inner_texts()[:3]), 'kamp inplannen: de lijst toont het hele bereik van het kamp')
+    pg.fill('.modal input[placeholder^="Andere datum"]', '05-06-2027'); pg.click('.modal >> text=Op deze datum'); w(700)
+    kt = pg.locator('.toast').inner_text()
+    check('Ingepland op vrijdag 4 t/m zondag 6 juni 2027' in kt and 'vrijdag 4 t/m zondag 6 juni 2027' in pg.locator('.ctx').inner_text(), f'kamp op een zaterdag: vrijdag t/m zondag ingepland, ook in de melding ({kt})')
+    check([t.split('\n')[0] for t in pg.locator('.daytab:not(.add) b').all_inner_texts()] == ['Vrijdag 4 jun', 'Zaterdag 5 jun', 'Zondag 6 jun'], 'kamp op een zaterdag: dagtabs vr 4, za 5, zo 6 juni')
+    pg.click('.plan-head >> button:has-text("Jaarplanning")'); w(900)
+    kr = pg.locator('.prow:has(.plink:has-text("Herfstkamp")) .pdate').inner_text()
+    check('vr 4 – zo 6 jun' in kr and 'verzet van za 5 jun' in kr, f'jaarplanning: kamp vr 4 – zo 6 juni, verzet van de vaste zaterdag ({kr})')
 
     # --- mobiel
     pg.set_viewport_size({'width': 390, 'height': 800}); pg.click('nav a[href$="/bouwer"]'); w(500)
@@ -1031,7 +1047,7 @@ with sync_playwright() as p:
     tf = lambda k: pg.locator('.meta .timefield').nth(k).locator('.tp-h')
     tf(0).select_option('18'); w(300)
     check(tf(1).input_value() == '19' and 'Eindtijd verschoven naar 19:' in pg.locator('.toast').inner_text(), 'bouwer: begintijd na de eindtijd schuift de eindtijd mee')
-    check(pg.locator('.blk[aria-label="Openen, 18:00 tot 18:05"]').count() == 1 and pg.locator('.blk[aria-label="Sluiten, 18:55 tot 19:00"]').count() == 1, 'bouwer: begintijd wijzigen, Openen en Sluiten schuiven mee')
+    check(pg.locator('.blk[aria-label^="Openen, 18:00 tot 18:05"]').count() == 1 and pg.locator('.blk[aria-label^="Sluiten, 18:55 tot 19:00"]').count() == 1, 'bouwer: begintijd wijzigen, Openen en Sluiten schuiven mee')
     tf(1).select_option('17'); w(300)
     check(tf(1).input_value() == '19' and 'moet na de begintijd' in pg.locator('.toast').inner_text(), 'bouwer: eindtijd vóór de begintijd wordt geweigerd')
     w(700); check(oefen_get("s['speltakken/oefen/opkomsten/opk-vuur'].end") // 60 == 19, 'bouwer: nieuwe tijden opgeslagen')
@@ -1223,9 +1239,9 @@ with sync_playwright() as p:
     check(oefen_get(jt) == 'Van vroeger' and pg.locator('.oefenbar:has-text("loopt achter")').count() == 1, 'oefenomgeving: oudere opslag zonder datum blijft staan, met de melding')
     pg.click('.oefenbar button:has-text("Opnieuw beginnen")'); w(200); pg.click('.oefenbar >> text=Klik nogmaals: alles terugzetten'); w(1800)
     pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(900)
-    pg.click('button[aria-label="Account"]'); w(200); pg.click('.menu >> text=Opnieuw beginnen'); w(200)
+    pg.click('header.bar .acct .btn'); w(200); pg.click('.menu >> text=Opnieuw beginnen'); w(200)
     check(pg.locator('.menu button:has-text("Klik nogmaals: alles terugzetten")').count() == 1 and pg.locator('.loading').count() == 0, 'accountmenu: opnieuw beginnen vraagt eerst bevestiging')
-    pg.click('button[aria-label="Account"]'); w(200)
+    pg.click('header.bar .acct .btn'); w(200)
     pg.set_viewport_size({'width': 390, 'height': 800}); w(200); pg.evaluate('window.scrollTo(0, 0)'); w(100)
     pg.click('.oefenbar >> text=Opnieuw beginnen'); w(200)
     check(pg.locator('.oefenbar button:has-text("Klik nogmaals")').count() == 1 and pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'oefenbalk mobiel met bevestiging: geen horizontale scroll')
@@ -1250,6 +1266,62 @@ with sync_playwright() as p:
     pg.click('a:has-text("Oefenomgeving")'); w(1200)
     check('/s/oefen/' in pg.url and pg.locator('.watermark.on').count() == 1, 'oefenomgeving werkt zonder inloggen')
     shot('14-oefenen')
+    # opkomstbouwer: de komende opkomsten staan bovenaan, met datum en status
+    pg.goto(BASE + '/s/oefen/bouwer'); w(1000)
+    coming = pg.locator('.picklist.coming .pick')
+    check(coming.count() >= 2 and 'Junglejacht en stratego' in coming.first.inner_text() and coming.first.locator('.pk-when').count() == 1 and coming.first.locator('.pill').count() == 1,
+          'bouwer: komende opkomsten bovenaan, met datum en status')
+    check(pg.title() == 'Opkomstbouwer · Welpen · Opkomstplanner', f'paginatitel noemt de pagina ({pg.title()})'); shot('25-bouwer-komend')
+    coming.first.locator('button:has-text("Openen")').click(); w(900)
+    check(pg.url.endswith('/bouwer/opk-jungle') and pg.locator('h1').count() == 1 and 'Junglejacht en stratego' in pg.locator('h1').inner_text(), 'komende opkomst openen; de bouwer heeft een kop (h1) met de titel')
+    jl = pg.locator('.lanes .blk:has(.t:text-is("Junglejacht"))').get_attribute('aria-label') or ''
+    check(re.fullmatch(r'Junglejacht, \d\d:\d\d tot \d\d:\d\d, 2 van 2 leiding, Baloe, Kaa, Grasveld', jl) is not None, f'onderdeel in de tijdlijn: naam noemt leiding, namen en locatie ({jl})')
+    pg.click('.ctx >> text=Leiding indelen'); w(500)
+    tl = pg.locator('.modal .tk-tl .blk:has(.t:text-is("Junglejacht"))').get_attribute('aria-label') or ''
+    check(tl == jl, f'leiding indelen: onderdeel noemt ook leiding, namen en locatie ({tl})')
+    pg.click('.modal >> text=Klaar'); w(300)
+    # overslaan-link en accountmenu met het toetsenbord
+    pg.goto(BASE + '/s/oefen/jaarplanning'); w(1000)
+    check(pg.title() == 'Jaarplanning · Welpen · Opkomstplanner', f'paginatitel per pagina ({pg.title()})')
+    pg.keyboard.press('Tab'); skip = pg.evaluate("document.activeElement.className + '|' + document.activeElement.textContent")
+    pg.keyboard.press('Enter'); w(100)
+    check(skip == 'skiplink|Naar inhoud' and pg.evaluate("document.activeElement.id") == 'inhoud', f'eerste Tab: Naar inhoud, Enter springt naar de inhoud ({skip})')
+    acct = pg.locator('header.bar .acct .btn')
+    check(acct.get_attribute('aria-label') == 'Akela, account' and acct.get_attribute('aria-haspopup') == 'menu' and acct.get_attribute('aria-expanded') == 'false', 'accountknop: zichtbare naam in de naam, uitgeklapt of niet')
+    acct.focus(); pg.keyboard.press('Enter'); w(200)
+    act_txt = lambda: pg.evaluate("(document.activeElement.getAttribute('role') || '') + '|' + document.activeElement.textContent")
+    a1 = act_txt(); pg.keyboard.press('ArrowDown'); w(50); a2 = act_txt()
+    check(acct.get_attribute('aria-expanded') == 'true' and a1 == 'menuitem|Opnieuw beginnen' and a2 == 'menuitem|Oefenen stoppen', f'accountmenu met Enter: focus op het eerste item, pijltjes werken ({a1}, {a2})')
+    pg.keyboard.press('Escape'); w(200)
+    check(pg.locator('.menu').count() == 0 and acct.get_attribute('aria-expanded') == 'false' and pg.evaluate("document.activeElement === document.querySelector('header.bar .acct .btn')"), 'Esc sluit het accountmenu, de focus gaat terug naar de knop')
+    acct.click(); w(200); pg.keyboard.press('Tab'); w(200)
+    check(pg.locator('.menu').count() == 0, 'Tab uit het accountmenu sluit het')
+    # jaarplanning op de telefoon: compacte rijen
+    pg.set_viewport_size({'width': 390, 'height': 844}); w(300); pg.click('.presets >> text=Dit seizoen'); w(500)
+    hs = pg.evaluate("[...document.querySelectorAll('.prow:not(.head)')].map(r => r.getBoundingClientRect().height)")
+    check(len(hs) > 20 and max(hs) <= 240 and sum(hs) / len(hs) <= 170 and pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'),
+          f'jaarplanning mobiel: compacte rijen zonder horizontaal scrollen (max {max(hs):.0f} px, gemiddeld {sum(hs) / len(hs):.0f} px)')
+    check(pg.locator('.prow .f-abs.none .addtxt').first.is_visible() and pg.locator('.prow .brief.none .btxt').first.bounding_box()['width'] <= 1
+          and pg.locator('.prow .f-plan .plabel').first.is_visible(), 'jaarplanning mobiel: "+ Afwezig", lege brief als envelop, Planning door met label')
+    pg.locator('.prow:has(.plink:has-text("Vuur en kompas"))').scroll_into_view_if_needed(); shot('26-jaarplanning-mobiel', False)
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    # aanraakscherm: grotere naamknoppen, geen prullenbak op een blokje van 5 minuten, groter raakvlak op het dashboard
+    tc = b.new_context(viewport={'width': 390, 'height': 844}, locale='nl-NL', has_touch=True, is_mobile=True)
+    tc.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())
+    tq = tc.new_page(); tq.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+    tq.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' and 'ERR_FAILED' not in m.text else None)
+    tq.goto(BASE + '/s/oefen/bouwer/opk-jungle'); tq.wait_for_timeout(1200)
+    tq.click('.ctx >> text=Leiding indelen'); tq.wait_for_timeout(500)
+    nm_h = tq.evaluate("Math.min(...[...document.querySelectorAll('.modal .tk-names .nm')].map(e => e.getBoundingClientRect().height).filter(h => h > 0))")
+    check(tq.evaluate("matchMedia('(pointer: coarse)').matches") and nm_h >= 28, f'aanraakscherm: naamknoppen bij Leiding indelen minstens 28 px hoog ({nm_h:.0f})')
+    tq.locator('.modal .tk-tl .blk:has(.t:text-is("Openen"))').tap(); tq.wait_for_timeout(300)
+    check(tq.locator('.modal .tk-tl .blk.sel.tiny').count() == 1 and not tq.locator('.modal .tk-tl .blk.sel .bdel').is_visible() and tq.locator('.tk-sel button:has-text("Verwijderen")').is_visible(),
+          'aanraakscherm: geen prullenbak op een blokje van 5 minuten, wel Verwijderen eronder')
+    tq.screenshot(path=f'{OUT}/27-indelen-aanraken.png')
+    tq.goto(BASE + '/s/oefen/dashboard'); tq.wait_for_timeout(1200)
+    fh = tq.evaluate("[...document.querySelectorAll('.hero .facts > [data-editable]')].map(e => e.getBoundingClientRect().height)")
+    check(len(fh) == 2 and min(fh) >= 30, f'aanraakscherm: tijden en locatie op het dashboard groter raakvlak ({fh})')
+    tc.close()
 
     # --- seizoen rond de zomerpauze (klok verzet) en een datum in de pauze openen
     def at_time(day):

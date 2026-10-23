@@ -98,6 +98,12 @@ export default function InvitePage() {
     setErr(joinErr(e));
   };
 
+  // foutmelding: wordt voorgelezen (role=alert) en hoort bij het veld waar het om gaat
+  const errLine = err && <p className="hint err" id="i-err" role="alert">{err}</p>;
+  const bad = (on: boolean) => on && err ? { 'aria-invalid': true, 'aria-describedby': 'i-err' } as const : {};
+  const nameErr = err === taken || err === 'Vul je gebruikersnaam in.', fullErr = err === 'Vul je voor- en achternaam in.';
+  const pwErr = err === 'E-mailadres of wachtwoord klopt niet.' || err === 'Kies een wachtwoord van minstens 6 tekens.';
+
   if (!user) {
     const submit = async (e: FormEvent) => {
       e.preventDefault(); setErr(''); setBusy(true);
@@ -127,12 +133,12 @@ export default function InvitePage() {
     return box(<form className="stack" onSubmit={submit}>{intro}
       <Field label="E-mailadres"><input type="email" value={inv.email} readOnly aria-readonly="true" /></Field>
       {mode === 'register' && <div className="two">
-        <Field label="Voornaam" htmlFor="i-first"><input id="i-first" value={first} onChange={e => setFirst(e.target.value)} autoComplete="given-name" /></Field>
-        <Field label="Achternaam" htmlFor="i-last"><input id="i-last" value={last} onChange={e => setLast(e.target.value)} autoComplete="family-name" /></Field>
+        <Field label="Voornaam" htmlFor="i-first"><input id="i-first" value={first} onChange={e => setFirst(e.target.value)} autoComplete="given-name" {...bad(fullErr && !first.trim())} /></Field>
+        <Field label="Achternaam" htmlFor="i-last"><input id="i-last" value={last} onChange={e => setLast(e.target.value)} autoComplete="family-name" {...bad(fullErr && !last.trim())} /></Field>
       </div>}
-      {mode === 'register' && <Field label="Gebruikersnaam" htmlFor="i-name" hint={`Je naam is je gebruikersnaam binnen ${inv.groupName || 'de groep'}: hij mag er maar één keer voorkomen.`}><input id="i-name" value={name} maxLength={40} onChange={e => setName(e.target.value)} placeholder="Zoals de leiding je kent, bijv. Akela" autoComplete="name" /></Field>}
-      <Field label={mode === 'register' ? 'Kies een wachtwoord' : 'Wachtwoord'} htmlFor="i-pw"><input id="i-pw" type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete={mode === 'register' ? 'new-password' : 'current-password'} minLength={6} required /></Field>
-      {err && <p className="hint err">{err}</p>}
+      {mode === 'register' && <Field label="Gebruikersnaam" htmlFor="i-name" hint={`Je naam is je gebruikersnaam binnen ${inv.groupName || 'de groep'}: hij mag er maar één keer voorkomen.`}><input id="i-name" value={name} maxLength={40} onChange={e => setName(e.target.value)} placeholder="Zoals de leiding je kent, bijv. Akela" autoComplete="name" {...bad(nameErr)} /></Field>}
+      <Field label={mode === 'register' ? 'Kies een wachtwoord' : 'Wachtwoord'} htmlFor="i-pw"><input id="i-pw" type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete={mode === 'register' ? 'new-password' : 'current-password'} minLength={6} required {...bad(pwErr)} /></Field>
+      {errLine}
       <button className="btn primary" disabled={busy}>{mode === 'register' ? 'Account aanmaken en toetreden' : 'Inloggen en toetreden'}</button>
       <div className="row between" style={{ fontSize: 14 }}>
         {mode === 'register' ? <button type="button" className="linkbtn" onClick={() => { setMode('login'); setErr(''); }}>Ik heb al een account</button>
@@ -152,16 +158,16 @@ export default function InvitePage() {
   };
   const group = inv.groupName || 'de groep';
   const pickField = pick && <Field label={`Kies een naam voor ${group}`} htmlFor="i-pick" hint={`${pick.taken ? `${pick.taken} is al in gebruik binnen ${group}` : `Deze naam is al in gebruik binnen ${group}`}. Namen zijn uniek binnen een groep; kies er een, bijvoorbeeld met je speltak erbij.`}>
-    <input id="i-pick" value={pick.name} maxLength={40} onChange={e => setPick({ ...pick, name: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') join(); }} placeholder="bijv. Akela Welpen" autoComplete="off" /></Field>;
+    <input id="i-pick" value={pick.name} maxLength={40} onChange={e => setPick({ ...pick, name: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') join(); }} placeholder="bijv. Akela Welpen" autoComplete="off" {...bad(true)} /></Field>;
   if (mine && !verified) return box(<>{intro}
     <VerifyNote box onVerified={join} />
-    {err && <p className="hint err">{err}</p>}
+    {errLine}
     <div className="row"><button className="btn ghost sm" onClick={() => logout()}>Uitloggen</button></div>
   </>);
   return box(<>{intro}
     {!mine && <p className="hint err">Je bent ingelogd als {user.email}, maar de uitnodiging is voor {inv.email}.</p>}
     {mine && pickField}
-    {err && <p className="hint err">{err}</p>}
+    {errLine}
     <div className="row">{mine ? <button className="btn primary" disabled={busy} onClick={join}>Toetreden</button>
       : <button className="btn primary" onClick={() => logout()}>Uitloggen en opnieuw</button>}<Link className="btn ghost" to="/">Niet nu</Link></div>
   </>);

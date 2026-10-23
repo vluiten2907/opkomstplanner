@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { TentTree, ChevronDown, LogOut, Users, ShieldCheck, UserRound, RotateCcw, GraduationCap, Check, CloudOff, CloudUpload, TriangleAlert } from 'lucide-react';
 import { useRoles } from '../store/roles';
 import { useAuth } from '../store/auth';
@@ -39,10 +39,20 @@ export default function Layout({ children }: { children: ReactNode }) {
   const roles = useRoles();
   const team = isTL || isAdmin;
   const nav = useNavigate();
+  const { pathname } = useLocation();
   const [menu, setMenu] = useState(false);
-  useEffect(() => { applyAccent(settings.accent); document.title = sp ? `Opkomstplanner · ${sp.groupName || ''} ${sp.name || ''}`.trim() : 'Opkomstplanner'; }, [settings.accent, sp]);
+  const acctBtn = useRef<HTMLButtonElement>(null), menuRef = useRef<HTMLDivElement>(null);
+  // [pad, label, korte label voor smalle schermen]
+  const links: [string, string, string][] = [['dashboard', 'Dashboard', 'Dashboard'], ['jaarplanning', 'Jaarplanning', 'Jaarplanning'], ['bouwer', 'Opkomstbouwer', 'Bouwer'], ['activiteiten', 'Activiteitenbank', 'Activiteiten'], ['opkomsten', 'Opkomstenbank', 'Opkomsten'], ['instellingen', team ? 'Team & instellingen' : 'Instellingen', team ? 'Team' : 'Instellingen']];
+  // titel van het tabblad per pagina, bijv. "Jaarplanning · Welpen · Opkomstplanner"
+  const page = (links.find(([p]) => p === (pathname.split('/')[3] || 'dashboard')) || [])[1];
+  const where = sp ? sp.name || sp.groupName || '' : '';
+  useEffect(() => { applyAccent(settings.accent); }, [settings.accent]);
+  useEffect(() => { document.title = sp ? [page, where, 'Opkomstplanner'].filter(Boolean).join(' · ') : 'Opkomstplanner'; }, [sp, page, where]);
   useEffect(() => { if (sp && !practice) localStorage.setItem('opk.sid', sid); }, [sp, sid, practice]);
   useEffect(() => { if (!menu) return; const h = () => setMenu(false); document.addEventListener('click', h); return () => document.removeEventListener('click', h); }, [menu]);
+  // menu open: focus op het eerste item (ook met de muis, zoals bij elk menu)
+  useEffect(() => { if (menu) menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus(); }, [menu]);
   if (denied) return <div className="auth-wrap"><div className="card pad stack auth-card"><h2>Geen toegang</h2><p className="hint">Je bent geen lid van deze speltak, of hij bestaat niet meer.</p><button className="btn primary" onClick={() => { localStorage.removeItem('opk.sid'); nav('/speltakken'); }}>Mijn speltakken</button></div></div>;
   const reload = <button className="btn primary" onClick={() => window.location.reload()}>Opnieuw laden</button>;
   if (loadError && !sp) return <div className="auth-wrap"><div className="card pad stack auth-card"><h2>Laden mislukt</h2><p className="hint">De gegevens van deze speltak konden niet worden geladen. Probeer het over een paar minuten opnieuw.</p><div className="row">{reload}</div></div></div>;
@@ -57,9 +67,21 @@ export default function Layout({ children }: { children: ReactNode }) {
   // oefenomgeving terugzetten: pas na bevestigen, en eerst vragen als er nog iets niet is opgeslagen
   const reset = () => guardLeave(() => resetPractice?.());
   const initials = (myName || user?.email || '?').split(/\s+/).map(x => x[0]).join('').slice(0, 2).toUpperCase();
-  // [pad, label, korte label voor smalle schermen]
-  const links: [string, string, string][] = [['dashboard', 'Dashboard', 'Dashboard'], ['jaarplanning', 'Jaarplanning', 'Jaarplanning'], ['bouwer', 'Opkomstbouwer', 'Bouwer'], ['activiteiten', 'Activiteitenbank', 'Activiteiten'], ['opkomsten', 'Opkomstenbank', 'Opkomsten'], ['instellingen', team ? 'Team & instellingen' : 'Instellingen', team ? 'Team' : 'Instellingen']];
+  /** Accountmenu met het toetsenbord: pijltjes, Home/End, Esc sluit en zet de focus terug op de knop, Tab gaat verder en sluit. */
+  const menuKey = (ev: ReactKeyboardEvent) => {
+    if (!menu) return;
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); setMenu(false); acctBtn.current?.focus(); return; }
+    const items = [...(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') || [])]; if (!items.length) return;
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const to = ev.key === 'ArrowDown' ? (at + 1) % items.length : ev.key === 'ArrowUp' ? (at - 1 + items.length) % items.length : ev.key === 'Home' ? 0 : ev.key === 'End' ? items.length - 1 : -1;
+    if (to >= 0) { ev.preventDefault(); items[to].focus(); }
+  };
+  // focus gaat naar iets buiten het menu (Tab): menu dicht. Klikken buiten het menu sluit het via de documentklik.
+  const menuBlur = (ev: React.FocusEvent) => { const t = ev.relatedTarget as Node | null; if (menu && t && !ev.currentTarget.contains(t)) setMenu(false); };
+  const acctLabel = myName ? `${myName}, account` : 'Account';
+  const item = { role: 'menuitem', tabIndex: -1 } as const;
   return <div className="app mx-auto">
+    <a className="skiplink" href="#inhoud" onClick={ev => { ev.preventDefault(); document.getElementById('inhoud')?.focus(); }}>Naar inhoud</a>
     <header className="bar flex flex-wrap items-center gap-x-6 gap-y-2">
       <div className="brand flex items-center gap-2.5">
         {settings.logo ? <img id="brandLogo" src={settings.logo} alt="" /> : <TentTree size={26} strokeWidth={1.9} />}
@@ -68,18 +90,19 @@ export default function Layout({ children }: { children: ReactNode }) {
       <nav className="nav flex min-w-0 flex-1 overflow-x-auto" aria-label="Hoofdmenu">
         {links.map(([p, l, k]) => <NavLink key={p} to={`/s/${sid}/${p}`} onClick={ev => { if (useUnsaved.getState().dirty) { ev.preventDefault(); guardLeave(() => nav(`/s/${sid}/${p}`)); } }}>{k === l ? l : <span className="nl" data-short={k}><span>{l}</span></span>}</NavLink>)}
       </nav>
-      <div className="acct">
+      <div className="acct" onKeyDown={menuKey} onBlur={menuBlur}>
         <SaveState />
-        <button className="btn sm" aria-label="Account" onClick={e => { e.stopPropagation(); setMenu(m => !m); }}><span className="avatar">{initials}</span><span className="acct-name">{myName || 'Account'}</span><ChevronDown size={14} /></button>
-        {menu && practice && <div className="menu" onClick={e => e.stopPropagation()}>
-          <ConfirmBtn className="" label={<><RotateCcw size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Opnieuw beginnen</>} confirm="Klik nogmaals: alles terugzetten" onConfirm={() => { setMenu(false); reset(); }} />
-          <button onClick={() => guardLeave(() => nav('/'))}><LogOut size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Oefenen stoppen</button>
+        <button ref={acctBtn} className="btn sm" aria-label={acctLabel} aria-haspopup="menu" aria-expanded={menu} aria-controls={menu ? 'acct-menu' : undefined}
+          onClick={e => { e.stopPropagation(); setMenu(m => !m); }}><span className="avatar" aria-hidden="true">{initials}</span><span className="acct-name">{myName || 'Account'}</span><ChevronDown size={14} aria-hidden="true" /></button>
+        {menu && practice && <div ref={menuRef} id="acct-menu" className="menu" role="menu" aria-label="Account" onClick={e => e.stopPropagation()}>
+          <ConfirmBtn className="" role="menuitem" tabIndex={-1} label={<><RotateCcw size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Opnieuw beginnen</>} confirm="Klik nogmaals: alles terugzetten" onConfirm={() => { setMenu(false); reset(); }} />
+          <button {...item} onClick={() => guardLeave(() => nav('/'))}><LogOut size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Oefenen stoppen</button>
         </div>}
-        {menu && !practice && <div className="menu" onClick={e => e.stopPropagation()}>
-          {roles.isAdmin && <button onClick={() => guardLeave(() => nav('/beheer'))}><ShieldCheck size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Beheer</button>}
-          <button onClick={() => guardLeave(() => nav('/account'))}><UserRound size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Mijn account</button>
-          <button onClick={() => guardLeave(() => nav('/speltakken'))}><Users size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Andere speltak</button>
-          <button onClick={() => guardLeave(doLogout)}><LogOut size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Uitloggen</button>
+        {menu && !practice && <div ref={menuRef} id="acct-menu" className="menu" role="menu" aria-label="Account" onClick={e => e.stopPropagation()}>
+          {roles.isAdmin && <button {...item} onClick={() => guardLeave(() => nav('/beheer'))}><ShieldCheck size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Beheer</button>}
+          <button {...item} onClick={() => guardLeave(() => nav('/account'))}><UserRound size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Mijn account</button>
+          <button {...item} onClick={() => guardLeave(() => nav('/speltakken'))}><Users size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Andere speltak</button>
+          <button {...item} onClick={() => guardLeave(doLogout)}><LogOut size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Uitloggen</button>
         </div>}
       </div>
     </header>
@@ -93,7 +116,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     {!practice && <VerifyNote />}
     {roles.profile && !(roles.profile.firstName && roles.profile.lastName) && <div className="banknote namenote"><span>Vul je voor- en achternaam in, zodat de beheerder van je groep weet wie je bent.</span><div className="row"><button className="btn sm primary" onClick={() => guardLeave(() => nav('/account'))}>Naar mijn account</button></div></div>}
     {!isMember && isAdmin && <div className="banknote adminnote"><span><ShieldCheck size={15} style={{ verticalAlign: -3, marginRight: 6 }} />Je bekijkt deze speltak als beheerder: alleen-lezen. Het team beheer je onder Team.</span></div>}
-    <main className="pb-16">{children}</main>
+    <main id="inhoud" tabIndex={-1} className="pb-16">{children}</main>
     <ModalHost />
     <div className="aurora pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
       <span className="absolute -left-40 -top-48 h-[34rem] w-[34rem] rounded-full blur-3xl opacity-30 aur-a"></span>
