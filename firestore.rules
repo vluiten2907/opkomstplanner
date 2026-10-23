@@ -232,6 +232,12 @@ service cloud.firestore {
       function can(p) { return isMember() && (isTL() || member().perms[p] == true); }
       function isAdmin() { return spExists() && isAdminOf(spGid(sp())); }
       function tlSame() { return request.resource.data.get('tlIds', null) == resource.data.get('tlIds', null); }
+      // Team en ledenlijst lopen niet uiteen: wie in memberIds bijkomt, heeft een members-regel, en wie zijn
+      // members-regel kwijtraakt, staat ook niet meer in memberIds. Alleen de wijziging telt, oude data blokkeert niet.
+      function teamConsistent() {
+        return request.resource.data.memberIds.toSet().difference(resource.data.memberIds.toSet()).difference(request.resource.data.members.keys().toSet()).size() == 0
+          && request.resource.data.memberIds.toSet().intersection(resource.data.members.keys().toSet().difference(request.resource.data.members.keys().toSet())).size() == 0;
+      }
 
       allow get: if isMember() || isAdminOf(spGid(resource.data));
       // "mijn speltakken" (memberIds bevat mij), per groep (gid ==) of alles (Beheer totaal)
@@ -251,11 +257,13 @@ service cloud.firestore {
         // beheerder van de groep: team, teamleiders, naam; alleen Beheer (totaal) verhuist een speltak naar een andere groep
         || (isAdmin()
             && changed().hasOnly(['members', 'memberIds', 'tlIds', 'name', 'groupName', 'gid'])
+            && teamConsistent()
             && (request.resource.data.get('gid', null) == resource.data.get('gid', null) || isRoot()))
         // teamleider: team en rechten; teamleiders erbij aanstellen niet, wel overdragen of aftreden.
         // Teamleiders blijven in het team (een mede-teamleider eruit halen doet de beheerder).
         || (isTL()
             && changed().hasOnly(['members', 'memberIds', 'tlIds'])
+            && teamConsistent()
             && (!hasTl(resource.data)
                 || tlSame()
                 || (!(me() in request.resource.data.tlIds)

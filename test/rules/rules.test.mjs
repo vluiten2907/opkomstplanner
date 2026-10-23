@@ -131,6 +131,14 @@ await t('enige teamleider haalt zichzelf niet uit memberIds', () => assertFails(
 await env.withSecurityRulesDisabled(c => updateDoc(doc(c.firestore(), 'speltakken/s1'), { tlIds: ['tl', 'tl2'], memberIds: ['tl', 'ld', 'tl2'], 'members.tl2': { name: 'TL2', email: 'tl2@t.nl', role: 'teamleider', perms: ALL, since: 1 } }));
 await t('teamleider haalt mede-teamleider niet uit team', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { 'members.tl2': deleteField(), memberIds: ['tl', 'ld'] })));
 await t('teamleider haalt zichzelf niet uit memberIds', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { memberIds: ['ld', 'tl2'] })));
+// members en memberIds lopen niet uiteen: geen onzichtbare leden, geen mede-teamleider uit beeld
+await t('teamleider voegt lid toe zonder members-regel: nee', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { memberIds: arrayUnion('ghost') })));
+await t('teamleider wist members-regel van mede-teamleider: nee', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { 'members.tl2': deleteField() })));
+await t('teamleider treedt af en zet iemand zonder members-regel in tlIds: nee', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { 'members.tl.role': 'leiding', memberIds: arrayUnion('ghost'), tlIds: ['tl2', 'ghost'] })));
+await t('beheerder voegt lid toe zonder members-regel: nee', () => assertFails(updateDoc(doc(as('ga', 'ga@t.nl'), 'speltakken/s1'), { memberIds: arrayUnion('ghost') })));
+await t('beheerder wist members-regel en laat memberIds staan: nee', () => assertFails(updateDoc(doc(as('ga', 'ga@t.nl'), 'speltakken/s1'), { 'members.ld': deleteField() })));
+await t('beheerder hernoemt speltak (team ongewijzigd)', () => assertSucceeds(updateDoc(doc(as('ga', 'ga@t.nl'), 'speltakken/s1'), { name: 'Scouts' })));
+await t('teamleider voegt lid toe met members-regel', () => assertSucceeds(updateDoc(doc(tl, 'speltakken/s1'), { 'members.nw2': { name: 'NW2', email: 'nw2@t.nl', role: 'leiding', perms: NONE, since: 1 }, memberIds: arrayUnion('nw2') })));
 await t('teamleider: leiding uit het team halen', () => assertSucceeds(updateDoc(doc(tl, 'speltakken/s1'), { 'members.ld': deleteField(), memberIds: arrayRemove('ld') })));
 await t('teamleider: aftreden naast mede-teamleider', () => assertSucceeds(updateDoc(doc(tl, 'speltakken/s1'), { 'members.tl.role': 'leiding', tlIds: ['tl2'] })));
 await t('mede-teamleider leest de speltak nog', () => assertSucceeds(getDoc(doc(as('tl2', 'tl2@t.nl'), 'speltakken/s1'))));
