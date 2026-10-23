@@ -41,7 +41,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const nav = useNavigate();
   const { pathname } = useLocation();
   const [menu, setMenu] = useState(false);
-  const acctBtn = useRef<HTMLButtonElement>(null), menuRef = useRef<HTMLDivElement>(null);
+  const acctBtn = useRef<HTMLButtonElement>(null), menuRef = useRef<HTMLDivElement>(null), barRef = useRef<HTMLElement>(null);
   // [pad, label, korte label voor smalle schermen]
   const links: [string, string, string][] = [['dashboard', 'Dashboard', 'Dashboard'], ['jaarplanning', 'Jaarplanning', 'Jaarplanning'], ['bouwer', 'Opkomstbouwer', 'Bouwer'], ['activiteiten', 'Activiteitenbank', 'Activiteiten'], ['opkomsten', 'Opkomstenbank', 'Opkomsten'], ['instellingen', team ? 'Team & instellingen' : 'Instellingen', team ? 'Team' : 'Instellingen']];
   // titel van het tabblad per pagina, bijv. "Jaarplanning · Welpen · Opkomstplanner"
@@ -53,6 +53,19 @@ export default function Layout({ children }: { children: ReactNode }) {
   useEffect(() => { if (!menu) return; const h = () => setMenu(false); document.addEventListener('click', h); return () => document.removeEventListener('click', h); }, [menu]);
   // menu open: focus op het eerste item (ook met de muis, zoals bij elk menu)
   useEffect(() => { if (menu) menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus(); }, [menu]);
+  // Hoogte van de vaste kopbalk (op een telefoon twee regels) als --barh: de pagina schuift met Tab en scrollIntoView
+  // dan nooit iets onder de balk (scroll-padding-top in styles.css). Alleen op pagina's met deze balk.
+  const hasBar = !denied && !loading && !!sp;
+  useEffect(() => {
+    const bar = barRef.current; if (!hasBar || !bar) return;
+    const root = document.documentElement;
+    // waar de balk vastzit (onder de inkeping van een telefoon) plus zijn hoogte
+    const set = () => root.style.setProperty('--barh', Math.ceil((parseFloat(getComputedStyle(bar).top) || 0) + bar.getBoundingClientRect().height) + 'px');
+    set();
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(set); ro?.observe(bar);
+    window.addEventListener('resize', set);
+    return () => { ro?.disconnect(); window.removeEventListener('resize', set); root.style.removeProperty('--barh'); };
+  }, [hasBar]);
   if (denied) return <div className="auth-wrap"><div className="card pad stack auth-card"><h2>Geen toegang</h2><p className="hint">Je bent geen lid van deze speltak, of hij bestaat niet meer.</p><button className="btn primary" onClick={() => { lastSpeltak.clearIf(sid); nav('/speltakken'); }}>Mijn speltakken</button></div></div>;
   const reload = <button className="btn primary" onClick={() => window.location.reload()}>Opnieuw laden</button>;
   // nog geen verbinding en de speltak staat niet in de cache: niet "Geen toegang" (en de laatste speltak niet vergeten); laadt vanzelf zodra er verbinding is
@@ -79,7 +92,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const item = { role: 'menuitem', tabIndex: -1 } as const;
   return <div className="app mx-auto">
     <a className="skiplink" href="#inhoud" onClick={ev => { ev.preventDefault(); document.getElementById('inhoud')?.focus(); }}>Naar inhoud</a>
-    <header className="bar flex flex-wrap items-center gap-x-6 gap-y-2">
+    <header ref={barRef} className="bar flex flex-wrap items-center gap-x-6 gap-y-2">
       <div className="brand flex items-center gap-2.5">
         {settings.logo ? <img id="brandLogo" src={settings.logo} alt="" /> : <TentTree size={26} strokeWidth={1.9} />}
         <span className="brand-txt"><span>Opkomstplanner</span><small>{sp.name && <b className="brand-sp">{sp.name}</b>}{sp.groupName && sp.name ? ' · ' : ''}{sp.groupName}</small></span>

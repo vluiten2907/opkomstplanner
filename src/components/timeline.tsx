@@ -2,9 +2,36 @@
  * Vaste delen van de tijdlijn, gedeeld door de opkomstbouwer en "Leiding indelen".
  * Slepen, klikken en de namenkolom blijven in hun eigen scherm.
  */
-import type { CSSProperties, ReactNode } from 'react';
+import { useLayoutEffect, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { fmtT } from '../lib/time';
 import { isKamp, type Block, type Opk } from '../lib/model';
+
+/** Focus naar het eerste element dat er is (na het renderen); bijv. een onderdeel in de tijdlijn of de knop + Onderdeel. */
+export const focusSoon = (...sels: string[]) => setTimeout(() => {
+  for (const q of sels) { const el = q ? document.querySelector<HTMLElement>(q) : null; if (el) { el.focus({ preventScroll: true }); el.scrollIntoView?.({ block: 'nearest' }); return; } }
+}, 0);
+
+/**
+ * Onderdelen op volgorde van tijd (zo leest een schermlezer en loopt Tab), daarbinnen links naar rechts.
+ * De plaats in beeld komt uit blkGeom, dus het beeld verandert niet.
+ */
+export function byTime(blocks: Block[], pos: Record<string, { lane: number }>) {
+  return [...blocks].sort((a, b) => a.start - b.start || (pos[a.id]?.lane ?? 0) - (pos[b.id]?.lane ?? 0));
+}
+
+/**
+ * Schuift een onderdeel met de focus naar een andere plek in de volgorde (slepen, andere begintijd), dan verplaatst React
+ * het in de pagina en raakt de browser de focus kwijt. Zet die dan terug op hetzelfde element.
+ */
+export function useKeepFocus(box: RefObject<HTMLElement | null>) {
+  // vóór het bijwerken van de pagina: wat had de focus (binnen de tijdlijn)?
+  const a = typeof document === 'undefined' ? null : document.activeElement as HTMLElement | null;
+  const had = a && box.current && box.current.contains(a) ? a : null;
+  useLayoutEffect(() => {
+    const now = document.activeElement;
+    if (had && had.isConnected && now !== had && (!now || now === document.body)) had.focus({ preventScroll: true });
+  });
+}
 
 /** Tijden naast de tijdlijn: elk kwartier (lange dagen: elk halfuur), plus begin en eind. */
 export function Ticks({ T0, T1, row }: { T0: number; T1: number; row: number }) {

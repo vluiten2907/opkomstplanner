@@ -13,7 +13,7 @@
   --paper: linear-gradient(165deg, #FFFFFF 0%, #F8F6F0 100%);
   --shadow: 0 0 0 2px var(--edge), 4px 4px 0 2px var(--hard);
   --shadow-up: 0 0 0 2px var(--edge), 8px 8px 0 2px var(--hard);
-  --hero-bg: var(--accent); --hero-ink: #FFFFFF;
+  --hero-bg: var(--accent); --hero-ink: #FFFFFF; --hero-pill: rgba(0,0,0,.18);
   --f-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --f-body: "Hanken Grotesk", "Segoe UI", system-ui, -apple-system, sans-serif;
   --f-mono: var(--f-body);
@@ -30,7 +30,7 @@
     --signal-ink: #E2A846; --ink-2: #96A1B0;
     --paper: linear-gradient(165deg, #1A2230 0%, #141B25 100%);
     --shadow: 0 0 0 1px var(--line); --shadow-up: 0 1px 2px rgba(0,0,0,.3), 0 14px 36px rgba(0,0,0,.45);
-    --hero-bg: color-mix(in srgb, var(--accent) 30%, #0E1411); --hero-ink: #F1F6F2;
+    --hero-bg: color-mix(in srgb, var(--accent) 30%, #0E1411); --hero-ink: #F1F6F2; --hero-pill: rgba(255,255,255,.16);
     color-scheme: dark;
   }
 }
@@ -42,7 +42,7 @@
   --signal-ink: #E2A846; --ink-2: #96A1B0;
   --paper: linear-gradient(165deg, #1A2230 0%, #141B25 100%);
   --shadow: 0 0 0 1px var(--line); --shadow-up: 0 1px 2px rgba(0,0,0,.3), 0 14px 36px rgba(0,0,0,.45);
-  --hero-bg: color-mix(in srgb, var(--accent) 30%, #0E1411); --hero-ink: #F1F6F2;
+  --hero-bg: color-mix(in srgb, var(--accent) 30%, #0E1411); --hero-ink: #F1F6F2; --hero-pill: rgba(255,255,255,.16);
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -69,6 +69,9 @@ p { margin: 0; }
   display: flex; flex-wrap: wrap; align-items: center;
 }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 31; background: var(--bg); }
+/* Tab en scrollIntoView zetten niets onder de vaste kopbalk: --barh is zijn onderkant (Layout meet hem, ook als hij op een telefoon
+   over twee regels loopt); pagina's zonder die balk hebben alleen een kleine marge */
+html { scroll-padding-top: calc(var(--barh, 0px) + 12px); }
 .brand { display: flex; align-items: center; gap: 8px; }
 .brand svg { width: 26px; height: 26px; }
 .nav { display: flex; overflow-x: auto; flex: 1 1 auto; min-width: 0; scrollbar-width: none; border-radius: 12px; }
@@ -552,15 +555,18 @@ h3 { font-size: 16.5px; }
 /* Komende opkomst: het ene opvallende vlak */
 .hero { color: var(--hero-ink);
   --surface: color-mix(in srgb, var(--hero-bg) 82%, #fff); --band: rgba(255,255,255,.09); --sunk: rgba(255,255,255,.14); --line: rgba(255,255,255,.16);
-  --ink: var(--hero-ink); --muted: rgba(255,255,255,.72); --accent: #FFFFFF; --accent-ink: #13281D; --accent-soft: rgba(255,255,255,.16);
+  --ink: var(--hero-ink); --muted: rgba(255,255,255,.9); --accent: #FFFFFF; --accent-ink: #13281D; --accent-soft: rgba(255,255,255,.16);
   --signal: #FFD58A; --signal-ink: #FFD58A; --good: #B8F0CF; --danger: #FFB3A8; }
 .hero .hero-date { background: rgba(255,255,255,.12); color: #fff; }
 .hero .hero-date b { font-family: var(--f-display); font-weight: 800; font-size: 46px; letter-spacing: -.03em; }
 .hero .hero-date span { text-transform: none; letter-spacing: 0; font-weight: 600; }
-.hero .prog li.band { background: rgba(255,214,140,.14); color: #FFE2AE; }
+.hero .prog li.band { background: rgba(255,214,140,.1); color: #FFF1DA; }
 .hero .strip span.gap { background: rgba(255,255,255,.14); }
-.hero .pchip, .hero .ocat { background: rgba(255,255,255,.16); color: #fff; }
-.hero .pill.acc { background: rgba(255,255,255,.18); color: #fff; }
+/* labels op de kaart van de komende opkomst: wit op een donkere waas (licht) of lichte waas (donker), bij elk accent ≥ 4,5:1 */
+.hero .pchip, .hero .ocat { background: var(--hero-pill); color: #fff; }
+/* status op de kaart (Morgen, 5 min vrij, aandachtspunten, klaar): een donkere waas, zodat de tekst bij elk accent leesbaar is */
+.hero .pill { background: var(--hero-pill); }
+.hero .pill.acc, .hero .pill.neutral { color: #fff; }
 .hero .empty { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.25); }
 
 /* Lijsten, tabellen, kalender: minder hoofdletters */
@@ -666,7 +672,7 @@ aside .notice .ntext { flex: none; }
 .patch b { font-size: 40px !important; line-height: 1 !important; letter-spacing: -.04em; }
 .patch span { font-size: 11.5px !important; font-weight: 800 !important; opacity: 1 !important; }
 .hero-date.patch.kamp { background: #C9B8F2 !important; box-shadow: 0 0 0 3px var(--hard), inset 0 0 0 7px #C9B8F2, inset 0 0 0 9px var(--hard); }
-.hero .people > div, .hero .prog li { background: rgba(255,255,255,.07); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+.hero .people > div, .hero .prog li { background: rgba(255,255,255,.05); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
 @media (prefers-reduced-motion: reduce) { .btn, .lift, .nextitem, .lib { transition: none !important; } .btn:hover, .btn:active, .lift:hover { transform: none !important; } }
 @media (max-width: 760px) { .patch { width: 84px; height: 84px; } .patch b { font-size: 32px !important; } }
 /* telefoon: de datum-sticker hangt linksboven over de rand; titel, feiten en omschrijving krijgen de hele breedte */
@@ -712,6 +718,9 @@ fieldset:disabled .btn, fieldset:disabled .acc, fieldset:disabled .sw, fieldset:
 /* Compacte tijdlijn in "Opkomst overnemen" */
 .tk-tl { font-size: 13px; }
 .tk-tl .blk { cursor: pointer; }
+/* Leiding indelen: de titel is de knop om een onderdeel te kiezen (het onderdeel zelf is een groep met naamknoppen) */
+.tk-pick { display: block; max-width: 100%; margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.tk-pick:focus-visible { outline-offset: 1px; border-radius: 4px; }
 .tk-tl .blk .names > * { margin: 0 4px 4px 0; }
 /* bij Leiding indelen staat de prullenbak alleen bij het gekozen onderdeel */
 .tk-tl .blk:not(.sel) .c2::before { content: none; }
@@ -921,7 +930,6 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
 .plan-fab { position: fixed; z-index: 35; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
 /* een melding onderin: de knop schuift erboven */
 body:has(.toast.show) .plan-fab { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
-@media (max-width: 900px) { .side { scroll-margin-top: 112px; } }
 /* net ingepland of gesleept: even een rand eromheen (zoals een rij in de jaarplanning) */
 .blk.flash { box-shadow: inset 4px 0 0 var(--cc), 0 0 0 3px var(--accent), 4px 4px 0 2px var(--hard); z-index: 3; }
 

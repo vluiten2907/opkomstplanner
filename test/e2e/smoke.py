@@ -2105,6 +2105,135 @@ with sync_playwright() as p:
     check(q.locator('.toolbar').count() == 0 and q.locator('aside.side').count() == 0 and q.locator('main .btn:has-text("Nieuwe opkomst")').count() == 1
           and q.locator('h1').first.inner_text() == 'Opkomstenbank' and q.locator('.subline').inner_text() == 'Nog geen opkomsten', 'lege opkomstenbank (oefenen): uitleg met één knop')
     qc.close()
+    # --- toegankelijkheid (eigen oefendata): vaste kopbalk, volgorde in de tijdlijn, Ctrl+Z, Leiding indelen met het toetsenbord, controle, contrast
+    kc = b.new_context(viewport={'width': 390, 'height': 844}, locale='nl-NL')
+    kc.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())
+    k = kc.new_page(); k.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+    k.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' and 'ERR_FAILED' not in m.text else None)
+    kw = lambda ms=400: k.wait_for_timeout(ms)
+    KACT = "(() => { const a = document.activeElement; return a ? (a.id || a.dataset.bid || a.className || a.tagName) : null; })()"
+    # focus komt nooit (deels) onder de vaste kopbalk, ook niet als die op een telefoon twee regels hoog is: Shift+Tab van onder naar boven
+    UNDER = """(() => { const a = document.activeElement, bar = document.querySelector('header.bar');
+      if (!a || !bar || a === document.body || bar.contains(a) || a.classList.contains('skiplink')) return '';
+      const r = a.getBoundingClientRect(), t = bar.getBoundingClientRect().bottom;
+      return r.height && r.top < t - 1 ? (a.getAttribute('aria-label') || a.textContent || a.tagName).trim().slice(0, 30) + ' ' + Math.round(r.top) + '-' + Math.round(r.bottom) + '/' + Math.round(t) : ''; })()"""
+    def tab_under(path, steps):
+        k.goto(BASE + '/s/oefen/' + path); kw(1200)
+        k.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)"); kw(200)
+        k.evaluate("""(() => { const l = [...document.querySelectorAll('main a[href], main button:not([disabled]), main input:not([disabled]), main select:not([disabled]), main textarea, main [tabindex="0"]')].filter(e => e.getClientRects().length); l[l.length - 1].focus(); })()""")
+        bad = []
+        for _ in range(steps):
+            k.keyboard.press('Shift+Tab'); u = k.evaluate(UNDER)
+            if u: bad.append(u)
+        return bad
+    bad = tab_under('jaarplanning', 140)
+    bh = k.evaluate("(() => { const b = document.querySelector('header.bar').getBoundingClientRect(); return [getComputedStyle(document.documentElement).getPropertyValue('--barh'), Math.ceil(b.height)]; })()")
+    check(not bad and bh[1] > 90 and bh[0] == f'{bh[1]}px', f'jaarplanning mobiel: met Shift+Tab komt niets met focus onder de kopbalk van twee regels ({bh}; {bad[:3]})')
+    k.set_viewport_size({'width': 1360, 'height': 900}); kw(300)
+    bad = tab_under('bouwer/opk-jungle', 90)
+    check(not bad and k.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--barh')") == '64px', f'bouwer breed: met Shift+Tab komt niets met focus onder de kopbalk ({bad[:3]})')
+    # tijdlijn: onderdelen in de pagina op volgorde van tijd (Tab en schermlezer); de prullenbak zit niet in de Tab-volgorde
+    when = lambda sel: k.eval_on_selector_all(sel, "els => els.map(e => e.textContent.slice(0, 5))")
+    ktitles = lambda sel='.lanes .blk .t': k.eval_on_selector_all(sel, 'els => els.map(e => e.textContent)')
+    ws = when('.lanes .blk .when')
+    bd = k.evaluate("[...document.querySelectorAll('.lanes .bdel')].map(b => b.tabIndex + '|' + b.getAttribute('aria-hidden'))")
+    check(len(ws) >= 5 and ws == sorted(ws) and bd and all(x == '-1|true' for x in bd), f'bouwer: onderdelen in de pagina op volgorde van tijd, prullenbak niet in de Tab-volgorde ({ws}, {set(bd)})')
+    k.locator('.lanes .blk').first.focus(); k.keyboard.press('Tab')
+    check(k.evaluate("[...document.querySelectorAll('.lanes .blk')].indexOf(document.activeElement)") == 1, 'bouwer: Tab van een onderdeel gaat naar het volgende onderdeel (niet naar een prullenbak)')
+    # slepen naar later (voorbij Ranja drinken): de volgorde in de pagina volgt, en het onderdeel houdt de focus
+    krow = k.evaluate("parseFloat(document.querySelector('.lanes').style.getPropertyValue('--row')) || 24")
+    kl = k.locator('.lanes .blk:has-text("Knopen leren")'); kid = kl.get_attribute('data-bid'); kl.scroll_into_view_if_needed(); bb = kl.bounding_box()
+    x, y = bb['x'] + 60, bb['y'] + 12
+    t0 = ktitles(); k.mouse.move(x, y); k.mouse.down()
+    for i in range(1, 11): k.mouse.move(x, y + 9 * krow * i / 10); kw(30)
+    k.mouse.up(); kw(500)
+    t1, ws = ktitles(), when('.lanes .blk .when')
+    check(t0.index('Knopen leren') < t0.index('Ranja drinken') and t1.index('Knopen leren') > t1.index('Ranja drinken') and ws == sorted(ws) and k.evaluate(KACT) == kid,
+          f'bouwer: na slepen voorbij een ander onderdeel klopt de volgorde weer en houdt het onderdeel de focus ({t1})')
+    # controle: aandachtspunten (zoveel als de teller) en wat nog aangevuld kan worden apart; het niveau staat in de kop, niet alleen in de kleur
+    k.click('.tabs >> text=Controle'); kw(300)
+    cnt = int(k.locator('.summary button.stat b').inner_text())
+    groups = k.evaluate("[...document.querySelectorAll('.side .issues')].map(u => [u.previousElementSibling.textContent, [...u.children].map(li => li.className)])")
+    check(cnt >= 1 and len(groups) == 2 and groups[0][0] == 'Aandachtspunten' and groups[0][1] == ['warn'] * cnt and groups[1][0] == 'Nog aanvullen' and set(groups[1][1]) == {'info'},
+          f'controle: {cnt} aandachtspunt(en) onder Aandachtspunten, de rest onder Nog aanvullen ({groups})')
+    k.locator('.side').screenshot(path=f'{OUT}/34-controle-niveaus.png')
+    # Ctrl+Z na Delete zet het onderdeel terug; in een tekstveld blijft Ctrl+Z van de browser (je tekst)
+    n0 = k.locator('.lanes .blk').count()
+    k.locator('.lanes .blk:has-text("Junglejacht")').focus(); k.keyboard.press('Delete'); kw(300)
+    ub = k.locator('.toast.show button:has-text("Ongedaan maken")'); ks = ub.get_attribute('aria-keyshortcuts') if ub.count() else None
+    k.locator('#om-title').focus(); k.keyboard.press('Control+z'); kw(300)
+    in_text = k.locator('.lanes .blk').count() == n0 - 1 and ub.count() == 1
+    k.locator('.lanes .blk').first.focus(); k.keyboard.press('Control+z'); kw(500)
+    check(ks == 'Control+Z' and in_text and k.locator('.lanes .blk').count() == n0 and k.locator('.lanes .blk:has-text("Junglejacht")').count() == 1 and k.locator('.toast.show').count() == 0,
+          'Ctrl+Z na Delete zet het onderdeel terug (niet vanuit een tekstveld)')
+    # een melding van de pagina zet niets terug terwijl er een venster open staat; na het sluiten wel
+    k.locator('.lanes .blk:has-text("Junglejacht")').focus(); k.keyboard.press('Delete'); kw(300)
+    k.click('.ctx >> text=Leiding indelen'); kw(500); k.keyboard.press('Control+z'); kw(300)
+    stays = k.locator('.modal .tk-tl .blk:has-text("Junglejacht")').count() == 0 and ub.count() == 1
+    k.keyboard.press('Escape'); kw(300); k.keyboard.press('Control+z'); kw(500)
+    check(stays and k.locator('.modal').count() == 0 and k.locator('.lanes .blk:has-text("Junglejacht")').count() == 1, 'Ctrl+Z: niet vanuit een ander venster, wel weer na het sluiten ervan')
+    # Leiding indelen: elk onderdeel is een groep met een titelknop (geen knop in een knop), op volgorde van tijd
+    k.click('.ctx >> text=Leiding indelen'); kw(500)
+    grp = k.evaluate("[...document.querySelectorAll('.modal .tk-tl .blk')].map(b => [b.getAttribute('role'), b.hasAttribute('tabindex'), !!b.querySelector('button.tk-pick'), b.querySelector('.when').textContent.slice(0, 5)])")
+    nested = k.evaluate("document.querySelectorAll('.modal [role=button] button, .modal button button').length")
+    check(grp and all(g[0] == 'group' and not g[1] and g[2] for g in grp) and [g[3] for g in grp] == sorted(g[3] for g in grp) and nested == 0,
+          f'leiding indelen: onderdelen zijn groepen met een titelknop, op volgorde van tijd, geen knop in een knop ({[g[3] for g in grp]})')
+    tk_t = ktitles('.modal .tk-tl .blk .t'); nxt = tk_t[tk_t.index('Junglejacht') + 1]
+    jp = k.locator('.modal .tk-tl .blk:has-text("Junglejacht") .tk-pick'); jp.focus(); k.keyboard.press('Enter'); kw(300)
+    f1 = k.evaluate("(() => { const a = document.activeElement; return [!!a.closest('.tk-sel'), a.getAttribute('aria-label')]; })()"); ex = jp.get_attribute('aria-expanded')
+    k.screenshot(path=f'{OUT}/35-indelen-toetsenbord.png')
+    k.locator('.tk-sel button:has-text("Sluiten")').focus(); k.keyboard.press('Enter'); kw(300)
+    f2 = k.evaluate("document.activeElement.classList.contains('tk-pick') && document.activeElement.textContent")
+    check(f1 == [True, 'Begin uur'] and ex == 'true' and f2 == 'Junglejacht' and k.locator('.tk-sel').count() == 0,
+          f'leiding indelen met het toetsenbord: Enter op een onderdeel zet de focus op Begin, Sluiten zet hem terug op het onderdeel ({f1}, {f2})')
+    k.screenshot(path=f'{OUT}/35b-indelen-focus-terug.png')
+    k.keyboard.press('Space'); kw(300)
+    k.locator('.tk-sel button:has-text("Verwijderen")').focus(); k.keyboard.press('Enter'); kw(300)
+    f3 = k.evaluate("document.activeElement.classList.contains('tk-pick') ? document.activeElement.textContent : document.activeElement.tagName")
+    k.keyboard.press('Control+z'); kw(600)
+    check(f3 == nxt and k.locator('.modal .tk-tl .blk:has-text("Junglejacht")').count() == 1, f'leiding indelen: na Verwijderen de focus op het volgende onderdeel ({f3}), Ctrl+Z in het venster zet het terug')
+    k.locator('.modal .tk-tl .blk:has-text("Levend stratego") .when').click(); kw(300)
+    check(k.locator('.modal .tk-tl .blk.sel:has-text("Levend stratego")').count() == 1 and not k.evaluate("!!document.activeElement.closest('.tk-sel')"),
+          'leiding indelen: kiezen met de muis laat de focus staan (het beeld schuift niet weg van de namen)')
+    k.keyboard.press('Escape'); kw(300)
+    # dashboard: na Verstuurd verdwijnt de brief; de focus gaat naar de volgende brief of de kalender, niet kwijt
+    k.goto(BASE + '/s/oefen/dashboard'); kw(1200)
+    nts = k.locator('.notice').count()
+    k.locator('.notice button:has-text("Verstuurd")').first.focus(); k.keyboard.press('Enter'); kw(400)
+    fa = k.evaluate("(() => { const a = document.activeElement; return a.id || (a.closest('.notice') ? 'notice' : a.tagName); })()")
+    k.keyboard.press('Control+z'); kw(500)
+    check(nts >= 1 and fa == ('notice' if nts > 1 else 'dash-cal') and k.locator('.notice').count() == nts, f'dashboard: na Verstuurd blijft de focus in de buurt ({fa}), Ctrl+Z zet de brief terug')
+    # contrast bij elk accent: alle tekst op de kaart van de komende opkomst (ook elke soort status) en Ingepland op de pagina ≥ 4,5:1
+    LOW = """() => {
+      const P = s => { let m = s.match(/rgba?\\(([^)]+)\\)/), f = 1; if (!m) { m = s.match(/color\\(srgb ([^)]+)\\)/); f = 255; } if (!m) return null;
+        const p = m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number); return [p[0] * f, p[1] * f, p[2] * f, p.length > 3 ? p[3] : 1]; };
+      const over = (t, u) => [0, 1, 2].map(i => t[i] * t[3] + u[i] * (1 - t[3])).concat(1);
+      const L = c => { const f = v => (v /= 255) <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; return .2126 * f(c[0]) + .7152 * f(c[1]) + .0722 * f(c[2]); };
+      const cr = (a, u) => (Math.max(L(a), L(u)) + .05) / (Math.min(L(a), L(u)) + .05);
+      const hero = document.querySelector('.hero'), row = hero.querySelector('.hero-eyebrow'), out = [];
+      for (const c of ['warn', 'good', 'neutral', 'acc']) { const s = document.createElement('span'); s.className = 'pill tmp-pill ' + c; s.textContent = 'Test ' + c; row.appendChild(s); }
+      const tw = document.createTreeWalker(hero, NodeFilter.SHOW_TEXT);
+      for (let t; (t = tw.nextNode());) {
+        const e = t.parentElement; if (!t.textContent.trim() || !e.getClientRects().length || e.closest('.hero-date, .btn.primary')) continue;
+        let bg = P(getComputedStyle(hero).backgroundColor), op = 1; const chain = [];
+        for (let n = e; n !== hero; n = n.parentElement) chain.unshift(n);
+        for (const n of chain) { const s = getComputedStyle(n), c = P(s.backgroundColor); if (c && c[3]) bg = over(c, bg); op *= +s.opacity; }
+        const s = getComputedStyle(e), c = P(s.color), r = cr(over([c[0], c[1], c[2], c[3] * op], bg), bg);
+        if (r < (parseFloat(s.fontSize) >= 24 ? 3 : 4.5)) out.push(t.textContent.trim().slice(0, 20) + ' ' + r.toFixed(2));
+      }
+      const m = document.createElement('span'); m.className = 'pill acc tmp-pill'; m.textContent = 'Ingepland'; document.querySelector('main').appendChild(m);
+      const ms = getComputedStyle(m), mr = cr(P(ms.color), P(ms.backgroundColor)); if (mr < 4.5) out.push('Ingepland (pagina) ' + mr.toFixed(2));
+      document.querySelectorAll('.tmp-pill').forEach(x => x.remove());
+      return out; }"""
+    low = {}
+    for acc in ['Marine', 'Groen', 'Blauw', 'Rood', 'Paars', 'Oranje', 'Grijs']:
+        k.click('header.bar nav a[href$="/instellingen"]'); kw(500); k.click(f'.accents .acc:has-text("{acc}")'); kw(300)
+        k.click('header.bar nav a[href$="/dashboard"]'); kw(600)
+        r = k.evaluate(LOW)
+        if r: low[acc] = r[:4]
+        if acc == 'Oranje': k.screenshot(path=f'{OUT}/36b-dashboard-oranje.png')
+    check(not low, f'contrast: tekst en status op de kaart van de komende opkomst en Ingepland ≥ 4,5:1 bij elk accent ({low})')
+    kc.close()
     # aanraakscherm: grotere naamknoppen, geen prullenbak op een blokje van 5 minuten, groter raakvlak op het dashboard
     tc = b.new_context(viewport={'width': 390, 'height': 844}, locale='nl-NL', has_touch=True, is_mobile=True)
     tc.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())
@@ -2112,6 +2241,13 @@ with sync_playwright() as p:
     tq.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' and 'ERR_FAILED' not in m.text else None)
     tq.goto(BASE + '/s/oefen/bouwer/opk-jungle'); tq.wait_for_timeout(1200)
     # prullenbak alleen op het gekozen onderdeel: een tik rechtsboven op een ander onderdeel kiest dat onderdeel en verwijdert niets
+    # met een toetsenbord (bijv. een iPad) of schermlezer: niets in de Tab-volgorde is onzichtbaar, ook de verborgen prullenbak niet
+    inv = tq.evaluate("""(() => { const op = e => { let o = 1; for (let n = e; n; n = n.parentElement) o *= +getComputedStyle(n).opacity; return o; };
+      return [...document.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]')]
+        .filter(e => e.tabIndex >= 0 && e.getClientRects().length && !e.closest('[inert]') && op(e) < .05).map(e => e.className + ':' + (e.getAttribute('aria-label') || e.textContent).trim().slice(0, 30)); })()""")
+    tq.locator('.lanes .blk[aria-label^="Junglejacht"]').focus(); tq.keyboard.press('Tab')
+    tb = tq.evaluate("document.activeElement.className")
+    check(not inv and 'bdel' not in tb and 'blk' in tb, f'aanraakscherm: niets in de Tab-volgorde is onzichtbaar; Tab van een onderdeel gaat naar het volgende, niet naar een verborgen prullenbak ({inv[:3]}, {tb})')
     bd = tq.evaluate("[...document.querySelectorAll('.lanes .blk:not(.sel) .bdel')].map(b => getComputedStyle(b).opacity + '|' + getComputedStyle(b).pointerEvents)")
     n_blk = tq.locator('.lanes .blk').count()
     tq.evaluate("document.querySelector('.lanes .blk[aria-label^=\"Levend stratego\"]').scrollIntoView({ block: 'center' })"); tq.wait_for_timeout(200)

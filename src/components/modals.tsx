@@ -7,7 +7,7 @@ import { Modal, TimePicker, Field, Chip, ConfirmBtn, useMedia } from './ui';
 import { PickOpk } from './shared';
 import { addDays, clone, fmtLong, fmtNL, fmtRange, parseNL, parseRange, tidyNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, plural, todayISO } from '../lib/time';
 import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, defaultTimes, entryTimes, firstFree, fitsTopic, fixedBlocks, isKamp, kampLength, kampMismatch, kampMismatchNote, kampStart, lanesLayout, minNeed, newEntry, newKamp, newOpk, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
-import { Ticks, PrepZones, blkGeom, blkLabel, lanesStyle } from './timeline';
+import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from './timeline';
 import type { NameSpec } from '../store/modal';
 
 const NO_UNLINK = 'Hier hangt een opkomst aan. Ontkoppelen kan alleen met het recht Opkomsten of Banken.';
@@ -270,16 +270,32 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
     const t = setTimeout(() => selRef.current?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }), 30);
     return () => clearTimeout(t);
   }, [selId]);
+  // onderdelen staan op volgorde van tijd; schuift er een met de focus (andere begintijd), dan houdt het de focus
+  const progRef = useRef<HTMLDivElement>(null);
+  useKeepFocus(progRef);
   const o = getO(oid); if (!o) return null;
   const e = entryOfOpk(o), present = e ? presentForEntry(e, o) : [...leaders];
   const A = analyze(o, present, leaders), need = minNeed(o);
   const upd = (fn: (o: Opk) => void) => { if (ro) return; fn(o); if (isKamp(o)) syncKamp(o); saveOpk({ ...o }); bump(x => x + 1); };
   const containers = isKamp(o) ? o.days.map((d, i) => ({ d, label: dayTitle(o, i, e ? addDays(e.date, i) : null), lo: d.start, hi: d.end })) : [{ d: o as unknown as Day, label: '', lo: o.start - (o.prep || 0), hi: o.end + (o.post || 0) }];
   const toggle = (b: Block, n: string) => upd(() => { b.names = b.names.includes(n) ? b.names.filter(x => x !== n) : [...b.names, n]; });
+  const pickSel = (id: string) => `.modal .tk-tl [data-bid="${CSS.escape(id)}"] .tk-pick`;
+  // onderdeel kiezen of weer dichtdoen; met het toetsenbord (kb) gaat de focus naar Begin in het paneel eronder,
+  // met de muis of een tik blijft hij staan (anders schuift het beeld weg van de namen)
+  const pick = (b: Block, kb: boolean) => {
+    if (ro) return;
+    const on = b.id !== selId; setSelId(on ? b.id : null);
+    if (on && kb) setTimeout(() => selRef.current?.querySelector<HTMLElement>('select')?.focus({ preventScroll: true }), 40);
+  };
+  // paneel dicht: de focus terug naar het onderdeel (niet kwijt naar het begin van het venster)
+  const closeSel = () => { const id = selId; setSelId(null); if (id) focusSoon(pickSel(id)); };
   const delBlock = (C: typeof containers[0], b: Block) => {
     if (ro) return;
     const at = C.d.blocks.indexOf(b), dayId = isKamp(o) ? C.d.id : null;
+    // daarna de focus op het volgende onderdeel (of het vorige), anders op de keuze van een activiteit of Klaar
+    const rest = C.d.blocks.filter(x => x !== b).sort((x, y) => x.start - y.start), nb = rest.find(x => x.start >= b.start) || rest[rest.length - 1];
     upd(() => { C.d.blocks = C.d.blocks.filter(x => x !== b); }); setSelId(null);
+    focusSoon(nb ? pickSel(nb.id) : '', '.modal select[aria-label="Activiteit om toe te voegen"]', '.modal .btn.primary');
     toast(`"${b.title || 'Naamloos onderdeel'}" verwijderd`, { label: 'Ongedaan maken', fn: () => {
       // de nieuwste versie van de opkomst (na het opslaan is dat een nieuw object), ook als dit venster al dicht is
       const cur = latestO(oid); if (!cur) return;
@@ -296,14 +312,16 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
       <Ticks T0={T0} T1={T1} row={ROW} />
       <div className="lanes" style={lanesStyle(T0, T1, ROW)}>
         <PrepZones o={o} T0={T0} row={ROW} />
-        {C.d.blocks.filter(b => b.start + b.dur > T0 && b.start < T1).map(b => {
+        {byTime(C.d.blocks, pos).filter(b => b.start + b.dur > T0 && b.start < T1).map(b => {
           const g = blkGeom(pos[b.id], b, T0, ROW, b.id === selId), c = catOf(settings, b.cat);
-          const short = !!b.minLeaders && b.names.length < b.minLeaders, extra = b.names.filter(n => !leaders.includes(n));
-          return <div key={b.id} className={g.cls.join(' ')} role="button" tabIndex={0} aria-label={blkLabel(b)}
-            style={{ ['--c' as any]: c.color, ...g.style }}
-            onClick={() => { if (!ro) setSelId(b.id === selId ? null : b.id); }} onKeyDown={ev => { if (!ro && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); setSelId(b.id === selId ? null : b.id); } }}>
+          const short = !!b.minLeaders && b.names.length < b.minLeaders, extra = b.names.filter(n => !leaders.includes(n)), on = b.id === selId;
+          // een groep (geen knop): de namen erin zijn eigen knoppen. Kiezen gaat met de titelknop, of met een klik of tik op het onderdeel.
+          return <div key={b.id} className={g.cls.join(' ')} role="group" aria-label={blkLabel(b)} data-bid={b.id}
+            style={{ ['--c' as any]: c.color, ...g.style }} onClick={() => pick(b, false)}>
             <div className="cols3">
-              <div className="c1"><div className="t">{b.title || 'Naamloos onderdeel'}</div>
+              <div className="c1">{ro ? <div className="t">{b.title || 'Naamloos onderdeel'}</div>
+                : <button type="button" className="t tk-pick" aria-expanded={on} aria-controls={on ? 'tk-sel' : undefined} title="Tijd aanpassen, alle leiding of weghalen"
+                  onClick={ev => { ev.stopPropagation(); pick(b, ev.detail === 0); }}>{b.title || 'Naamloos onderdeel'}</button>}
                 <div className="when">{fmtT(b.start)}–{fmtT(b.start + b.dur)} · {fmtDur(b.dur)}</div>
                 {b.short && <div className="sh">{b.short}</div>}
                 <div className="locin">{b.location}</div>
@@ -317,7 +335,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
               </div></div>
             </div>
             {/* alleen bij het gekozen onderdeel: zo tik je op een telefoon niet per ongeluk op de prullenbak in plaats van op een naam */}
-            {b.id === selId && <button className="bdel" onClick={ev => { ev.stopPropagation(); delBlock(C, b); }} title="Onderdeel verwijderen" aria-label="Onderdeel verwijderen"><Trash2 size={14} /></button>}
+            {on && <button className="bdel" onClick={ev => { ev.stopPropagation(); delBlock(C, b); }} title="Onderdeel verwijderen" aria-label={`${b.title || 'Naamloos onderdeel'} verwijderen`}><Trash2 size={14} /></button>}
           </div>;
         })}
       </div>
@@ -329,7 +347,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
     const b = C.d.blocks.find(x => x.id === selId); if (!b) return null;
     const durs: number[] = []; for (let d = 5; d <= Math.max(C.hi - b.start, b.dur); d += 5) durs.push(d);
     const who = leaders.filter(n => present.includes(n) || b.names.includes(n)), extra = b.names.filter(n => !leaders.includes(n));
-    return <div className="tk-sel" ref={selRef}><b>{b.title || 'Naamloos onderdeel'} <span className="hint">{fmtT(b.start)}–{fmtT(b.start + b.dur)}</span></b>
+    return <div className="tk-sel" id="tk-sel" ref={selRef}><b>{b.title || 'Naamloos onderdeel'} <span className="hint">{fmtT(b.start)}–{fmtT(b.start + b.dur)}</span></b>
       <div className="field tk-who"><span className="lbl">Leiding bij dit onderdeel</span>
         {who.length ? <div className="row" style={{ gap: 6 }}>{who.map(n => { const away = !present.includes(n);
           return <Chip key={n} className={away || A.clashes.has(b.id + '|' + n) ? 'clash' : ''} on={b.names.includes(n)} title={away ? 'Afwezig: tik om weg te halen' : undefined} onClick={() => toggle(b, n)}>{n}{away ? ' (afwezig)' : ''}</Chip>; })}</div>
@@ -337,7 +355,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
         {extra.length > 0 && <p className="hint">Ook ingedeeld: {extra.join(', ')}</p>}</div>
       <Field label="Begin"><TimePicker value={b.start} onChange={v => upd(() => { b.start = v; b.dur = Math.max(5, Math.min(b.dur, C.hi - b.start)); })} from={C.lo} to={C.hi - 5} extra /></Field>
       <Field label="Duur"><select className="inp" value={b.dur} onChange={ev => upd(() => { b.dur = +ev.target.value; })}>{durs.map(d => <option key={d} value={d}>{fmtDur(d)}</option>)}</select></Field>
-      <div className="row"><button className="btn sm ghost" onClick={() => delBlock(C, b)}><Trash2 size={14} />Verwijderen</button><button className="btn sm ghost" onClick={() => setSelId(null)}>Sluiten</button></div></div>;
+      <div className="row"><button className="btn sm ghost" onClick={() => delBlock(C, b)}><Trash2 size={14} />Verwijderen</button><button className="btn sm ghost" onClick={closeSel}>Sluiten</button></div></div>;
   };
   const addLib = () => {
     const l = lib.find(x => x.id === libId) || lib[0]; if (!l) return;
@@ -372,7 +390,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
     <div className="row statrow"><span className="stat">Minimaal leiding<b>{need}</b></span><span className={'stat' + (need > present.length ? ' warnc' : '')}>Aanwezig<b>{present.length}</b></span><span className={'stat' + (A.warn ? ' warnc' : '')}>Aandachtspunten<b>{A.warn}</b></span></div>
     {A.warn > 0 && <ul className="issues">{A.issues.filter(i => i.lvl === 'warn').slice(0, 6).map((i, k) => <li key={k} className="warn"><i /><span>{i.text}</span></li>)}</ul>}
     <p className="hint">{ro ? 'Alleen bekijken: leiding indelen en het programma aanpassen kan met het recht Opkomsten.' : 'Klik op een naam om die in te delen. Klik op een onderdeel voor alle leiding, de tijd of om het weg te halen.'}</p>
-    <div className="tk-prog">{containers.map(C => <div key={C.d.id} className="stack" style={{ gap: 8 }}>
+    <div className="tk-prog" ref={progRef}>{containers.map(C => <div key={C.d.id} className="stack" style={{ gap: 8 }}>
       {C.label && <h3 className="tk-day">{C.label} <span className="hint">{fmtT(C.d.start)}–{fmtT(C.d.end)}</span></h3>}
       {C.d.blocks.length ? timeline(C) : <p className="hint">Nog geen onderdelen.</p>}
       {selEdit(C)}

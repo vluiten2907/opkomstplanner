@@ -1,18 +1,34 @@
 import { Children, cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from 'react';
 import { X } from 'lucide-react';
-import { useToast } from '../store/toast';
+import { isUndo, useToast } from '../store/toast';
 import { pad2 } from '../lib/time';
+
+const MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 
 export function Toast() {
   const { msg, action, n, hide, hold } = useToast();
-  const act = msg ? action : null;
+  const act = msg ? action : null, undo = isUndo(act) ? act : null;
   // muis erop of focus op de knop: de melding wacht (nieuwe melding: opnieuw beginnen)
   const on = useRef({ hover: false, focus: false });
   useEffect(() => { on.current = { hover: false, focus: false }; }, [n]);
   const set = (k: 'hover' | 'focus', v: boolean) => { on.current[k] = v; hold(on.current.hover || on.current.focus); };
+  // Ctrl+Z (⌘Z) doet hetzelfde als "Ongedaan maken": met het toetsenbord hoef je niet eerst naar de melding onderin.
+  // Niet in een tekstveld (daar zet de browser je tekst terug) en niet vanuit een ander venster dan waar de melding vandaan kwam.
+  useEffect(() => {
+    if (!undo) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.altKey || e.shiftKey || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
+      const t = e.target instanceof Element ? e.target : null;
+      if (t?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+      const m = document.querySelector('.modal'); if (m && m !== useToast.getState().scope) return;
+      e.preventDefault(); hide(); undo.fn();
+    };
+    document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h);
+  }, [undo, hide]);
   return <div className={'toast' + (msg ? ' show' : '') + (act ? ' has-act' : '')} role="status" aria-live="polite"
     onMouseEnter={() => set('hover', true)} onMouseLeave={() => set('hover', false)} onFocus={() => set('focus', true)} onBlur={() => set('focus', false)}>
-    <span>{msg}</span>{act && <button type="button" onClick={() => { hide(); act.fn(); }}>{act.label}</button>}
+    <span>{msg}</span>{act && <button type="button" onClick={() => { hide(); act.fn(); }}
+      title={undo ? (MAC ? 'Of ⌘Z' : 'Of Ctrl+Z') : undefined} aria-keyshortcuts={undo ? (MAC ? 'Meta+Z' : 'Control+Z') : undefined}>{act.label}</button>}
   </div>;
 }
 

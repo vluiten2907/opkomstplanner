@@ -57,7 +57,7 @@ export const ACCENTS: Record<string, { label: string; l: string; ls: string; d: 
   blauw: { label: 'Blauw', l: '#2B5C9E', ls: '#DCE6F3', d: '#82AAE2', ds: '#1F2D42', rgb: [43, 92, 158], pop: '#F2B544', popD: '#E3A94B' },
   rood: { label: 'Rood', l: '#A83A2E', ls: '#F3DEDA', d: '#E68C80', ds: '#3D2421', rgb: [168, 58, 46], pop: '#F0C86A', popD: '#E0B65A' },
   paars: { label: 'Paars', l: '#5E4596', ls: '#E6E0F2', d: '#B4A1E2', ds: '#2E2640', rgb: [94, 69, 150], pop: '#F1B86B', popD: '#E2A95E' },
-  oranje: { label: 'Oranje', l: '#A65A10', ls: '#F4E4D2', d: '#E6A75C', ds: '#3D2D1C', rgb: [166, 90, 16], pop: '#7FC2B5', popD: '#8ED1C4' },
+  oranje: { label: 'Oranje', l: '#95510E', ls: '#F4E4D2', d: '#E6A75C', ds: '#3D2D1C', rgb: [149, 81, 14], pop: '#7FC2B5', popD: '#8ED1C4' },
   grijs: { label: 'Grijs', l: '#3B4248', ls: '#E2E5E8', d: '#C3CAD0', ds: '#2A2F33', rgb: [59, 66, 72], pop: '#F2C14E', popD: '#E3B04B' },
 };
 export const LIB_FIELDS = ['title', 'dur', 'cat', 'minLeaders', 'location', 'short', 'desc', 'prep', 'materials'] as const;

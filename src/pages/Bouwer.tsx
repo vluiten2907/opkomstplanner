@@ -8,7 +8,7 @@ import { guardLeave, setUnsaved, useDirty } from '../store/unsaved';
 import { isFresh, markFresh, watchFresh } from '../store/fresh';
 import { Strip, PickOpk, usePdf, PageTitle, SaveBar, StatusPill } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, TimePicker, useMedia, useSheetDialog } from '../components/ui';
-import { Ticks, PrepZones, blkGeom, blkLabel, lanesStyle } from '../components/timeline';
+import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, todayISO, uid, DAYS } from '../lib/time';
 import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isBlankOpk, isFixed, isKamp, lanesLayout, libSearchText, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
@@ -28,10 +28,6 @@ function TitleArea({ value, readOnly, onChange, placeholder, autoFocus }: { valu
     onKeyDown={ev => { if (ev.key === 'Enter' && !ev.nativeEvent.isComposing) ev.preventDefault(); }} onChange={ev => onChange(ev.target.value.replace(/[\r\n]+/g, ' '))} />;
 }
 
-/** Focus naar het eerste element dat er is (na het renderen); bijv. een onderdeel in de tijdlijn of de knop + Onderdeel. */
-const focusSoon = (...sels: string[]) => setTimeout(() => {
-  for (const q of sels) { const el = document.querySelector<HTMLElement>(q); if (el) { el.focus({ preventScroll: true }); el.scrollIntoView?.({ block: 'nearest' }); return; } }
-}, 0);
 const blkSel = (id: string) => `.lanes [data-bid="${CSS.escape(id)}"]`;
 
 /* ============ Startscherm ============ */
@@ -371,6 +367,8 @@ function Timeline({ ctx, A, selId, flashId, lanesRef, onSelect, onDelete, onAdd,
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
   }, [T0, T1, row]);
   const pos = lanesLayout(D.blocks);
+  // op volgorde van tijd in de pagina; verschuift het onderdeel met de focus (slepen), dan houdt het de focus
+  useKeepFocus(lanesRef);
   const startDrag = (ev: React.PointerEvent, b: Block, mode: 'move' | 'resize', handle: boolean) => {
     if (readOnly || ev.button) return;
     if (ev.pointerType !== 'mouse' && !handle) return;
@@ -385,7 +383,7 @@ function Timeline({ ctx, A, selId, flashId, lanesRef, onSelect, onDelete, onAdd,
       onPointerLeave={() => setGhost(null)}
       onClick={ev => { if (suppress.current || readOnly) return; const t = ev.target as HTMLElement; if (t === ev.currentTarget || t.classList.contains('slotghost')) onAdd(minuteAt(ev.clientY)); }}>
       <PrepZones o={o} T0={T0} row={row} />
-      {D.blocks.filter(b => b.start + b.dur > T0 && b.start < T1).map(b => {
+      {byTime(D.blocks, pos).filter(b => b.start + b.dur > T0 && b.start < T1).map(b => {
         const g = blkGeom(pos[b.id], b, T0, row, b.id === selId), c = catOf(settings, b.cat);
         const cls = [...g.cls, drag.current?.id === b.id && drag.current.moved ? 'dragging' : '', b.id === flashId ? 'flash' : ''].join(' ');
         const under = b.minLeaders && b.names.length < b.minLeaders, mats = splitLines(b.materials).length;
@@ -409,7 +407,9 @@ function Timeline({ ctx, A, selId, flashId, lanesRef, onSelect, onDelete, onAdd,
             <div className="cl">{b.location || <span className="nobody">–</span>}</div>
             <div className="c2"><div className="names">{nn ? (b.minLeaders ? <span className="nobody">min. {b.minLeaders} leiding</span> : null) : b.names.length ? b.names.map(n => <span key={n} className={'nm' + (A.clashes.has(b.id + '|' + n) ? ' clash' : '')}>{n}</span>) : <span className="nobody">nog niemand</span>}</div></div>
           </div>
-          {!readOnly && <button className="bdel" onClick={ev => { ev.stopPropagation(); onDelete(b.id); }} title="Onderdeel verwijderen" aria-label="Onderdeel verwijderen"><Trash2 size={14} /></button>}
+          {/* prullenbak voor muis en aanraken; niet in de Tab-volgorde en niet voor schermlezers (een knop in een knop):
+              met het toetsenbord verwijder je met Delete op het onderdeel of met Verwijderen in het bewerkpaneel */}
+          {!readOnly && <button className="bdel" tabIndex={-1} aria-hidden="true" onClick={ev => { ev.stopPropagation(); onDelete(b.id); }} title="Onderdeel verwijderen"><Trash2 size={14} /></button>}
           {!readOnly && <div className="rs" title="Sleep om de duur te wijzigen" />}
         </div>;
       })}
@@ -463,9 +463,13 @@ function SidePanel({ tab, setTab, ctx, A, lanesRef, onSelect, onPlan, onDrop }: 
       {float && <div className="drag-float" style={{ left: float.x, top: float.y }}>{(float.l.title || 'Naamloos') + ' · ' + fmtDur(float.l.dur)}</div>}</>;
   }
   const people = Object.entries(A.per).sort((a, b) => a[0].localeCompare(b[0], 'nl')), free = A.present.filter(n => !A.per[n]);
+  const warns = A.issues.filter(i => i.lvl === 'warn'), tips = A.issues.filter(i => i.lvl !== 'warn');
+  const issueList = (list: Analysis['issues']) => <ul className="issues">{list.map((i, k) => <li key={k} className={i.lvl}><i />{i.id ? <button className="linkbtn" onClick={ev => onSelect(i.id!, ev.detail === 0)}>{i.text}</button> : <span>{i.text}</span>}</li>)}</ul>;
   return <>{tabs}<div className="pad stack">
+    {/* aandachtspunten (telt mee in de teller) en wat nog aangevuld kan worden apart: het niveau staat in de kop, niet alleen in de kleur van de stip */}
     <h3>Aandachtspunten</h3>
-    {A.issues.length ? <ul className="issues">{A.issues.map((i, k) => <li key={k} className={i.lvl}><i />{i.id ? <button className="linkbtn" onClick={ev => onSelect(i.id!, ev.detail === 0)}>{i.text}</button> : <span>{i.text}</span>}</li>)}</ul> : <p className="hint">Alles in orde.</p>}
+    {warns.length ? issueList(warns) : <p className="hint">{tips.length ? 'Geen aandachtspunten.' : 'Alles in orde.'}</p>}
+    {tips.length > 0 && <><h3 className="gap-lg">Nog aanvullen</h3>{issueList(tips)}</>}
     {nn ? <p className="hint">Minimaal {minNeed(o)} leiding nodig: het onderdeel dat de meeste leiding vraagt bepaalt dit.</p> : <>
       <h3 className="gap-lg">Taken per leiding</h3>
       {people.length ? <ul className="who-list">{people.map(([n, arr]) => <li key={n}><b>{n}{A.present.includes(n) || !leaders.includes(n) ? '' : <> <span className="pill warn">afwezig</span></>}</b>
