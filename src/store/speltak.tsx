@@ -36,6 +36,8 @@ type Ctx = {
   removeMember: (uid: string) => Promise<void>;
   createInvite: (email: string, kind: 'teamleider' | 'leiding', perms: Perms, transfer?: boolean) => Promise<Invite>;
   getO: (id: string | null | undefined) => Opk | undefined;
+  /** Nieuwste versie van een opkomst, voor acties die later komen (bijv. Ongedaan maken in een melding). */
+  latestO: (id: string) => Opk | undefined;
   /** Gekoppelde opkomst van een rij in de jaarplanning, of null. */
   opkOf: (e: Plan | null | undefined) => Opk | null;
   getL: (id: string | null | undefined) => Lib | undefined;
@@ -214,6 +216,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
 
   /* ---- afgeleiden en koppelingen (zelfde logica als de losse versie) ---- */
   const getO = (id: string | null | undefined) => opks.find(o => o.id === id);
+  const latestO = (id: string) => opksRef.current.find(o => o.id === id);
   const opkOf = (e: Plan | null | undefined) => (e && e.opkId && getO(e.opkId)) || null;
   const getL = (id: string | null | undefined) => lib.find(l => l.id === id);
   const entryOfOpk = (o: Opk | null | undefined) => (o && plans.find(p => p.opkId === o.id)) || null;
@@ -328,7 +331,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
 
   const value: Ctx = { sid, sp, loading, denied, loadError, flushAll, canLink, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
     saveOpk, deleteOpk, removeOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
-    getO, opkOf, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null };
+    getO, latestO, opkOf, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null };
   return <C.Provider value={value}>{children}</C.Provider>;
 }
 export const useSpeltak = () => useContext(C);

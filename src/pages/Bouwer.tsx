@@ -74,6 +74,8 @@ function Builder({ o: stored }: { o: Opk }) {
   const nn = o.state === 'bank', present = presentFor(o);
   const ctx: Ctx = { o, D, T0, T1, row, nn, present, readOnly };
   const upd = (fn: () => void) => { if (readOnly) return; fn(); if (kamp) syncKamp(o); if (o === draft) setDirty(true); else saveOpk({ ...o }); bump(x => x + 1); };
+  // Nieuwste stand voor acties die later komen (Ongedaan maken): na het opslaan vervangt de database de opkomst door een nieuw object.
+  const live = useRef({ o, upd }); live.current = { o, upd };
   const saveBank = () => { const x = normOpk(clone(o)); x.title = x.title.trim(); saveOpk(x); setDraft(normOpk(clone(x))); setDirty(false); toast('Opkomst opgeslagen in de bank'); };
   const cancelBank = () => { setDraft(normOpk(clone(stored))); setDirty(false); setSelId(null); };
   const copyBank = (name: string) => {
@@ -90,11 +92,17 @@ function Builder({ o: stored }: { o: Opk }) {
   };
   const deleteBlock = (id: string) => {
     if (readOnly) return;
-    const list = kamp ? (o.days.find(d => d.blocks.some(x => x.id === id)) || { blocks: [] as Block[] }).blocks : o.blocks;
+    const dayId = kamp ? o.days.find(d => d.blocks.some(x => x.id === id))?.id : null;
+    const blocksOf = (x: Opk) => kamp ? x.days.find(d => d.id === dayId)?.blocks : x.blocks;
+    const list = blocksOf(o) || [];
     const i = list.findIndex(b => b.id === id); if (i < 0) return;
     const [b] = list.splice(i, 1); if (selId === id) setSelId(null);
     upd(() => {});
-    toast(`"${b.title || 'Naamloos onderdeel'}" verwijderd`, { label: 'Ongedaan maken', fn: () => upd(() => { list.splice(Math.min(i, list.length), 0, b); }) });
+    // terugzetten in de opkomst zoals hij nú is, zodat wat je intussen aanpaste blijft staan
+    toast(`"${b.title || 'Naamloos onderdeel'}" verwijderd`, { label: 'Ongedaan maken', fn: () => live.current.upd(() => {
+      const to = blocksOf(live.current.o); if (!to || to.some(x => x.id === b.id)) return;
+      to.splice(Math.min(i, to.length), 0, b);
+    }) });
   };
   const insertLib = (l: Lib, start: number) => {
     const dur = Math.min(l.dur, T1 - T0), s = Math.max(T0, Math.min(T1 - dur, start));
@@ -110,6 +118,7 @@ function Builder({ o: stored }: { o: Opk }) {
     const h = (ev: KeyboardEvent) => {
       const tag = (document.activeElement && document.activeElement.tagName) || '';
       if (ev.key === 'Escape' && selId) { setSelId(null); return; }
+      if (readOnly) return;
       const onBlk = document.activeElement?.classList.contains('blk');
       if ((ev.key === 'Delete' || (ev.key === 'Backspace' && (tag === 'BODY' || onBlk))) && selId && !['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) && !document.querySelector('.modal')) { ev.preventDefault(); deleteBlock(selId); }
     };
@@ -209,6 +218,7 @@ function Builder({ o: stored }: { o: Opk }) {
 function DaysBar({ o, di, setDayIdx, upd, date, readOnly }: { o: Opk; di: number; setDayIdx: (i: number) => void; upd: (fn: () => void) => void; date: string | null; readOnly: boolean }) {
   const { settings } = useSpeltak();
   const d = o.days[di];
+  const live = useRef({ o, upd }); live.current = { o, upd };
   const addDay = () => {
     const last = o.days[o.days.length - 1], li = DAYS.findIndex(x => x.toLowerCase() === (last.label || '').toLowerCase());
     const nd = normDay({ label: li >= 0 ? cap(DAYS[(li + 1) % 7]) : 'Dag ' + (o.days.length + 1), start: 480, end: 1380 }, o.days.length);
@@ -218,7 +228,11 @@ function DaysBar({ o, di, setDayIdx, upd, date, readOnly }: { o: Opk; di: number
   const delDay = () => {
     if (o.days.length < 2) return; const [rm] = o.days.splice(di, 1); const at = di;
     setDayIdx(Math.max(0, di - 1)); upd(() => {});
-    toast(`${rm.label} verwijderd`, { label: 'Ongedaan maken', fn: () => { upd(() => { o.days.splice(at, 0, rm); }); setDayIdx(at); } });
+    // terugzetten in het kamp zoals het nú is (na het opslaan een nieuw object), wat je intussen aanpaste blijft staan
+    toast(`${rm.label} verwijderd`, { label: 'Ongedaan maken', fn: () => {
+      live.current.upd(() => { const cur = live.current.o; if (!cur.days.some(x => x.id === rm.id)) cur.days.splice(Math.min(at, cur.days.length), 0, rm); });
+      setDayIdx(at);
+    } });
   };
   const meals = () => {
     const pauze = settings.categories.find(c => /eten|maaltijd/i.test(c.label)) || settings.categories.find(c => /pauze/i.test(c.label));
@@ -244,26 +258,29 @@ function Timeline({ ctx, A, selId, lanesRef, onSelect, onDelete, onAdd, onChange
   const { o, D, T0, T1, row, nn, readOnly } = ctx;
   const [, bump] = useState(0);
   const [ghost, setGhost] = useState<number | null>(null);
-  const drag = useRef<{ b: Block; mode: 'move' | 'resize'; y0: number; s0: number; d0: number; moved: boolean } | null>(null);
+  // Slepen onthoudt alleen het id: na het opslaan vervangt de database de blokken door nieuwe objecten, dus steeds opnieuw opzoeken.
+  const drag = useRef<{ id: string; mode: 'move' | 'resize'; y0: number; s0: number; d0: number; moved: boolean } | null>(null);
+  const live = useRef({ D, onChange }); live.current = { D, onChange };
   const suppress = useRef(false);
   const minuteAt = (clientY: number, dur = 5) => { const rect = lanesRef.current!.getBoundingClientRect(); const m = T0 + Math.floor((clientY - rect.top) / row) * 5; return Math.max(T0, Math.min(T1 - dur, m)); };
   useEffect(() => {
     const move = (ev: PointerEvent) => {
       const d = drag.current; if (!d) return;
       const dy = ev.clientY - d.y0; if (!d.moved && Math.abs(dy) < 4) return;
+      const b = live.current.D.blocks.find(x => x.id === d.id); if (!b) return;
       d.moved = true; const steps = Math.round(dy / row) * 5;
-      if (d.mode === 'move') d.b.start = Math.max(T0, Math.min(T1 - d.d0, d.s0 + steps)); else d.b.dur = Math.max(5, Math.min(T1 - d.b.start, d.d0 + steps));
+      if (d.mode === 'move') b.start = Math.max(T0, Math.min(T1 - d.d0, d.s0 + steps)); else b.dur = Math.max(5, Math.min(T1 - b.start, d.d0 + steps));
       bump(x => x + 1);
     };
-    const up = () => { const d = drag.current; if (!d) return; drag.current = null; document.body.style.userSelect = ''; if (d.moved) { suppress.current = true; setTimeout(() => { suppress.current = false; }, 0); onChange(); } bump(x => x + 1); };
+    const up = () => { const d = drag.current; if (!d) return; drag.current = null; document.body.style.userSelect = ''; if (d.moved) { suppress.current = true; setTimeout(() => { suppress.current = false; }, 0); live.current.onChange(); } bump(x => x + 1); };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
-  }, [T0, T1, row, onChange]);
+  }, [T0, T1, row]);
   const pos = lanesLayout(D.blocks);
   const startDrag = (ev: React.PointerEvent, b: Block, mode: 'move' | 'resize', handle: boolean) => {
     if (readOnly || ev.button) return;
     if (ev.pointerType !== 'mouse' && !handle) return;
-    drag.current = { b, mode, y0: ev.clientY, s0: b.start, d0: b.dur, moved: false };
+    drag.current = { id: b.id, mode, y0: ev.clientY, s0: b.start, d0: b.dur, moved: false };
     document.body.style.userSelect = 'none';
     if (handle) ev.preventDefault();
   };
@@ -276,7 +293,7 @@ function Timeline({ ctx, A, selId, lanesRef, onSelect, onDelete, onAdd, onChange
       <PrepZones o={o} T0={T0} row={row} />
       {D.blocks.filter(b => b.start + b.dur > T0 && b.start < T1).map(b => {
         const g = blkGeom(pos[b.id], b, T0, row, b.id === selId), c = catOf(settings, b.cat);
-        const cls = [...g.cls, drag.current?.b === b && drag.current.moved ? 'dragging' : ''].join(' ');
+        const cls = [...g.cls, drag.current?.id === b.id && drag.current.moved ? 'dragging' : ''].join(' ');
         const under = b.minLeaders && b.names.length < b.minLeaders, mats = splitLines(b.materials).length;
         return <div key={b.id} className={cls} tabIndex={0} role="button" aria-label={`${b.title || 'Naamloos onderdeel'}, ${fmtT(b.start)} tot ${fmtT(b.start + b.dur)}`}
           style={{ ['--c' as any]: c.color, ...g.style }}

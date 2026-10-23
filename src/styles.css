@@ -233,9 +233,8 @@ button.cday:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 .blk:hover .bdel, .blk.sel .bdel, .blk:focus-within .bdel { opacity: 1; }
 .blk.tiny .rs { height: 6px; }
 .blk.tiny .bdel { top: 50%; transform: translateY(-50%); width: 22px; height: 22px; }
-.blk .c2 { padding-right: 36px; }
 @media (pointer: coarse) { .bdel { opacity: .9; } }
-.toast.has-act { pointer-events: auto; }
+.toast.show.has-act { pointer-events: auto; }
 .toast button { margin-left: 14px; border: 0; background: transparent; color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 0; }
 
 /* Opkomst */
@@ -283,6 +282,11 @@ button.cday:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 .blk .cols3 { height: 100%; }
 .blk .c1 { padding: 6px 4px 6px 18px; min-width: 0; position: relative; }
 .blk .cl, .blk .c2 { padding: 6px 8px 6px 0; min-width: 0; font-size: 13px; overflow: hidden; }
+/* Namen lopen om de prullenbak rechtsboven heen, zodat die nooit op een naam ligt (op een telefoon staat hij altijd zichtbaar).
+   In een smal onderdeel (naast een ander) beginnen de namen daardoor onder de prullenbak. */
+.blk .c2::before { content: ''; float: right; width: 30px; height: 30px; }
+.blk .names { display: block; }
+.blk .names > * { display: inline-block; vertical-align: top; margin: 0 3px 3px 0; }
 .blk .t { font-weight: 700; font-size: 14px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; }
 .blk .sh { font-size: 12.5px; color: var(--muted); line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .blk .when { font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -677,7 +681,9 @@ fieldset:disabled .btn, fieldset:disabled .acc, fieldset:disabled .sw { opacity:
 /* Compacte tijdlijn in "Opkomst overnemen" */
 .tk-tl { font-size: 13px; }
 .tk-tl .blk { cursor: pointer; }
-.tk-tl .blk .names { gap: 4px; }
+.tk-tl .blk .names > * { margin: 0 4px 4px 0; }
+/* bij Leiding indelen staat de prullenbak alleen bij het gekozen onderdeel */
+.tk-tl .blk:not(.sel) .c2::before { content: none; }
 .tk-names .nm { border: 0; cursor: pointer; font: inherit; font-weight: 700; }
 .tk-names .nm.off { background: transparent; box-shadow: inset 0 0 0 1px var(--edge); color: var(--muted); font-weight: 600; opacity: .7; }
 .tk-names .nm.off:hover { opacity: 1; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }

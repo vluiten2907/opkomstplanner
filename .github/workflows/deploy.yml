@@ -74,12 +74,7 @@ jobs:
           sudo apt-get install -y -qq lftp > /dev/null
           DIR="${DIR%/}"
           [ "$DIR" = "inlogmap" ] && DIR="."
-          # Eerst alles uploaden; daarna alleen in assets/ oude (gehashte) bestanden opruimen.
-          lftp -p "${PORT:-22}" -u "$USER","$PASS" "sftp://$HOST" -e "
-            set sftp:auto-confirm yes;
-            set net:max-retries 2;
-            set net:timeout 20;
-            mkdir -p -f $DIR;
-            mirror --reverse --verbose --exclude-glob assets/ dist/ $DIR;
-            mirror --reverse --verbose --delete dist/assets/ $DIR/assets;
-            bye"
+          # Eerst assets/, dan index.html en de rest. Oude bestanden in assets/ blijven 7 dagen staan,
+          # zodat een tabblad dat nog openstaat met de vorige versie zijn pagina's kan blijven laden.
+          export DIR
+          bash scripts/deploy-sftp.sh

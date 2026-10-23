@@ -577,6 +577,11 @@ with sync_playwright() as p:
     check('/inloggen' in pg.url, 'uitgelogd een link openen: eerst inloggen')
     pg.fill('input[type=email]', 'wim@test.nl'); pg.fill('input[type=password]', 'geheim123'); pg.click('.btn.primary')
     check(soon(lambda: pg.url.rstrip('/').endswith(f'/s/{welpen}/jaarplanning') and pg.locator('.prow').count() > 0), 'na inloggen naar de pagina van de link (jaarplanning)')
+    # via Wachtwoord vergeten en weer terug: de link blijft bewaard
+    logout_to(f'{BASE}/account')
+    pg.click('text=Wachtwoord vergeten'); w(300); pg.click('text=Terug naar inloggen'); w(300)
+    pg.fill('input[type=email]', 'wim@test.nl'); pg.fill('input[type=password]', 'geheim123'); pg.click('.btn.primary')
+    check(soon(lambda: pg.url.rstrip('/').endswith('/account') and pg.locator('.page-head').count() > 0), 'link openen, via Wachtwoord vergeten terug en inloggen: toch naar de pagina van de link')
 
     # --- oefenomgeving: voorbeelddata met watermerk, alleen in deze browser
     pg.goto(BASE + '/speltakken'); w(800)
@@ -584,11 +589,21 @@ with sync_playwright() as p:
     pg.click('a:has-text("Oefenen")'); w(1200)
     check('/s/oefen/dashboard' in pg.url and pg.locator('.watermark.on').count() == 1 and pg.locator('.oefenbar').count() == 1, 'oefenomgeving: watermerk en melding')
     check(pg.locator('text=Junglejacht en stratego').count() >= 1, 'oefenomgeving: voorbeelddata op het dashboard')
-    # pagina die niet te laden is (bijv. een tabblad dat openstond tijdens een update van de site): melding, geen wit scherm
+    # pagina die niet te laden is (bijv. een tabblad dat openstond tijdens een update van de site): eerst één keer
+    # vanzelf opnieuw laden (haalt de nieuwe versie op); lukt het dan nog niet: melding, geen wit scherm
     pg.goto(BASE + '/s/oefen/dashboard'); w(1000)
     chunk = re.compile(r'/assets/Instellingen-[^/]*\.js'); n_err = len(errors)
     pg.route(chunk, lambda r: r.abort())
-    pg.click('header nav a[href$="/instellingen"]'); w(800)
+    def nav_reloads(href, prep, wait=8000):
+        # klik in het menu; True als de pagina daarna vanzelf opnieuw laadt (merkteken op window is dan weg)
+        pg.evaluate(prep + '; window.__oud = 1')
+        try:
+            with pg.expect_event('load', timeout=wait): pg.click(f'header nav a[href$="{href}"]')
+        except Exception: pass
+        soon(lambda: pg.locator('.crash, .hero, #gs-name').count() > 0, 6000); w(300)
+        return pg.evaluate('window.__oud') is None
+    check(nav_reloads('/instellingen', "sessionStorage.removeItem('opk.herladen')") and pg.locator('.crash').count() == 1,
+          'pagina niet te laden: eerst één keer vanzelf opnieuw geladen, dan pas de melding (geen lus)')
     check(pg.locator('.crash h2:has-text("Er ging iets mis")').count() == 1 and pg.locator('.crash button:has-text("Opnieuw laden")').count() == 1 and pg.locator('header.bar nav a').count() == 6,
           'pagina niet te laden: melding met Opnieuw laden, kopbalk blijft staan'); shot('21-pagina-fout', False)
     pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('21b-pagina-fout-mobiel', False)
@@ -596,6 +611,11 @@ with sync_playwright() as p:
     pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     pg.click('header nav a[href$="/dashboard"]'); w(800)
     check(pg.locator('.crash').count() == 0 and pg.locator('.hero').count() == 1, 'andere pagina kiezen: melding weg, dashboard werkt')
+    check(not nav_reloads('/instellingen', '0', 2500) and pg.locator('.crash').count() == 1, 'binnen een minuut nog eens: niet weer herladen, meteen de melding')
+    pg.click('header nav a[href$="/dashboard"]'); w(600)
+    check(nav_reloads('/instellingen', "sessionStorage.setItem('opk.herladen', String(Date.now() - 120000))") and pg.locator('.crash').count() == 1,
+          'later weer een nieuwe versie in hetzelfde tabblad: weer één keer vanzelf opnieuw geladen')
+    pg.click('header nav a[href$="/dashboard"]'); w(600)
     pg.unroute(chunk); pg.click('header nav a[href$="/instellingen"]'); w(600)
     if pg.locator('.crash').count(): pg.click('.crash >> text=Opnieuw laden'); w(1500)
     check(pg.locator('#gs-name').count() == 1, 'opnieuw laden: pagina werkt weer')
@@ -732,6 +752,62 @@ with sync_playwright() as p:
     tf(1).select_option('17'); w(300)
     check(tf(1).input_value() == '19' and 'moet na de begintijd' in pg.locator('.toast').inner_text(), 'bouwer: eindtijd vóór de begintijd wordt geweigerd')
     w(700); check(oefen_get("s['speltakken/oefen/opkomsten/opk-vuur'].end") // 60 == 19, 'bouwer: nieuwe tijden opgeslagen')
+    # terugknop met een venster open: het venster gaat dicht (op Android is dat de gewone manier om iets te sluiten)
+    pg.click('header nav a[href$="/dashboard"]'); w(800); pg.click('header nav a[href$="/jaarplanning"]'); w(1000)
+    pg.locator('.prow [aria-label="Afwezigheid aanpassen"]').first.click(); w(300)
+    opened = pg.locator('.modal').count() == 1
+    pg.evaluate('history.back()'); w(800)
+    check(opened and '/dashboard' in pg.url and pg.locator('.modal').count() == 0, 'terugknop met een venster open: venster dicht, terug naar de vorige pagina')
+    # Ongedaan maken na het opslaan (de database vervangt de opkomst dan door een nieuw object): wat je intussen aanpaste blijft
+    jg = "s['speltakken/oefen/opkomsten/opk-jungle']"
+    pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(1200)
+    titles = lambda: pg.eval_on_selector_all('.lanes .blk .t', 'els => els.map(e => e.textContent)')
+    pg.locator('.lanes .blk:has-text("Knopen leren")').click(); pg.keyboard.press('Delete'); w(1200)
+    pg.locator('.lanes .blk:has-text("Levend stratego")').click(); w(200)
+    pg.fill('#bf-title', 'Levend stratego XYZ'); w(1200); pg.click('.side .closex'); w(200)
+    pg.click('.toast.show button:has-text("Ongedaan maken")'); w(900)
+    check('Knopen leren' in titles() and 'Levend stratego XYZ' in titles(), 'Ongedaan maken na het opslaan: onderdeel terug, nieuwe naam van een ander onderdeel blijft')
+    pg.reload(); w(1200)
+    check('Knopen leren' in titles() and 'Levend stratego XYZ' in titles(), 'Ongedaan maken na het opslaan: ook na herladen allebei bewaard')
+    # twee keer snel na elkaar slepen (de tweede terwijl de eerste wordt opgeslagen): allebei helemaal bewaard
+    row = pg.evaluate("parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--row')) || 24")
+    def drag(name, rows, steps, pause):
+        el = pg.locator(f'.lanes .blk:has-text("{name}")').first; el.scroll_into_view_if_needed()
+        bb = el.bounding_box(); x, y = bb['x'] + 60, bb['y'] + 12
+        pg.mouse.move(x, y); pg.mouse.down()
+        for i in range(1, steps + 1): pg.mouse.move(x, y + rows * row * i / steps); w(pause)
+        pg.mouse.up()
+    start_of = lambda t: oefen_get(jg + f".blocks.find(b => b.title === '{t}').start")
+    k0, s0 = start_of('Knopen leren'), start_of('Levend stratego XYZ')
+    drag('Knopen leren', 2, 4, 20); w(100); drag('Levend stratego XYZ', -3, 15, 60)
+    check(soon(lambda: start_of('Knopen leren') == k0 + 10 and start_of('Levend stratego XYZ') == s0 - 15),
+          f'twee keer snel na elkaar slepen: allebei goed opgeslagen ({start_of("Knopen leren") - k0:+d} en {start_of("Levend stratego XYZ") - s0:+d} min)')
+    # Leiding indelen: de prullenbak staat alleen bij het gekozen onderdeel en nooit op een naam; verwijderen kan terug
+    pg.click('.ctx >> text=Leiding indelen'); w(500)
+    tk = pg.locator('.modal .tk-tl .blk'); n_tk = tk.count()
+    check(n_tk > 0 and pg.locator('.modal .tk-tl .bdel').count() == 0, 'leiding indelen: geen prullenbak zolang je geen onderdeel kiest')
+    pg.locator('.modal .tk-tl .blk:has-text("Junglejacht") .t').click(); w(200)
+    check(pg.locator('.modal .tk-tl .blk.sel .bdel').count() == 1 and pg.locator('.modal .tk-tl .bdel').count() == 1, 'leiding indelen: prullenbak alleen bij het gekozen onderdeel')
+    pg.locator('.modal .tk-tl .blk.sel .bdel').click(); w(300)
+    check(tk.count() == n_tk - 1 and pg.locator('.toast.show button:has-text("Ongedaan maken")').count() == 1, 'leiding indelen: onderdeel verwijderd, melding met Ongedaan maken')
+    w(1200); pg.click('.toast.show button:has-text("Ongedaan maken")')
+    check(soon(lambda: tk.count() == n_tk and 'Junglejacht' in oefen_get(jg + ".blocks.map(b => b.title).join('|')")), 'leiding indelen: Ongedaan maken zet het onderdeel terug (ook na het opslaan)')
+    on_name = """(sel) => [...document.querySelectorAll(sel)].filter(b => b.getBoundingClientRect().width).some(btn => { const r = btn.getBoundingClientRect();
+      return [...btn.closest('.blk').querySelectorAll('.nm')].some(n => { const q = n.getBoundingClientRect(); return q.width && q.left < r.right && q.right > r.left && q.top < r.bottom && q.bottom > r.top; }); })"""
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(300)
+    pg.locator('.modal .tk-tl .blk:has-text("Levend stratego") .t').click(); w(200)
+    check(pg.locator('.modal .tk-tl .bdel').count() == 1 and not pg.evaluate(f"({on_name})('.modal .tk-tl .bdel')"), 'leiding indelen mobiel: prullenbak ligt niet op een naam')
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'leiding indelen mobiel: geen horizontale scroll'); shot('04b-indelen-mobiel', False)
+    pg.click('.modal >> text=Klaar'); w(300)
+    check(pg.locator('.lanes .bdel').count() > 3 and not pg.evaluate(f"({on_name})('.lanes .bdel')"), 'bouwer mobiel: prullenbak ligt niet op een naam, ook niet bij onderdelen naast elkaar')
+    pg.evaluate("document.querySelector('.lanes').scrollIntoView({ block: 'start' })"); w(200); shot('03b-bouwer-mobiel', False)
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    # een verlopen melding is niet meer aan te klikken: de knop verdwijnt mee
+    pg.locator('.lanes .blk:has-text("Junglejacht")').click(); pg.keyboard.press('Delete'); w(300)
+    check(pg.locator('.toast.show button:has-text("Ongedaan maken")').count() == 1, 'melding met Ongedaan maken staat er')
+    w(7300)
+    check(pg.locator('.toast button').count() == 0 and pg.locator('.toast.has-act').count() == 0 and pg.evaluate("getComputedStyle(document.querySelector('.toast')).pointerEvents") == 'none',
+          'verlopen melding: knop weg en niet meer aan te klikken')
     pg.click('.oefenbar >> text=Opnieuw beginnen'); w(1800)
     pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(900)
     check(pg.input_value('#om-title') == 'Junglejacht en stratego', 'oefenomgeving: opnieuw beginnen zet voorbeelddata terug')

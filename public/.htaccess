@@ -2,6 +2,9 @@
 # Werkt op een subdomein én in een submap, omdat de regels relatief zijn aan deze map.
 <IfModule mod_rewrite.c>
   RewriteEngine On
+  # Een ontbrekend stukje code (assets/, bijv. van een oudere versie) geeft een echte 404, geen index.html:
+  # dan ziet de app dat het laden mislukte en haalt hij de nieuwe versie op.
+  RewriteCond %{REQUEST_URI} !/assets/
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule . index.html [L]

@@ -5,8 +5,9 @@ import { pad2 } from '../lib/time';
 
 export function Toast() {
   const { msg, action, hide } = useToast();
-  return <div className={'toast' + (msg ? ' show' : '') + (action ? ' has-act' : '')} role="status" aria-live="polite">
-    <span>{msg}</span>{action && <button type="button" onClick={() => { hide(); action.fn(); }}>{action.label}</button>}
+  const act = msg ? action : null;
+  return <div className={'toast' + (msg ? ' show' : '') + (act ? ' has-act' : '')} role="status" aria-live="polite">
+    <span>{msg}</span>{act && <button type="button" onClick={() => { hide(); act.fn(); }}>{act.label}</button>}
   </div>;
 }
 

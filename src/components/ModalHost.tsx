@@ -1,12 +1,16 @@
 import { useModal, openModal } from '../store/modal';
 import { DateModal, ExtraModal, PeopleModal, LetterModal, LinkModal, ToPlanModal, Takeover, NameModal } from './modals';
 import { useSpeltak } from '../store/speltak';
-import { useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 export default function ModalHost() {
   const { modal, close } = useModal();
   const { sid } = useSpeltak();
   const nav = useNavigate();
+  // naar een andere pagina (ook met de terugknop van de telefoon of de browser): het venster gaat dicht
+  const { pathname } = useLocation();
+  useEffect(() => { close(); }, [pathname, close]);
   if (!modal) return null;
   const takeover = (oid: string, fresh: boolean) => openModal({ kind: 'takeover', oid, fresh });
   switch (modal.kind) {

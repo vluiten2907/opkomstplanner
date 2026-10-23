@@ -172,7 +172,7 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
 
 /* ---------- Opkomst overnemen: planning door, leiding per activiteit, programma ---------- */
 export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean; onClose: () => void }) {
-  const { settings, leaders, lib, getO, saveOpk, entryOfOpk, presentForEntry, sid, savePlan } = useSpeltak();
+  const { settings, leaders, lib, getO, latestO, saveOpk, entryOfOpk, presentForEntry, sid, savePlan } = useSpeltak();
   const nav = useNavigate();
   const [, bump] = useState(0);
   const [libId, setLibId] = useState(''); const [libDay, setLibDay] = useState(0);
@@ -184,6 +184,17 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
   const upd = (fn: (o: Opk) => void) => { fn(o); if (isKamp(o)) syncKamp(o); saveOpk({ ...o }); bump(x => x + 1); };
   const containers = isKamp(o) ? o.days.map((d, i) => ({ d, label: dayTitle(o, i, e ? addDays(e.date, i) : null), lo: d.start, hi: d.end })) : [{ d: o as unknown as Day, label: '', lo: o.start - (o.prep || 0), hi: o.end + (o.post || 0) }];
   const toggle = (b: Block, n: string) => upd(() => { b.names = b.names.includes(n) ? b.names.filter(x => x !== n) : [...b.names, n]; });
+  const delBlock = (C: typeof containers[0], b: Block) => {
+    const at = C.d.blocks.indexOf(b), dayId = isKamp(o) ? C.d.id : null;
+    upd(() => { C.d.blocks = C.d.blocks.filter(x => x !== b); }); setSelId(null);
+    toast(`"${b.title || 'Naamloos onderdeel'}" verwijderd`, { label: 'Ongedaan maken', fn: () => {
+      // de nieuwste versie van de opkomst (na het opslaan is dat een nieuw object), ook als dit venster al dicht is
+      const cur = latestO(oid); if (!cur) return;
+      const list = dayId ? cur.days.find(d => d.id === dayId)?.blocks : cur.blocks;
+      if (!list || list.some(x => x.id === b.id)) return;
+      list.splice(Math.min(at, list.length), 0, b); if (isKamp(cur)) syncKamp(cur); saveOpk({ ...cur });
+    } });
+  };
   /* Compacte tijdlijn: onderdelen die tegelijk zijn staan naast elkaar, net als in de bouwer. */
   const ROW = 20;
   const timeline = (C: typeof containers[0]) => {
@@ -212,7 +223,8 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
                 {extra.map(n => <span key={n} className="nm">{n}</span>)}
               </div></div>
             </div>
-            <button className="bdel" onClick={ev => { ev.stopPropagation(); upd(() => { C.d.blocks = C.d.blocks.filter(x => x !== b); }); if (selId === b.id) setSelId(null); toast(`"${b.title || 'Onderdeel'}" verwijderd`); }} title="Onderdeel verwijderen" aria-label="Onderdeel verwijderen"><Trash2 size={14} /></button>
+            {/* alleen bij het gekozen onderdeel: zo tik je op een telefoon niet per ongeluk op de prullenbak in plaats van op een naam */}
+            {b.id === selId && <button className="bdel" onClick={ev => { ev.stopPropagation(); delBlock(C, b); }} title="Onderdeel verwijderen" aria-label="Onderdeel verwijderen"><Trash2 size={14} /></button>}
           </div>;
         })}
       </div>
@@ -261,7 +273,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
     {e && <div className="field"><span className="lbl">Planning door</span><div className="row" style={{ gap: 6 }}>{[...new Set([...present, ...plannersOf(e, o)])].map(n => <Chip key={n} on={plannersOf(e, o).includes(n)} onClick={() => togglePlanner(n)}>{n}</Chip>)}</div></div>}
     <div className="row" style={{ gap: 6 }}><span className="stat">Minimaal leiding<b>{need}</b></span><span className={'stat' + (need > present.length ? ' warnc' : '')}>Aanwezig<b>{present.length}</b></span><span className={'stat' + (A.warn ? ' warnc' : '')}>Aandachtspunten<b>{A.warn}</b></span></div>
     {A.warn > 0 && <ul className="issues">{A.issues.filter(i => i.lvl === 'warn').slice(0, 6).map((i, k) => <li key={k} className="warn"><i /><span>{i.text}</span></li>)}</ul>}
-    <p className="hint">Klik op een naam om die in te delen. Klik op een onderdeel om de tijd aan te passen.</p>
+    <p className="hint">Klik op een naam om die in te delen. Klik op een onderdeel om de tijd aan te passen of het weg te halen.</p>
     <div className="tk-prog">{containers.map(C => <div key={C.d.id} className="stack" style={{ gap: 8 }}>
       {C.label && <h3 className="tk-day">{C.label} <span className="hint">{fmtT(C.d.start)}–{fmtT(C.d.end)}</span></h3>}
       {C.d.blocks.length ? timeline(C) : <p className="hint">Nog geen onderdelen.</p>}
