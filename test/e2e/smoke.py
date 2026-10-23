@@ -1396,6 +1396,25 @@ with sync_playwright() as p:
     dl.value.save_as(f'{OUT}/accent.pdf')
     check(any('Spel met Renée' in t for _, _, t in pdf_texts(f'{OUT}/accent.pdf')), 'pdf: ontbonden accent blijft staan (Renée, niet Renee)')
     pg.fill('#om-title', 'Mijn oefenopkomst'); w(700)
+    # pdf-code niet te laden (tabblad stond open tijdens een update van de site): één keer vanzelf opnieuw laden;
+    # was dat net al gebeurd, dan een gewone Nederlandse melding in plaats van de ruwe (Engelse) foutmelding
+    pdfchunk = re.compile(r'/assets/pdf-[^/]*\.js'); n_err = len(errors)
+    pg.route(pdfchunk, lambda r: r.abort()); pg.reload(); w(1200)
+    pg.evaluate("sessionStorage.removeItem('opk.herladen'); window.__oud = 1")
+    try:
+        with pg.expect_event('load', timeout=7000): pg.click('button:has-text("PDF maken")')
+    except Exception: pass
+    soon(lambda: pg.locator('button:has-text("PDF maken")').count() == 1, 4000); w(300)
+    check(pg.evaluate('window.__oud') is None and pg.locator('.toast.show').count() == 0, 'pdf-code niet te laden (na een update): vanzelf opnieuw geladen, geen foutmelding')
+    pg.evaluate("sessionStorage.setItem('opk.herladen', String(Date.now()))")
+    pg.click('button:has-text("PDF maken")')
+    soon(lambda: 'Pdf maken mislukt' in pg.locator('.toast').inner_text(), 4000)
+    t = pg.locator('.toast').inner_text().strip()
+    check(t == 'Pdf maken mislukt. Controleer je internetverbinding en probeer het opnieuw.' and pg.evaluate('window.__oud') is None,
+          f'pdf maken mislukt (al net herladen): Nederlandse melding zonder ruwe foutmelding, niet nog eens herladen ({t!r})')
+    pg.unroute(pdfchunk); pg.evaluate("sessionStorage.removeItem('opk.herladen')")
+    # verwachte meldingen van het mislukte laden niet als fout tellen
+    errors[n_err:] = [e for e in errors[n_err:] if 'dynamically imported module' not in e and '/assets/pdf-' not in e]
     oefen_set = lambda js: pg.evaluate("(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)); " + js + "; localStorage.setItem(k, JSON.stringify(s)); })()")
     oefen_get = lambda js: pg.evaluate("(() => { const s = JSON.parse(localStorage.getItem('opk.oefen.v1')); return " + js + "; })()")
     # dashboard 'Daarna': planning door telt de oude eindverantwoordelijke mee (plannersOf)

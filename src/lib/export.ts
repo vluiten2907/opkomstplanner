@@ -1,6 +1,7 @@
 import { ACCENTS, FIXED_CATS, dayShort, progEmpty, dayTitle, isKamp, minNeed, opkCatOf, plannersOf, type Opk, type Plan, type Settings } from './model';
 import { fmtNL, fmtRange, addDays } from './time';
 import { toast } from '../store/toast';
+import { isLoadError, reloadForUpdate } from './reload';
 
 export function download(filename: string, blob: Blob, okMsg?: string) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
@@ -39,7 +40,12 @@ export async function makePdf(o: Opk | undefined | null, settings: Settings, e: 
     if (practice) watermark(doc);
     const name = (slugify((e ? fmtNL(e.date) + '-' : '') + (o.title || 'opkomst')).slice(0, 60) || 'opkomst') + '.pdf';
     download(name, doc.output('blob'), 'Pdf gedownload');
-  } catch (err: any) { toast('Pdf maken mislukt: ' + err.message); }
+  } catch (err) {
+    // na een update van de site is de pdf-code weg: één keer opnieuw laden haalt de nieuwe versie op
+    if (isLoadError(err) && reloadForUpdate()) return;
+    console.error(err);
+    toast('Pdf maken mislukt. Controleer je internetverbinding en probeer het opnieuw.');
+  }
 }
 
 /** Schuin watermerk op elke pagina (pdf uit de oefenomgeving). */
