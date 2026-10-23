@@ -144,6 +144,11 @@ export function newEntry(slot: string | null, date?: string): Plan {
   return { id: uid(), slot, date: date || slot || todayISO(), endDate: '', type: 'opkomst', topic: '', start: null, end: null,
     planners: [], absent: [], letter: { needed: false, due: '', sent: false }, opkId: null, note: '', updatedAt: Date.now() };
 }
+/** Rij in de jaarplanning zonder inhoud: een gewone opkomst op zijn eigen datum, zonder onderwerp, opmerking, programma, planners, afwezigen, brief of eigen tijden. */
+export function isBlankPlan(e: Plan) {
+  return e.type === 'opkomst' && (!e.slot || e.date === e.slot) && !e.endDate && !e.topic.trim() && !e.note.trim() && !e.opkId
+    && !e.planners.length && !e.absent.length && !e.letter.needed && e.start == null && e.end == null;
+}
 export function normPlan(p: any): Plan {
   const L = p.letter || {};
   return { id: p.id || uid(), slot: p.slot || null, date: p.date || p.slot || todayISO(), endDate: p.endDate || '',

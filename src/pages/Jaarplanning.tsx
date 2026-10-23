@@ -106,7 +106,9 @@ function PlanRow({ r, today }: { r: Row; today: string }) {
   // gekoppeld: het onderwerp is de titel van de opkomst, en die aanpassen vraagt ook recht op opkomsten
   const topic = <TopicInput keyId={r.key} value={o ? o.title : (e ? e.topic : '')} disabled={!plan || (!!o && !(can('build') || can('bank')))} placeholder={type === 'geen' ? 'Reden, bijv. Herfstvakantie' : 'Onderwerp, bijv. Pionieren'} label={'Onderwerp ' + fmtShort(d)} />;
   const cls = ['prow', type, past ? 'past' : ''].join(' ');
-  if (type === 'geen') return <div className={cls} id={rowDomId(r.key)}>{dateBtn}<div className="pf f-topic"><span className="plabel">Reden</span><div className="pcell nowrap"><span className="pill neutral">Geen opkomst</span>{topic}</div></div></div>;
+  // opmerking uit Datum en soort (bijv. waar je verzamelt): voor iedereen te lezen, ook zonder recht op de jaarplanning
+  const note = e && e.note.trim() ? <span className="pnote"><span className="sr-only">Opmerking: </span>{e.note.trim()}</span> : null;
+  if (type === 'geen') return <div className={cls} id={rowDomId(r.key)}>{dateBtn}<div className="pf f-topic"><span className="plabel">Reden</span><div className="pcell nowrap"><span className="pill neutral">Geen opkomst</span>{topic}</div>{note}</div></div>;
   // op de telefoon heet een lege afwezig-knop "+ Afwezig" (de kolomkoppen staan er dan niet)
   const people = (f: 'planners' | 'absent', list: string[]) => <div className="pcell"><PeopleChips list={list} abs={f === 'absent'} />
     {plan && <button className="addbtn" onClick={() => openModal({ kind: 'people', keyId: r.key, field: f })} aria-label={`${f === 'planners' ? 'Planning door' : 'Afwezigheid'} ${fmtShort(d)} aanpassen`} title={f === 'planners' ? 'Wie plant deze opkomst?' : 'Wie is er afwezig?'}>{list.length ? <SquarePen size={14} /> : <Plus size={14} />}{f === 'absent' && !list.length && <span className="addtxt" aria-hidden="true">Afwezig</span>}</button>}</div>;
@@ -117,7 +119,7 @@ function PlanRow({ r, today }: { r: Row; today: string }) {
     if (e.letter.sent) { lcls += ' sent'; ltxt = 'Verstuurd'; } else if (left < 0) { lcls += ' late'; ltxt = 'Te laat: ' + fmtShort(due); } else { lcls += ' on'; ltxt = 'Vóór ' + fmtShort(due); }
   }
   return <div className={cls} id={rowDomId(r.key)}>{dateBtn}
-    <div className="pf f-topic"><span className="plabel">Onderwerp</span>{topic}</div>
+    <div className="pf f-topic"><span className="plabel">Onderwerp</span>{topic}{note}</div>
     <div className="pf f-opk"><span className="plabel">Opkomst</span>{o ? <div className="pcell">
       <button className="plink" onClick={() => nav(`/s/${sid}/bouwer/${o.id}`)} title="Opkomst openen"><b>{o.title || 'Naamloze opkomst'}</b><span className="hint">{isKamp(o) ? 'kamp · ' : ''}{plural(progBlocks(o).length, 'onderdeel', 'onderdelen')}{minNeed(o) ? ' · min. ' + minNeed(o) : ''}</span>
         {o.cats.length > 0 && <span className="cdots">{o.cats.map(c => opkCatOf(settings, c)).filter(Boolean).map(c => <Dot key={c!.id} color={c!.color} />)}</span>}</button>

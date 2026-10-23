@@ -450,3 +450,13 @@ test('hexColor en normSettings: alleen #rrggbb als kleur van een categorie (geen
   const s = M.normSettings({ categories: [{ id: 'a', label: 'A', color: 'red, red) url("https://evil/p.png' }, { id: 'b', label: 'B', color: '#123abc' }] });
   assert.deepEqual(s.categories.map(c => c.color), [M.SWATCHES[0], '#123abc']);
 });
+
+test('isBlankPlan: alleen een lege gewone opkomst op zijn eigen datum telt als leeg', () => {
+  assert.equal(M.isBlankPlan(plan({ slot: '2026-12-19', date: '2026-12-19' })), true);
+  assert.equal(M.isBlankPlan(plan({ slot: null, date: '2026-12-18' })), true, 'losse rij zonder inhoud');
+  for (const [why, extra] of [
+    ['onderwerp', { topic: 'Kerst' }], ['opmerking', { note: 'Vertrek 13:45' }], ['programma', { opkId: 'o1' }], ['planners', { planners: ['Baloe'] }],
+    ['afwezig', { absent: ['Kaa'] }], ['brief', { letter: { needed: true, due: '', sent: false } }], ['eigen tijden', { start: 600, end: 720 }],
+    ['geen opkomst', { type: 'geen' }], ['kamp', { type: 'kamp' }], ['verzet', { date: '2026-12-20' }], ['meer dagen', { endDate: '2026-12-20' }],
+  ] as [string, Partial<Plan>][]) assert.equal(M.isBlankPlan(plan({ slot: '2026-12-19', date: '2026-12-19', ...extra })), false, why);
+});

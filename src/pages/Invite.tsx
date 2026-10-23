@@ -104,7 +104,8 @@ export default function InvitePage() {
       nav('/beheer', { replace: true });
     }
   };
-  const taken = `Deze naam is al in gebruik binnen ${inv.groupName || 'de groep'}. Namen zijn uniek binnen een groep; kies een andere, bijvoorbeeld met je speltak erbij.`;
+  // Bij registreren: de naam kan ook van jezelf zijn (je hebt al een account, bijv. als teamleider van een andere speltak). Dan inloggen.
+  const taken = `Deze naam is al in gebruik binnen ${inv.groupName || 'de groep'}. Is dat jouw naam? Dan heb je al een account en log je in. Anders kies je een andere naam, bijvoorbeeld met je speltak erbij.`;
   const joinErr = (e: any) => e?.code === 'name-taken' ? taken : e?.message === 'name-taken' ? '' : e?.code === 'permission-denied' ? 'Toetreden lukt niet: de uitnodiging is al gebruikt, ingetrokken of hoort bij een ander e-mailadres.' : authError(e);
   /** Toetreden mislukt; bij een bezette naam verschijnt het veld om een naam voor deze groep te kiezen. */
   const failJoin = (e: any, tried: string) => {
@@ -162,6 +163,8 @@ export default function InvitePage() {
       {mode === 'register' && <Field label="Gebruikersnaam" htmlFor="i-name" hint={`Je naam is je gebruikersnaam binnen ${inv.groupName || 'de groep'}: hij mag er maar één keer voorkomen.`}><input id="i-name" value={name} maxLength={40} onChange={e => setName(e.target.value)} placeholder="Zoals de leiding je kent, bijv. Akela" autoComplete="name" {...bad(nameErr)} /></Field>}
       <Field label={mode === 'register' ? 'Kies een wachtwoord' : 'Wachtwoord'} htmlFor="i-pw"><input id="i-pw" type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete={mode === 'register' ? 'new-password' : 'current-password'} minLength={6} required {...bad(pwErr)} /></Field>
       {errLine}
+      {/* naam bezet: misschien is het je eigen account. Naar inloggen, het wachtwoord blijft staan */}
+      {mode === 'register' && err === taken && <div className="row"><button type="button" className="btn sm" onClick={() => { setMode('login'); setChosen(''); setErr(''); }}>Inloggen met dit adres</button></div>}
       {resetSent && <p className="hint" role="status">{resetSent}</p>}
       <button className="btn primary" disabled={busy}>{mode === 'register' ? 'Account aanmaken en toetreden' : 'Inloggen en toetreden'}</button>
       <div className="row between" style={{ fontSize: 14 }}>

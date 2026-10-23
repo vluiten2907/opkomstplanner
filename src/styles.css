@@ -150,6 +150,7 @@ html { scroll-padding-top: calc(var(--barh, 0px) + 12px); }
 .hero-title { overflow-wrap: anywhere; }
 .facts { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); font-size: 14px; }
 .hero-short { font-size: 15.5px; max-width: 62ch; }
+.hero-note { font-size: 14.5px; max-width: 62ch; overflow-wrap: anywhere; }
 .people { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
 .people > div { background: var(--band); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; align-content: start; font-size: 14px; }
 .prog { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -216,6 +217,8 @@ h2.h-sm { font-size: 16.5px; }
 .ptopic:hover { background: var(--sunk); }
 .ptopic:focus { background: var(--surface); outline: 2px solid var(--accent); }
 .ptopic::placeholder { font-weight: 400; color: var(--muted); }
+/* opmerking bij een datum (Datum en soort): kleine regel onder het onderwerp */
+.pnote { display: block; padding: 0 9px 2px; font-size: 12.5px; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
 .pf { min-width: 0; }
 .plabel { display: none; font-size: 11.5px; font-weight: 700; color: var(--muted); }
 .pcell { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
@@ -237,6 +240,7 @@ h2.h-sm { font-size: 16.5px; }
 /* Overig */
 .ctx { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 14px; color: var(--muted); border-radius: 12px; padding: 10px 14px; }
 .ctx b { color: var(--ink); }
+.ctx-note { min-width: 0; overflow-wrap: anywhere; }
 /* kamp past niet (meer) bij de jaarplanning: eigen regel in de contextbalk, met de knop om de rij gelijk te trekken */
 .ctx-misfit { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--signal-ink); font-weight: 600; }
 .ctx-misfit > svg { flex: none; }
@@ -926,6 +930,7 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
   .prow .f-topic { flex: 1 1 140px; }
   .prow .f-topic .ptopic { flex: 1 1 auto; width: auto; }
   .prow.geen .f-topic > .pcell { flex: 1 1 auto; }
+  .prow .f-topic .pnote { flex: 1 1 100%; }
   .prow .f-opk { flex: 1 1 100%; }
   .prow .f-opk > .pcell { flex: 1 1 auto; flex-wrap: nowrap; }
   .prow .plink { flex: 0 1 auto; grid-template-columns: minmax(0, 1fr) auto; column-gap: 6px; align-items: center; }

@@ -914,6 +914,17 @@ with sync_playwright() as p:
     # --- Greet wordt leiding; Beheer (totaal) maakt haar beheerder en wisselt de teamleider
     logout_to(ga_link); register('anna de  vries', 'ga@test.nl')
     check('/uitnodiging/' in pg.url and pg.locator('text=al in gebruik binnen Testgroep').count() == 1, 'naam is uniek binnen de groep')
+    # de naam kan ook van jezelf zijn (bestaand account, bijv. teamleider van een andere speltak): de melding vraagt dat, met een knop naar inloggen
+    tk_btn = pg.locator('.auth-card button:has-text("Inloggen met dit adres")')
+    check('Is dat jouw naam? Dan heb je al een account' in pg.locator('#i-err').inner_text() and tk_btn.count() == 1 and pg.get_attribute('#i-name', 'aria-invalid') == 'true',
+          'naam bezet bij registreren: misschien je eigen account, met de knop Inloggen met dit adres')
+    pg.set_viewport_size({'width': 390, 'height': 844}); w(200); shot('05d-uitnodiging-naam-bezet-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'naam bezet bij registreren mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    tk_btn.click(); w(300)
+    check(pg.locator('button.btn.primary:has-text("Inloggen en toetreden")').count() == 1 and pg.input_value('#i-pw') == 'geheim123' and pg.locator('#i-name').count() == 0 and pg.locator('#i-err').count() == 0,
+          'Inloggen met dit adres: naar inloggen, het wachtwoord blijft staan')
+    pg.click('.auth-card button:has-text("Nieuw account aanmaken")'); w(300)
     register('Greet Beheer', 'ga@test.nl')
     check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'leiding via uitnodiging → dashboard speltak')
     check(pg.locator('.namenote').count() == 0, 'geen melding: voor- en achternaam bij registreren ingevuld')
@@ -1114,7 +1125,15 @@ with sync_playwright() as p:
       return [bank.length, bank[0] && !!bank[0].fromShared, !!o && o.state === 'planned' && o.srcId === (bank[0] && bank[0].id), !!o && o.blocks.every(b => !b.names.length)]; }""", welpen)
     check(gl == [1, True, True, True] and pg.locator('.modal h2:has-text("Opkomst overnemen")').count() == 1 and 'staat nu ook in jullie opkomstenbank' in gtoast,
           f'koppelen uit de groep: kopie in de eigen bank, een kopie daarvan ingepland zonder namen, venster Opkomst overnemen ({gl}; {gtoast})')
-    pg.click('.modal >> text=Klaar'); w(300)
+    # Ongedaan maken (ook terwijl Opkomst overnemen open staat): alleen de ingeplande kopie weg, de kopie in de eigen bank blijft
+    gundo = pg.locator('.toast.show button:has-text("Ongedaan maken")')
+    check(gundo.count() == 1 and 'zonder namen' in gtoast, f'koppelen uit de groep: melding met Ongedaan maken ({gtoast})')
+    gundo.click(); w(700)
+    gl2 = pg.evaluate("""sid => { const s = JSON.parse(localStorage.getItem('fake.firestore')), P = 'speltakken/' + sid + '/opkomsten/';
+      const bank = Object.keys(s).filter(k => k.startsWith(P) && s[k] && s[k].state === 'bank' && s[k].title === 'Sluipspel').map(k => s[k]);
+      return [bank.length, bank[0] ? Object.values(s).filter(v => v && v.state === 'planned' && v.srcId === bank[0].id).length : -1]; }""", welpen)
+    check(gl2 == [1, 0] and pg.locator('.modal').count() == 0 and 'Niet meer ingepland' in pg.locator('.toast').inner_text(),
+          f'koppelen uit de groep, Ongedaan maken: ingeplande kopie weg en venster dicht, de kopie in de eigen bank blijft ({gl2})')
 
     # --- rol overdragen: de opvolger komt binnen als leiding met alle rechten, daarna draagt de teamleider zelf over
     no_hscroll = lambda: pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')
@@ -1188,6 +1207,7 @@ with sync_playwright() as p:
           and 'Gemaakt door Greet Beheer' in bn.inner_text() and re.search(r'geldig t/m \d\d-\d\d-\d{4}', bn.inner_text()) is not None
           and 'Greet%20Beheer%20nodigt%20je%20uit' in href and 'geldig%20t%2Fm' in href,
           'uitnodiging van iemand anders hergebruikt: geen Mail versturen, wel wie hem maakte en tot wanneer hij geldig is')
+    check('Open%20deze%20link.%20Heb%20je%20al%20een%20account%3F%20Log%20dan%20in.%20Anders%20maak%20je%20er%20een%20aan' in href, 'uitnodigingsmail: wie al een account heeft, logt in')
     bn.scroll_into_view_if_needed(); shot('25-uitnodiging-van-ander', False)
     pg.set_viewport_size({'width': 390, 'height': 800}); w(200); bn.scroll_into_view_if_needed(); shot('25b-uitnodiging-van-ander-mobiel', False)
     check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'uitnodiging van iemand anders mobiel: geen horizontale scroll')
@@ -1493,10 +1513,14 @@ with sync_playwright() as p:
     check(pg.locator('.pill:has-text("Alleen lezen")').count() == 1 and tsel.count() == 4 and all(tsel.nth(k).is_disabled() for k in range(4)), 'alleen lezen: begin- en eindtijd van de opkomst niet aan te passen')
     check(pg.locator('#om-title').get_attribute('readonly') is not None and pg.locator('.ctx button:has-text("Leiding indelen")').count() == 0 and pg.locator('.plan-head button:has-text("In bank")').count() == 0,
           'alleen lezen: titel vast, geen Leiding indelen en geen In bank')
+    check(pg.locator('.plan-head button:has-text("Nieuw")').count() == 0 and pg.locator('.plan-head button:has-text("Alle opkomsten")').count() == 1,
+          'zonder recht Opkomsten: geen knop Nieuw in de bouwer, wel Alle opkomsten')
     pg.locator('.blk').nth(1).click(); w(300)
     check(pg.locator('.side .timefield .tp-h').is_disabled() and pg.locator('#bf-dur').is_disabled(), 'alleen lezen: begintijd van een onderdeel niet aan te passen')
     nb0 = pg.locator('.blk').count(); pg.keyboard.press('Delete'); w(300)
     check(pg.locator('.blk').count() == nb0, 'alleen lezen: onderdeel niet te verwijderen')
+    pg.click('.side .closex'); w(200); pg.click('.plan-head button:has-text("Alle opkomsten")'); w(700)
+    check(pg.url.rstrip('/').endswith('/s/oefen/bouwer') and pg.locator('main .btn:has-text("Nieuwe opkomst")').count() == 0, 'Alle opkomsten: terug naar de lijst (daar ook niets nieuws te maken)')
     pg.goto(BASE + '/s/oefen/instellingen'); w(1000)
     check(pg.locator('#gs-name').is_disabled() and pg.locator('button:has-text("Back-up terugzetten")').count() == 0, 'zonder recht Instellingen: instellingen alleen bekijken, geen back-up terugzetten')
     check(pg.locator('.catrow .sw.cur').count() > 0 and all(pg.locator('.catrow .sw.cur').nth(i).is_disabled() for i in range(pg.locator('.catrow .sw.cur').count())),
@@ -2141,6 +2165,115 @@ with sync_playwright() as p:
     check(pg.locator('h1:text-is("Activiteitenbank")').count() == 1 and re.search(r'\d+ activiteiten', pg.locator('.subline').inner_text()) is not None, 'activiteitenbank: kop zoals in het menu, aantal eronder')
     pg.click('nav >> text=Opkomstenbank'); w(700)
     check(pg.locator('h1:text-is("Opkomstenbank")').count() == 1 and re.search(r'\d+ opkomsten', pg.locator('.subline').inner_text()) is not None, 'opkomstenbank: kop zoals in het menu, aantal eronder')
+    # --- jaarplanning en bouwer (eigen stand van de oefendata, daarna terug): kampdag wisselen, extra datum op een lege zaterdag,
+    # inplannen uit de bank met Ongedaan maken, opmerking zichtbaar, rij leegmaken terugzetten, Gebruiken bij wat past
+    w(900); bak_r3 = oefen_get('s')
+    P_ = "s['speltakken/oefen/planning/"
+    plan_of = lambda pid, f: oefen_get(P_ + pid + "']." + f)
+    # kamp op een laptop: een andere dag kiezen sluit het bewerkpaneel van het onderdeel van de vorige dag
+    pg.goto(BASE + '/s/oefen/bouwer/opk-kamp'); w(1200)
+    days = pg.locator('.daytabs .daytab:not(.add)')
+    days.nth(0).click(); w(300); pg.locator('.lanes .blk:has(.t:text-is("Nachtspel"))').click(); w(400)
+    ed1 = pg.locator('#bf-title').count() == 1 and pg.input_value('#bf-title') == 'Nachtspel'
+    days.nth(2).click(); w(400)
+    check(ed1 and pg.locator('#bf-title').count() == 0 and days.nth(2).get_attribute('aria-selected') == 'true',
+          'kamp: een andere dag kiezen sluit het onderdeel van de vorige dag (geen tijden van de verkeerde dag)')
+    pg.locator('.lanes .blk:has(.t:text-is("Opruimen en inpakken"))').click(); w(300)
+    ed2 = pg.locator('#bf-title').count() == 1
+    pg.click('.dayedit button:has-text("Dag kopiëren")'); w(500)
+    check(ed2 and pg.locator('#bf-title').count() == 0 and days.count() == 4 and days.nth(3).get_attribute('aria-selected') == 'true', 'kamp: Dag kopiëren sluit het onderdeel van de vorige dag')
+    check(pg.locator('.plan-head button:has-text("Nieuw")').count() == 1 and pg.locator('.plan-head button:has-text("Alle opkomsten")').count() == 0, 'met recht Opkomsten: knop Nieuw in de bouwer')
+    pg.evaluate("v => localStorage.setItem('opk.oefen.v1', JSON.stringify(v))", bak_r3)
+    # extra datum op een lege zaterdag (geen rij) en een weekend over een lege zaterdag (rij zonder inhoud): geen tweede rij voor die zaterdag
+    s7 = plan_of('pl-7', 'slot'); s8 = (date.fromisoformat(s7) + timedelta(days=7)).isoformat(); s10 = (date.fromisoformat(s7) + timedelta(days=21)).isoformat()
+    fri10, sun10 = (date.fromisoformat(s10) - timedelta(days=1)).isoformat(), (date.fromisoformat(s10) + timedelta(days=1)).isoformat()
+    oefen_set(f"s['speltakken/oefen/planning/pl-leeg'] = {{ id: 'pl-leeg', slot: '{s10}', date: '{s10}' }}")
+    on_day = lambda d: oefen_get(f"Object.entries(s).filter(([k, v]) => k.startsWith('speltakken/oefen/planning/') && v && (v.slot === '{d}' || v.date <= '{d}' && (v.endDate || v.date) >= '{d}')).map(([k, v]) => [k.split('/').pop(), v.slot, v.type, v.date, v.endDate, v.topic])")
+    pg.goto(BASE + '/s/oefen/jaarplanning'); w(1000); pg.click('.presets >> text=Komende 3 maanden'); w(400)
+    n_topic = lambda t: pg.evaluate("t => [...document.querySelectorAll('.prow:not(.head) .ptopic')].filter(i => i.value === t).length", t)
+    dd2 = lambda iso: date.fromisoformat(iso).strftime('%d-%m-%Y')
+    def extra(kind, d1, d2, topic):
+        pg.click('button:has-text("Extra datum")'); w(300); pg.click(f'.modal .chip:text-is("{kind}")')
+        pg.fill('#xd-date', dd2(d1)); pg.fill('#xd-end', dd2(d2) if d2 else ''); pg.fill('#xd-topic', topic); pg.click('.modal button:has-text("Toevoegen")'); w(700)
+    extra('Opkomst', s8, '', 'Kerstviering')
+    r8 = on_day(s8)
+    check(len(r8) == 1 and r8[0][1:] == [s8, 'opkomst', s8, '', 'Kerstviering'] and n_topic('Kerstviering') == 1 and pg.locator(f'#r-s-{s8}').count() == 0,
+          f'extra datum op een lege zaterdag: die zaterdag zelf, geen tweede rij ({r8})')
+    extra('Kamp / weekend', fri10, sun10, 'Groepsweekend')
+    r10 = on_day(s10)
+    check(r10 == [['pl-leeg', s10, 'kamp', fri10, sun10, 'Groepsweekend']] and n_topic('Groepsweekend') == 1, f'extra weekend over een zaterdag zonder inhoud: dat wordt de rij (vr–zo), geen lege zaterdag ernaast ({r10})')
+    t7 = plan_of('pl-7', 'topic'); extra('Opkomst', s7, '', 'Tweede opkomst')
+    r7 = sorted(on_day(s7), key=lambda x: x[0])
+    check(len(r7) == 2 and plan_of('pl-7', 'topic') == t7 and any(x[1] is None and x[5] == 'Tweede opkomst' for x in r7), f'extra datum op een zaterdag met inhoud: die blijft, de extra datum komt ernaast ({r7})')
+    pg.evaluate("v => localStorage.setItem('opk.oefen.v1', JSON.stringify(v))", bak_r3)
+    # inplannen op een dag zonder opkomst: niet stil overschrijven
+    s3 = plan_of('pl-3', 'date')
+    pg.goto(BASE + '/s/oefen/opkomsten'); w(1000); pg.click('.bcard:has-text("Grote vlaggenroof")'); w(300); pg.click('.side >> text=Inplannen'); w(400)
+    pg.fill('.modal input[aria-label="Andere datum"]', dd2(s3)); pg.click('.modal button:has-text("Op deze datum")'); w(500)
+    gt = pg.locator('.toast').inner_text()
+    check('is geen opkomst (Trainingsweekend leiding)' in gt and pg.locator('.modal').count() == 1 and plan_of('pl-3', 'type') == 'geen' and not plan_of('pl-3', 'opkId'),
+          f'inplannen op een dag zonder opkomst: geweigerd met uitleg, de dag blijft Geen opkomst ({gt})')
+    pg.click('.modal .closex'); w(200)
+    # koppelen uit de bank (met recht Opkomsten): Opkomst overnemen, en Ongedaan maken zet het onderwerp terug en haalt de kopie weg
+    copies = lambda src: oefen_get(f"Object.values(s).filter(o => o && o.state === 'planned' && o.srcId === '{src}').length")
+    pg.goto(BASE + '/s/oefen/jaarplanning'); w(1000); pg.click('.presets >> text=Dit seizoen'); w(400)
+    prow(ridx('Bosspel met de Scouts')).locator('.btn:has-text("Koppelen")').click(); w(300)
+    pg.locator('.modal .pick:has-text("Knopen en pionieren")').first.locator('button:has-text("Kiezen")').click(); w(900)
+    kt = pg.locator('.toast').inner_text(); kundo = pg.locator('.toast.show button:has-text("Ongedaan maken")')
+    linked7 = plan_of('pl-7', 'topic') == 'Knopen en pionieren' and copies('opk-bank-knopen') == 1
+    check(linked7 and pg.locator('.modal h2:has-text("Opkomst overnemen")').count() == 1 and 'zonder namen' in kt and kundo.count() == 1,
+          f'koppelen uit de bank: Opkomst overnemen, melding met Ongedaan maken ({kt})')
+    shot('46-koppelen-bank-ongedaan', False)
+    kundo.click(); w(700)
+    check(pg.locator('.modal').count() == 0 and soon(lambda: plan_of('pl-7', 'topic') == 'Bosspel met de Scouts' and not plan_of('pl-7', 'opkId') and copies('opk-bank-knopen') == 0)
+          and oefen_get("s['speltakken/oefen/opkomsten/opk-bank-knopen'].state") == 'bank', 'koppelen uit de bank, Ongedaan maken: onderwerp terug, kopie weg, de bank blijft')
+    # opmerking bij een datum: in de jaarplanning (ook bij Geen opkomst), op het dashboard en in de bouwer, voor iedereen te lezen
+    NOTE = 'Vertrek om 13:45 bij het station'
+    oefen_set(P_ + "pl-1'].note = " + json.dumps(NOTE) + "; " + P_ + "pl-0'].note = 'Neem een zaklamp mee'")
+    pg.goto(BASE + '/s/oefen/jaarplanning'); w(1000); pg.click('.presets >> text=Komende 3 maanden'); w(400)
+    vrow = pg.locator('.prow:has(.plink:has-text("Vuur en kompas"))')
+    check(vrow.locator('.pnote').text_content() == 'Opmerking: ' + NOTE and pg.locator('.prow.geen .pnote:has-text("Leiding heeft een trainingsweekend.")').count() == 1,
+          'opmerking: in de jaarplanning onder het onderwerp, ook bij Geen opkomst')
+    vrow.scroll_into_view_if_needed(); shot('47-opmerking-jaarplanning', False)
+    pg.set_viewport_size({'width': 390, 'height': 844}); w(300); vrow.scroll_into_view_if_needed(); shot('47b-opmerking-jaarplanning-mobiel', False)
+    nb = vrow.locator('.pnote').bounding_box(); rb = vrow.bounding_box()
+    check(pg.evaluate('document.documentElement.scrollWidth <= innerWidth + 1') and nb['x'] >= rb['x'] and nb['x'] + nb['width'] <= rb['x'] + rb['width'] + 1, 'opmerking in de jaarplanning mobiel: binnen de rij, geen horizontale scroll')
+    pg.goto(BASE + '/s/oefen/dashboard'); w(1200)
+    nl = pg.locator('.nextlist').inner_text()
+    check(NOTE in nl and 'Leiding heeft een trainingsweekend.' in nl and pg.locator('.hero .hero-note').text_content() == 'Opmerking: Neem een zaklamp mee'
+          and pg.locator('.hero p.hero-short').count() == 1, 'opmerking: op het dashboard bij Daarna en op de kaart (naast de omschrijving van de opkomst)')
+    shot('47c-opmerking-dashboard-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'opmerking op het dashboard mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200); shot('47d-opmerking-dashboard', False)
+    pg.goto(BASE + '/s/oefen/bouwer/opk-vuur'); w(1000)
+    check(pg.locator('.ctx .ctx-note').text_content() == 'opmerking: ' + NOTE, 'opmerking: in de bouwer bij een ingeplande opkomst')
+    # rij leegmaken kan terug: onderwerp, planning, afwezig en opmerking, en de opkomst weer gekoppeld
+    pg.goto(BASE + '/s/oefen/jaarplanning'); w(1000); pg.click('.presets >> text=Komende 3 maanden'); w(400)
+    pl1 = oefen_get(P_ + "pl-1']")
+    vrow.locator('.pdate').click(); w(300); pg.click('.modal button:has-text("Rij leegmaken")'); w(150); pg.click('.modal button:has-text("Klik nogmaals om leeg te maken")'); w(600)
+    cleared = not oefen_get(P_ + "pl-1']") and oefen_get("s['speltakken/oefen/opkomsten/opk-vuur'].state") == 'draft' and vrow.count() == 0
+    pg.click('.toast.show button:has-text("Ongedaan maken")'); w(700)
+    pl1b = oefen_get(P_ + "pl-1']") or {}
+    check(cleared and all(pl1b.get(k) == pl1[k] for k in ('topic', 'planners', 'absent', 'note', 'opkId', 'date', 'slot')) and oefen_get("s['speltakken/oefen/opkomsten/opk-vuur'].state") == 'planned' and vrow.count() == 1,
+          f'rij leegmaken: Ongedaan maken zet de rij terug, met de opkomst weer gekoppeld ({pl1b.get("topic")}, {pl1b.get("opkId")})')
+    pg.evaluate("v => localStorage.setItem('opk.oefen.v1', JSON.stringify(v))", bak_r3)
+    # nog zonder programma: past er een concept of iets uit de bank bij, dan is Gebruiken de hoofdknop (Maken gewoon)
+    pg.goto(BASE + '/s/oefen/bouwer'); w(1000)
+    sk = pg.locator('section[aria-labelledby="bw-open"] .pick:has-text("Sinterklaas")'); rw = pg.locator('section[aria-labelledby="bw-open"] .pick:has-text("Rond de wereld")')
+    check(sk.locator('.btn.primary').all_inner_texts() == ['Gebruiken'] and sk.locator('.btn:not(.primary):has-text("Maken")').count() == 1 and rw.locator('.btn.primary').all_inner_texts() == ['Gebruiken'],
+          'bouwer, nog zonder programma: Gebruiken is de hoofdknop bij wat past, Maken een gewone knop')
+    pg.set_viewport_size({'width': 390, 'height': 844}); w(200); pg.locator('#bw-open').scroll_into_view_if_needed(); shot('25d-bouwer-gebruiken-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'bouwer met Gebruiken mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    sk.locator('button:has-text("Gebruiken")').click(); w(700)
+    check(soon(lambda: plan_of('pl-2', 'opkId') == 'opk-sint' and oefen_get("s['speltakken/oefen/opkomsten/opk-sint'].state") == 'planned') and 'Gekoppeld' in pg.locator('.toast').inner_text(),
+          'Gebruiken bij een concept: dat concept wordt gekoppeld (geen tweede, lege opkomst)')
+    rw.locator('button:has-text("Gebruiken")').click(); w(900)
+    check(pg.locator('.modal h2:has-text("Opkomst overnemen")').count() == 1 and copies('opk-bank-wereld') == 1 and pg.locator('.toast.show button:has-text("Ongedaan maken")').count() == 1,
+          'Gebruiken uit de bank: een kopie zonder namen ingepland, Opkomst overnemen, met Ongedaan maken')
+    pg.click('.modal >> text=Klaar'); w(300)
+    pg.evaluate("v => localStorage.setItem('opk.oefen.v1', JSON.stringify(v))", bak_r3)
+    pg.goto(BASE + '/s/oefen/jaarplanning'); w(900)
     # --- nieuwe opkomst: titel klaar om te typen; leeg weggaan laat geen concept achter, ingevuld blijft hij staan
     n_draft = lambda: oefen_get("Object.keys(s).filter(k => k.startsWith('speltakken/oefen/opkomsten/') && s[k].state === 'draft').length")
     pg.click('nav >> text=Opkomstbouwer'); w(800); n0 = n_draft()
@@ -2708,7 +2841,7 @@ with sync_playwright() as p:
     a.goto(BASE + '/s/oefen/bouwer'); aw(1000)
     pk = a.evaluate("[...document.querySelectorAll('.picklist .pick > .btn, .picklist .pick > .row > .btn.primary')].map(b => b.getAttribute('aria-label'))")
     # ook Maken en Koppelen bij de datums nog zonder programma noemen het onderwerp
-    check(len([x for x in pk if x and x.startswith('Openen: ')]) > 2 and all(x and re.fullmatch(r'(Openen|Programma maken|Koppelen): .+', x) for x in pk),
+    check(len([x for x in pk if x and x.startswith('Openen: ')]) > 2 and all(x and re.fullmatch(r'(Openen|Programma maken|Koppelen|Gebruiken): .+', x) for x in pk),
           f'opkomstbouwer: elke knop Openen (en Maken, Koppelen) heeft de titel in de naam ({pk[:3]}, {[x for x in pk if not x.startswith("Openen")][:2]})')
     a.goto(BASE + '/s/oefen/instellingen'); aw(1000)
     a.locator('.catrow .sw.cur').first.click(); aw(200)

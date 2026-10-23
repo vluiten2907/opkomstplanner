@@ -179,6 +179,8 @@ function Hero({ r, today }: { r: Row; today: string }) {
         <div className="facts">{facts}</div>
         <InlineText value={short} enabled={canEdit} label="Korte omschrijving" className="hero-short" multiline onSave={saveShort}
           render={(tap, start) => short ? <p className="hero-short" {...tap}>{short}</p> : start ? <button className="hero-short hero-add-short" onClick={start}>Korte omschrijving toevoegen</button> : null} />
+        {/* opmerking uit de jaarplanning naast de omschrijving van de opkomst (zonder omschrijving staat de opmerking al hierboven) */}
+        {o && o.short && e && e.note.trim() && <p className="hero-note"><b>Opmerking:</b> {e.note.trim()}</p>}
       </div>
     </div>
     <div className="people">
@@ -225,7 +227,8 @@ function NextItem({ r }: { r: Row }) {
     else tags.push(ps === 'leeg' ? <span key="g" className="pill neutral">Nog leeg</span> : ps === 'warn' ? <span key="g" className="pill warn">Aandachtspunten</span> : <span key="g" className="pill good">Programma klaar</span>);
     if (e && e.letter.needed) tags.push(<span key="l" className={'pill ' + (e.letter.sent ? 'good' : 'warn')}>{e.letter.sent ? 'Brief verstuurd' : 'Brief'}</span>);
   }
-  const sub = st === 'off' ? fmtRange(d, e && e.endDate) : `${fmtRange(d, e && e.endDate)} · ${planners.length ? 'planning: ' + planners.join(', ') : 'nog niemand toegewezen'}`;
+  const note = e ? e.note.trim() : '';
+  const sub = (st === 'off' ? fmtRange(d, e && e.endDate) : `${fmtRange(d, e && e.endDate)} · ${planners.length ? 'planning: ' + planners.join(', ') : 'nog niemand toegewezen'}`) + (note ? ' · ' + note : '');
   return <li><button className="nextitem lift transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-1 active:translate-y-0.5" onClick={() => nav(`/s/${sid}/jaarplanning?focus=${encodeURIComponent(r.key)}`)}>
     <span className="nd"><b>{fromISO(d).getDate()}</b><span>{mon3(d)}</span></span>
     <span className="ni"><b>{title}</b><span className="hint">{sub}</span></span>

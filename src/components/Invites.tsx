@@ -85,7 +85,7 @@ export function InviteLink({ inv, fromName, onClose }: { inv: Invite; fromName: 
   const url = inviteUrl(inv.id);
   const what = `${KIND_LABELS[inv.kind]} voor ${where_(inv)}`;
   const mine = !!user && inv.invitedBy === user.uid, by = inv.invitedByName || fromName, until = validUntil(inv);
-  const mailto = `mailto:${inv.email}?subject=${encodeURIComponent('Uitnodiging Opkomstplanner: ' + what)}&body=${encodeURIComponent(`Hoi,\n\n${by || 'Ik'} nodigt je uit voor de Opkomstplanner als ${what}.\n\nOpen deze link en maak een account aan met dit e-mailadres (${inv.email}):\n${url}\n\nDe link is geldig t/m ${until}.\n\nGroet,\n${fromName}`)}`;
+  const mailto = `mailto:${inv.email}?subject=${encodeURIComponent('Uitnodiging Opkomstplanner: ' + what)}&body=${encodeURIComponent(`Hoi,\n\n${by || 'Ik'} nodigt je uit voor de Opkomstplanner als ${what}.\n\nOpen deze link. Heb je al een account? Log dan in. Anders maak je er een aan met dit e-mailadres (${inv.email}):\n${url}\n\nDe link is geldig t/m ${until}.\n\nGroet,\n${fromName}`)}`;
   return <div className="banknote"><span>Uitnodiging als <b>{KIND_LABELS[inv.kind]}</b>{inv.transfer ? ' (rol overdragen)' : ''} voor <b>{inv.email}</b>. {mine ? 'Verstuur de mail of stuur de link zelf door' : 'Stuur de link zelf door'}; hij werkt alleen voor dat e-mailadres en is geldig t/m {until}.</span>
     {!mine && <span className="hint">Gemaakt door {by || 'iemand anders'}. Kopieer de link of vraag {by || 'die persoon'} om hem te mailen.</span>}
     <code className="mono-code">{url}</code>

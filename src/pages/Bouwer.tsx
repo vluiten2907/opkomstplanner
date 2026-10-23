@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Bookmark, CalendarDays, ChevronRight, Copy, Download, GraduationCap, Plus, Tent, Trash2, TriangleAlert, X } from 'lucide-react';
+import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Copy, Download, GraduationCap, Plus, Tent, Trash2, TriangleAlert, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast, undoAction } from '../store/toast';
+import { linkBankCopy, linkDraft } from '../components/modals';
 import { openModal, withFreeName } from '../store/modal';
 import { guardLeave, setUnsaved, useDirty } from '../store/unsaved';
 import { isFresh, markFresh, watchFresh } from '../store/fresh';
@@ -39,7 +40,8 @@ function metaPref(narrow: boolean, v?: '0' | '1') {
 /* ============ Startscherm ============ */
 export default function Bouwer() {
   const { oid } = useParams();
-  const { opks, plans, settings, saveOpk, sid, can, canLink, getO, removeOpk, entryOfOpk, entryFor, newForEntry, practice } = useSpeltak();
+  const S = useSpeltak();
+  const { opks, plans, settings, saveOpk, sid, can, canLink, getO, removeOpk, entryOfOpk, entryFor, newForEntry, practice } = S;
   const nav = useNavigate();
   const o = oid ? getO(oid) : undefined;
   if (oid && o) return <Builder key={o.id} o={o} />;
@@ -54,6 +56,9 @@ export default function Bouwer() {
   // met het recht Opkomsten meteen een programma maken (onderwerp als titel, gekoppeld); anders kiezen uit de bank of een concept
   const make = (key: string) => { const en = { ...entryFor(key) }, n = newForEntry(en, en.type === 'kamp'); nav(`/s/${sid}/bouwer/${n.id}`); };
   const create = (kamp: boolean) => { const n = kamp ? newKamp(settings, 3) : newOpk(settings); saveOpk(n); markFresh(n.id); nav(`/s/${sid}/bouwer/${n.id}`); };
+  // past er een concept of iets uit de bank bij het onderwerp: meteen gebruiken, net als Kiezen in Koppelen
+  // (een concept wordt zelf gekoppeld, uit de bank komt een kopie zonder namen met Opkomst overnemen)
+  const use = (x: Opk, key: string) => x.state === 'draft' ? linkDraft(S, x, key, () => nav(`/s/${sid}/bouwer/${x.id}`)) : linkBankCopy(S, x, key, (id, fresh) => openModal({ kind: 'takeover', oid: id, fresh }), id => nav(`/s/${sid}/bouwer/${id}`));
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title="Opkomstbouwer" />
     {oid && !o && <div className="ctx">Deze opkomst bestaat niet (meer).</div>}
@@ -67,13 +72,14 @@ export default function Bouwer() {
       <h2 id="bw-open">Nog zonder programma</h2>
       <div className="picklist">{open.map(r => {
         const e = r.e!, d = rowDate(r), what = e.topic.trim() || 'Weekendkamp';
-        // past er al iets uit de bank of een concept bij het onderwerp? Dan ook kiezen (het venster Koppelen zet die bovenaan)
-        const fit = e.topic.trim() ? [...bank, ...drafts].find(x => fitsTopic(x, e.topic)) : undefined;
+        // past er al een concept of iets uit de bank bij het onderwerp? Dan is Gebruiken de hoofdknop (het venster Koppelen zet die ook bovenaan)
+        const fit = e.topic.trim() ? [...drafts, ...bank].find(x => fitsTopic(x, e.topic)) : undefined;
         const pick = <button className="btn sm" onClick={() => openModal({ kind: 'link', keyId: r.key })} aria-label={`Koppelen: ${what}`}>Koppelen</button>;
+        const makeBtn = <button className={'btn sm' + (fit ? '' : ' primary')} onClick={() => make(r.key)} aria-label={`Programma maken: ${what}`}><Plus size={14} />Maken</button>;
         return <div key={r.key} className="pick">
           <div className="info"><span className="pick-kicker"><span className="pk-when"><CalendarDays size={14} aria-hidden="true" />{fmtRange(d, e.endDate)}</span>{e.type === 'kamp' && <span className="pill kamp">Kamp</span>}</span><b>{what}</b>
             {fit && <span className="hint">Past bij: {fit.title || 'Naamloze opkomst'} ({fit.state === 'bank' ? 'opkomstenbank' : 'concept'})</span>}</div>
-          {can('build') ? <div className="row"><button className="btn sm primary" onClick={() => make(r.key)} aria-label={`Programma maken: ${what}`}><Plus size={14} />Maken</button>{fit && pick}</div> : pick}</div>;
+          {can('build') ? <div className="row">{fit && <button className="btn sm primary" onClick={() => use(fit, r.key)} aria-label={`Gebruiken: ${fit.title || 'Naamloze opkomst'} voor ${what}`}>Gebruiken</button>}{makeBtn}{fit && pick}</div> : pick}</div>;
       })}</div>
     </section>}
     {drafts.length > 0 && <><h2>Concepten</h2><div className="picklist">{drafts.map(x => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
@@ -184,6 +190,11 @@ function Builder({ o: stored }: { o: Opk }) {
   const whole = kamp ? analyze(o, present, leaders) : A;
   const sel = selId ? allBlocks(o).find(b => b.id === selId) || null : null;
   useEffect(() => { if (selId && !sel) setSelId(null); }, [selId, sel]);
+  // Kamp: tijden en Dupliceren van het gekozen onderdeel volgen zijn eigen dag, niet de dag die nu in beeld is
+  const selDay = sel && kamp ? o.days.find(d => d.blocks.some(x => x.id === sel.id)) : undefined;
+  const selCtx: Ctx = selDay && selDay !== D ? { ...ctx, D: selDay, T0: selDay.start, T1: selDay.end } : ctx;
+  // Kamp: een andere dag kiezen (tab, + Dag, Dag kopiëren, Dag verwijderen of terugzetten) sluit het onderdeel van een andere dag
+  const pickDay = (i: number) => { setDayIdx(i); setSelId(cur => cur && !live.current.o.days[i]?.blocks.some(b => b.id === cur) ? null : cur); };
   // kb: met het toetsenbord gekozen, dan gaat de focus meteen naar het eerste veld van het onderdeel
   const select = (id: string | null, kb = false) => {
     if (id && kamp) { const k = o.days.findIndex(d => d.blocks.some(b => b.id === id)); if (k >= 0 && k !== di) setDayIdx(k); }
@@ -297,9 +308,11 @@ function Builder({ o: stored }: { o: Opk }) {
           <div className="row"><span className="eyebrow">{kamp ? 'Weekendkampplanner' : 'Opkomstbouwer'}</span>{kamp && <span className="pill kamp">Kamp</span>}{pill}{readOnly && <span className="pill neutral">Alleen lezen</span>}</div>
           <TitleArea value={o.title} readOnly={readOnly} onChange={v => upd(() => { o.title = v; if (e) savePlan({ ...e, topic: v }); })} placeholder={kamp ? 'Titel van het kamp' : 'Opkomst titel'} autoFocus={fresh && !readOnly} />
         </div>
-        <div className="row">{actions}<button className="btn ghost" onClick={() => go(`/s/${sid}/bouwer`)} title="Nieuwe opkomst of weekendkamp"><Plus size={16} />Nieuw</button></div>
+        <div className="row">{actions}{can('build') ? <button className="btn ghost" onClick={() => go(`/s/${sid}/bouwer`)} title="Nieuwe opkomst of weekendkamp"><Plus size={16} />Nieuw</button>
+          : <button className="btn ghost" onClick={() => go(`/s/${sid}/bouwer`)}><ChevronLeft size={16} />Alle opkomsten</button>}</div>
       </div>
       {o.state === 'planned' && e && <div className="ctx">{!readOnly && <button className="btn sm" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })}>Leiding indelen</button>}<span>Ingepland op <b>{fmtRange(e.date, e.endDate, true)}</b></span><span>week {isoWeek(e.date)}</span><span>planning door: <b>{plannersOf(e, o).join(', ') || 'nog niemand'}</b></span>
+        {e.note.trim() && <span className="ctx-note">opmerking: <b>{e.note.trim()}</b></span>}
         {src && can('bank') && <span>uit de opkomstenbank: {src.title || 'naamloos'} · <ConfirmBtn className="linkbtn" label="bank bijwerken met deze versie" confirm="Klik nogmaals: bank overschrijven" onConfirm={updBank} /></span>}
         {misfit && <div className="ctx-misfit" role="status"><TriangleAlert size={16} aria-hidden="true" /><span>{misfit}</span>{can('plan') && <button className="btn sm" onClick={fitPlan}>Jaarplanning aanpassen</button>}</div>}</div>}
       <div className="card">
@@ -319,7 +332,7 @@ function Builder({ o: stored }: { o: Opk }) {
             <Field label="Nabespreking" hint={o.post ? 'Klaar om ' + fmtT(o.end + o.post) : 'Geen tijd achteraf'}><select value={o.post} disabled={readOnly} onChange={ev => upd(() => { o.post = +ev.target.value; })}>{PREP_OPTS.map(m => <option key={m} value={m}>{prepLabel(m)}{m ? ' achteraf' : ''}</option>)}</select></Field>
           </>}
         </div>}
-        {kamp && <DaysBar o={o} di={di} setDayIdx={setDayIdx} upd={upd} date={e ? e.date : null} readOnly={readOnly} />}
+        {kamp && <DaysBar o={o} di={di} setDayIdx={pickDay} upd={upd} date={e ? e.date : null} readOnly={readOnly} />}
         {e && metaOpen && <div className="present" role="group" aria-labelledby="om-present-l"><span className="lbl" id="om-present-l" style={{ marginRight: 6 }}>Aanwezige leiding</span>
           {leaders.length ? leaders.map(n => <Chip key={n} on={!e.absent.includes(n)} disabled={!can('plan')} onClick={() => { const en = { ...e, absent: e.absent.includes(n) ? e.absent.filter(x => x !== n) : [...e.absent, n] }; dropAbsent(en); savePlan(en); }}>{n}</Chip>) : <span className="hint">Nog geen leidingteam.</span>}
           {present.filter(n => !leaders.includes(n)).map(n => <Chip key={n} on disabled title="Met de hand ingedeeld">{n}</Chip>)}</div>}
@@ -345,9 +358,9 @@ function Builder({ o: stored }: { o: Opk }) {
         <div className="tl-foot">{readOnly ? 'Je kunt deze opkomst bekijken, maar niet aanpassen.' : 'Klik in de tijdlijn of gebruik + Onderdeel om iets toe te voegen.'}</div>
       </section>
       <aside ref={sideRef} className={'card side sheet' + (sel ? ' editing' : '')} aria-label="Zijpaneel">
-        {sel ? <div ref={sheetRef} {...sheetProps}><Editor key={sel.id} b={sel} ctx={ctx} upd={upd} onClose={closeEditor} onDelete={() => deleteBlock(sel.id)} onDup={() => {
-          const fits = sel.start + 2 * sel.dur <= T1; const c = { ...clone(sel), id: uid(), start: fits ? sel.start + sel.dur : sel.start };
-          upd(() => { D.blocks.push(c); }); select(c.id); toast(fits ? 'Kopie direct erna gezet' : 'Kopie op dezelfde tijd gezet');
+        {sel ? <div ref={sheetRef} {...sheetProps}><Editor key={sel.id} b={sel} ctx={selCtx} upd={upd} onClose={closeEditor} onDelete={() => deleteBlock(sel.id)} onDup={() => {
+          const fits = sel.start + 2 * sel.dur <= selCtx.T1; const c = { ...clone(sel), id: uid(), start: fits ? sel.start + sel.dur : sel.start };
+          upd(() => { selCtx.D.blocks.push(c); }); select(c.id); toast(fits ? 'Kopie direct erna gezet' : 'Kopie op dezelfde tijd gezet');
         }} saveLib={saveLib} /></div>
           : <SidePanel tab={sideTab} setTab={t => { setSideTab(t); if (window.matchMedia('(max-width: 900px)').matches) sideRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} ctx={ctx} A={whole} lanesRef={lanesRef} onSelect={select}
             onPlan={l => { const f = firstFree(D, Math.min(l.dur, D.end - D.start)); const b = insertLib(l, f == null ? D.start : f); showNew(b.id); toast(f == null ? 'Geen vrij moment lang genoeg; gezet op ' + fmtT(b.start) : 'Ingepland om ' + fmtT(b.start)); }}

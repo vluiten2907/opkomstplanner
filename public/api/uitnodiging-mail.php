@@ -86,7 +86,7 @@ $link = rtrim($cfg['app_url'], '/') . '/uitnodiging/' . $token;
 $wat = $rol . ($waar ? " voor $waar" : '');
 $onderwerp = 'Uitnodiging Opkomstplanner: ' . $wat;
 $tekst = "Hoi,\r\n\r\n$wie nodigt je uit voor de Opkomstplanner als $wat.\r\n\r\n"
-  . "Open deze link en maak een account aan met dit e-mailadres ($aan):\r\n$link\r\n\r\n"
+  . "Open deze link. Heb je al een account? Log dan in. Anders maak je er een aan met dit e-mailadres ($aan):\r\n$link\r\n\r\n"
   . "De link is nog $dagen " . ($dagen === 1 ? 'dag' : 'dagen') . " geldig.\r\n\r\n"
   . "Groet,\r\n$wie\r\n\r\n--\r\nDeze mail is verstuurd vanuit de Opkomstplanner. Niet verwacht? Dan kun je hem negeren.\r\n";
 
