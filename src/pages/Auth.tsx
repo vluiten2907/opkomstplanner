@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import { GraduationCap, TentTree } from 'lucide-react';
+import { CalendarDays, FileText, GraduationCap, ListTree, TentTree } from 'lucide-react';
 import { useAuth, authError } from '../store/auth';
 import { Field } from '../components/ui';
+import { applyAccent } from '../components/Layout';
 
 export default function AuthPage({ mode }: { mode: 'login' | 'reset' }) {
   const { login, reset, user, ready } = useAuth();
@@ -11,7 +12,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'reset' }) {
   const [email, setEmail] = useState(''); const [pw, setPw] = useState('');
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false); const [done, setDone] = useState(false);
   const heading = mode === 'login' ? 'Inloggen' : 'Wachtwoord vergeten';
-  useEffect(() => { document.title = heading + ' · Opkomstplanner'; }, [heading]);
+  // standaardkleur (marine), ook als je net uit een speltak met een ander accent komt
+  useEffect(() => { applyAccent('marine'); document.title = heading + ' · Opkomstplanner'; }, [heading]);
   // Na inloggen/registreren zet de auth-store de gebruiker; dan sturen we hier door.
   if (ready && user && mode !== 'reset') return <Navigate to={next} replace />;
   const submit = async (e: FormEvent) => {
@@ -25,6 +27,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'reset' }) {
   // foutmelding: wordt voorgelezen (role=alert) en hoort bij de velden
   const errProps = err ? { 'aria-invalid': true, 'aria-describedby': 'a-err' } as const : {};
   return <main className="auth-wrap">
+    <div className="auth-split">
     <form className="card pad stack auth-card" onSubmit={submit}>
       <div className="brand flex items-center gap-2.5" style={{ paddingBottom: 0 }}><TentTree size={26} strokeWidth={1.9} /><span className="brand-txt"><span>Opkomstplanner</span><small>voor scoutinggroepen</small></span></div>
       <h1 className="auth-h">{heading}</h1>
@@ -39,5 +42,15 @@ export default function AuthPage({ mode }: { mode: 'login' | 'reset' }) {
       {mode === 'login' && <p className="hint">Nog geen account? Dat maak je aan via de uitnodigingslink die je van je teamleider of beheerder krijgt.</p>}
       {mode === 'login' && <div className="oefenlink"><span className="hint">Eerst rondkijken? Probeer alles uit met voorbeelddata, zonder account.</span><Link className="btn" to="/s/oefen"><GraduationCap size={16} />Oefenomgeving</Link></div>}
     </form>
+    {/* wat de app doet; op de telefoon onder het formulier, breed ernaast */}
+    {mode === 'login' && <section className="auth-pitch" aria-label="Over de Opkomstplanner">
+      <p className="pitch-h">Jaarplanning, opkomsten en kampen voor je hele speltak, op één plek.</p>
+      <ul className="pitch-cards">
+        <li><span className="pi" aria-hidden="true"><CalendarDays /></span><b>Jaarplanning</b><span>Onderwerp en planning per opkomst</span></li>
+        <li><span className="pi pop" aria-hidden="true"><ListTree /></span><b>Opkomst bouwen</b><span>Programma per 5 minuten</span></li>
+        <li><span className="pi ink" aria-hidden="true"><FileText /></span><b>PDF voor de leiding</b><span>Wie doet wat, op papier</span></li>
+      </ul>
+    </section>}
+    </div>
   </main>;
 }

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Download, ExternalLink, Mail, Plus, Tent, Users } from 'lucide-react';
+import { CalendarClock, ChevronLeft, ChevronRight, Download, ExternalLink, Mail, Plus, Tent, Users } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal } from '../store/modal';
@@ -26,17 +26,19 @@ export default function Dashboard() {
     <PageTitle kicker={<>{settings.groupName && <span>{settings.groupName}</span>}{!S.practice && <Link className="kicker-switch" to="/speltakken"><Users size={13} />Andere speltak</Link>}</>} title={S.sp?.name || settings.speltak || 'Overzicht'} sub={`${cap(fmtLong(today))}, week ${isoWeek(today)}`}>
       {can('build') && <><button className="btn" onClick={() => create(true)}><Tent size={16} />Weekendkamp</button><button className="btn primary" onClick={() => create(false)}><Plus size={16} />Nieuwe opkomst</button></>}
     </PageTitle>
-    {empty && <section className="card pad stack setup"><h2>Welkom bij {settings.speltak || 'je speltak'}</h2>
-      <p className="muted">Begin met de jaarplanning: vul per {DAYS[settings.opkDay]} het onderwerp in en wie de opkomst plant. Bouw daarna het programma in de opkomstbouwer, of nodig eerst je leidingteam uit.</p>
-      <div className="row"><Link className="btn primary" to={`/s/${sid}/jaarplanning`}>Naar jaarplanning</Link>{S.isTL && <Link className="btn" to={`/s/${sid}/instellingen`}>Leiding uitnodigen</Link>}</div></section>}
     <div className="dash2">
-      <div className="stack" style={{ gap: 20 }}>
+      {/* nieuwe speltak: eerst de welkomstkaart (met de opkomstdag die het seizoen bepaalt), nog geen lege kaart en lege rijen */}
+      {empty ? <section className="card pad stack setup welcome"><h2>Welkom bij {settings.speltak || 'je speltak'}</h2>
+        <p className="muted">Begin met de jaarplanning: vul per {DAYS[settings.opkDay]} het onderwerp in en wie de opkomst plant. Bouw daarna het programma in de opkomstbouwer, of nodig eerst je leidingteam uit.</p>
+        <p className="setup-day"><CalendarClock aria-hidden="true" /><span>Opkomstdag: <b>{DAYS[settings.opkDay]} {fmtT(settings.defStart)}–{fmtT(settings.defEnd)}</b></span>{can('settings') && <Link to={`/s/${sid}/instellingen`}>Aanpassen</Link>}</p>
+        <div className="row"><Link className="btn primary" to={`/s/${sid}/jaarplanning`}>Naar jaarplanning</Link>{S.isTL && <Link className="btn" to={`/s/${sid}/instellingen`}>Leiding uitnodigen</Link>}</div></section>
+      : <div className="stack" style={{ gap: 20 }}>
         {next ? <Hero r={next} today={today} /> : <section className="card pad empty-hero"><h2>Er staat nog niets gepland</h2><p className="muted">Vul in de jaarplanning de onderwerpen en de planning per {DAYS[settings.opkDay]} in.</p><div className="row"><Link className="btn primary" to={`/s/${sid}/jaarplanning`}>Naar jaarplanning</Link></div></section>}
         <section className="card pad stack">
           <div className="row between"><h3>Daarna</h3><Link className="linkbtn" to={`/s/${sid}/jaarplanning`}>Hele jaarplanning</Link></div>
           {after.length ? <ul className="nextlist">{after.map(r => <NextItem key={r.key} r={r} />)}</ul> : <p className="hint">Nog niets verder gepland.</p>}
         </section>
-      </div>
+      </div>}
       <aside className="stack lg:mt-16" style={{ gap: 20 }}>
         {letters.length > 0 && <div className="notices">{letters.map(x => <Notice key={x.e.id} e={x.e} due={x.due} today={today} />)}</div>}
         <section className="card pad"><MiniCal today={today} /></section>

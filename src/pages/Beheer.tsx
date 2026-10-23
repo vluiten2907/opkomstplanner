@@ -185,7 +185,7 @@ function Unlinked({ list, groups, me }: { list: Speltak[]; groups: Groep[]; me: 
     <div className="row"><button className="btn primary" disabled={busy} onClick={auto}>Groepen maken op groepsnaam en alles koppelen</button></div>
     <div className="picklist">{list.map(sp => <div key={sp.id} className="pick"><div className="info"><b>{[sp.groupName || 'Zonder groepsnaam', sp.name].join(' · ')}</b>
       <span className="hint">{teamleiders(sp) || 'geen teamleider'} · {plural(sp.memberIds.length, 'lid', 'leden')}</span></div>
-      {groups.length > 0 && <div className="row" style={{ gap: 6 }}><select value={pick[sp.id] || ''} onChange={e => setPick(p => ({ ...p, [sp.id]: e.target.value }))} aria-label="Groep kiezen"><option value="">Kies groep…</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+      {groups.length > 0 && <div className="row" style={{ gap: 6 }}><select className="inp" value={pick[sp.id] || ''} onChange={e => setPick(p => ({ ...p, [sp.id]: e.target.value }))} aria-label="Groep kiezen" style={{ width: 'auto', flex: '1 1 160px' }}><option value="">Kies groep…</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
         <button className="btn sm" disabled={!pick[sp.id]} onClick={() => { const g = groups.find(x => x.id === pick[sp.id]); if (g) linkSpeltak(sp, g).then(() => toast('Gekoppeld')).catch(e => err(e, 'Koppelen mislukt.')); }}>Koppelen</button></div>}
     </div>)}</div>
   </section>;
@@ -247,7 +247,7 @@ function GroupCard({ g, sps, loaded, invites, me, canAll, allSps, groups, onGone
     <h3>Beheerders</h3>
     <PeopleList people={admins} me={me.uid} canRemove={uid => canAll || mine || uid === me.uid}
       onRemove={uid => removeGroupAdmin(g, uid).then(() => toast(uid === me.uid ? 'Je bent afgetreden' : 'Verwijderd')).catch(e => err(e, 'Aanpassen mislukt.'))} />
-    {candList.length > 0 ? <div className="row"><select value={pick} onChange={e => setPick(e.target.value)} aria-label="Bestaande persoon kiezen" style={{ flex: '1 1 220px' }}>
+    {candList.length > 0 ? <div className="row"><select className="inp" value={pick} onChange={e => setPick(e.target.value)} aria-label="Bestaande persoon kiezen" style={{ flex: '1 1 220px' }}>
         <option value="">Kies iemand uit de leiding…</option>
         {candList.map(([u, c]) => <option key={u} value={u}>{u === me.uid ? `Mijzelf (${c.name})` : `${c.name}${c.tl ? ' · teamleider' : ''}`}</option>)}
       </select><button className="btn" disabled={!pick} onClick={appoint}><ShieldCheck size={16} />Beheerder maken</button></div>
@@ -347,7 +347,7 @@ function PersonPicker({ pool, exclude, label, button, groupName, onPick, childre
   };
   return <div className="stack" style={{ gap: 8 }}>
     <div className="row">
-      {list.length > 0 && <select value={sel} onChange={e => { setSel(e.target.value); setTaken(null); }} aria-label={label} style={{ flex: '1 1 200px' }}>
+      {list.length > 0 && <select className="inp" value={sel} onChange={e => { setSel(e.target.value); setTaken(null); }} aria-label={label} style={{ flex: '1 1 200px' }}>
         <option value="">{email ? 'Iemand uit de groep kiezen…' : 'Kies iemand uit de groep…'}</option>
         {list.map(p => <option key={p.uid} value={p.uid}>{p.name}{p.email ? ` · ${p.email}` : ''}</option>)}
       </select>}
@@ -368,7 +368,7 @@ function SpeltakRow({ sp, g, me, pool, all, names, open: openInv }: { sp: Spelta
   const [email, setEmail] = useState(''); const [inv, setInv] = useState<Invite | null>(null); const [busy, setBusy] = useState(false);
   const [kind, setKind] = useState<'leiding' | 'teamleider'>('leiding');
   const [addRole, setAddRole] = useState<'leiding' | 'teamleider'>('leiding');
-  const [del, setDel] = useState(''); const [deleting, setDeleting] = useState(false);
+  const [showDel, setShowDel] = useState(false); const [del, setDel] = useState(''); const [deleting, setDeleting] = useState(false);
   const word = sp.name || 'verwijderen';
   const tl = teamleiders(sp);
   const send = async () => {
@@ -419,20 +419,22 @@ function SpeltakRow({ sp, g, me, pool, all, names, open: openInv }: { sp: Spelta
       </div>
       <b>Iemand met een account toevoegen</b>
       <PersonPicker pool={pool} exclude={sp.memberIds} label="Persoon kiezen voor de speltak" button="Toevoegen" groupName={g.name || 'de groep'} onPick={add}>
-        {tl ? <select value={addRole} onChange={e => setAddRole(e.target.value as 'leiding' | 'teamleider')} aria-label="Toevoegen als"><option value="leiding">als leiding</option><option value="teamleider">als teamleider</option></select> : null}
+        {tl ? <select className="inp" value={addRole} onChange={e => setAddRole(e.target.value as 'leiding' | 'teamleider')} aria-label="Toevoegen als" style={{ width: 'auto', flex: 'none' }}><option value="leiding">als leiding</option><option value="teamleider">als teamleider</option></select> : null}
       </PersonPicker>
       {!tl && <p className="hint">Er is nog geen teamleider: wie je nu toevoegt of uitnodigt, wordt teamleider.</p>}
       <b>Of uitnodigen met een link</b>
       <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={tl ? 'e-mailadres nieuw lid' : 'e-mailadres teamleider'} style={{ flex: '1 1 220px' }} />
-        {tl && <select value={kind} onChange={e => setKind(e.target.value as 'leiding' | 'teamleider')} aria-label="Uitnodigen als"><option value="leiding">Leiding</option><option value="teamleider">Teamleider</option></select>}
+        {tl && <select className="inp" value={kind} onChange={e => setKind(e.target.value as 'leiding' | 'teamleider')} aria-label="Uitnodigen als" style={{ width: 'auto', flex: 'none' }}><option value="leiding">Leiding</option><option value="teamleider">Teamleider</option></select>}
         <button className="btn" disabled={busy} onClick={send}><Link2 size={16} />{tl ? 'Uitnodigen' : 'Teamleider uitnodigen'}</button></div>
       {tl && <p className="hint">Nieuwe leiding krijgt de rechten jaarplanning, opkomsten en banken; aanpassen kan hierboven bij de leiding. Bekijken mag iedereen in de speltak altijd.</p>}
       {inv && <InviteLink key={inv.id} inv={inv} fromName={me.name} onClose={() => setInv(null)} />}
-      <div className="dangerzone"><b>Speltak verwijderen</b>
+      {!showDel ? <div className="row"><button className="btn sm ghost danger" onClick={() => setShowDel(true)}><Trash2 size={14} />Speltak verwijderen</button></div>
+        : <div className="dangerzone"><b>Speltak verwijderen</b>
         <span className="hint">Alle opkomsten, activiteiten en de jaarplanning van {sp.name || 'deze speltak'} worden gewist en het team verliest de toegang. Dit kan niet ongedaan worden.</span>
-        <div className="row"><input className="inp" value={del} onChange={e => setDel(e.target.value)} placeholder={`Typ ${word} om te bevestigen`} aria-label="Naam ter bevestiging" style={{ flex: '1 1 200px' }} />
-          <button className="btn danger" disabled={deleting || del.trim().toLowerCase() !== word.toLowerCase()} onClick={remove}><Trash2 size={16} />Definitief verwijderen</button></div>
-      </div>
+        <div className="row"><input className="inp" value={del} onChange={e => setDel(e.target.value)} placeholder={`Typ ${word} om te bevestigen`} aria-label="Naam ter bevestiging" style={{ flex: '1 1 200px' }} autoFocus />
+          <button className="btn danger" disabled={deleting || del.trim().toLowerCase() !== word.toLowerCase()} onClick={remove}><Trash2 size={16} />Definitief verwijderen</button>
+          <button className="btn ghost" disabled={deleting} onClick={() => { setShowDel(false); setDel(''); }}>Annuleren</button></div>
+      </div>}
     </div>}
   </div>;
 }
@@ -486,7 +488,7 @@ function LeidingRow({ sp, g, me, uid, m, all, full }: { sp: Speltak; g: Groep; m
     {mode && <div className="banknote stack" style={{ gap: 8 }}>
       <span>{m.name} is de enige teamleider van {where}. {mode === 'off' ? `Kies wie het overneemt; ${m.name} blijft leiding.` : `Kies eerst wie het overneemt; daarna wordt ${m.name} uit het team gehaald.`}</span>
       {others.length ? <div className="row">
-        <select value={next} onChange={e => setNext(e.target.value)} aria-label="Nieuwe teamleider" style={{ flex: '1 1 200px' }}>
+        <select className="inp" value={next} onChange={e => setNext(e.target.value)} aria-label="Nieuwe teamleider" style={{ flex: '1 1 200px' }}>
           <option value="">Nieuwe teamleider kiezen…</option>
           {others.map(([u, o]) => <option key={u} value={u}>{o.name}</option>)}
         </select>

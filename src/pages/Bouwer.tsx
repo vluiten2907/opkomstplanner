@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { Bookmark, CalendarDays, ChevronRight, Copy, Download, Plus, Tent, Trash2, X } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Bookmark, CalendarDays, ChevronRight, Copy, Download, GraduationCap, Plus, Tent, Trash2, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal, withFreeName } from '../store/modal';
@@ -37,7 +37,7 @@ const blkSel = (id: string) => `.lanes [data-bid="${CSS.escape(id)}"]`;
 /* ============ Startscherm ============ */
 export default function Bouwer() {
   const { oid } = useParams();
-  const { opks, settings, saveOpk, sid, can, getO, removeOpk, entryOfOpk } = useSpeltak();
+  const { opks, settings, saveOpk, sid, can, getO, removeOpk, entryOfOpk, practice } = useSpeltak();
   const nav = useNavigate();
   const o = oid ? getO(oid) : undefined;
   if (oid && o) return <Builder key={o.id} o={o} />;
@@ -59,6 +59,8 @@ export default function Bouwer() {
     </section>}
     {drafts.length > 0 && <><h2>Concepten</h2><div className="picklist">{drafts.map(x => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
       extra={can('build') ? <ConfirmBtn className="btn sm ghost" label={<><Trash2 size={14} />Verwijderen</>} confirm="Klik nogmaals" title="Concept verwijderen" onConfirm={() => removeOpk(x)} /> : undefined} />)}</div></>}
+    {!coming.length && !drafts.length && !bank.length && !(oid && !o) && <div className="empty"><span>Hier bouw je het programma van een opkomst of kamp: onderdelen op een tijdlijn per 5 minuten, met wie wat doet.</span>
+      {!practice && <Link className="btn" to="/s/oefen/bouwer"><GraduationCap size={16} />Oefenomgeving bekijken</Link>}</div>}
     {bank.length > 0 && <><h2>Uit de opkomstenbank</h2><div className="picklist">{bank.map(x => <PickOpk key={x.id} o={x} label="Openen" onPick={() => nav(`/s/${sid}/bouwer/${x.id}`)}
       extra={can('bank') ? <ConfirmBtn className="btn sm ghost" label={<><Trash2 size={14} />Verwijderen</>} confirm="Klik nogmaals" title="Uit de opkomstenbank verwijderen" onConfirm={() => removeOpk(x)} /> : undefined} />)}</div></>}
   </div>;
@@ -254,7 +256,7 @@ function Builder({ o: stored }: { o: Opk }) {
           <div className="field wide"><span className="lbl">Categorieën van de {kamp ? 'activiteit' : 'opkomst'}</span>
             <div className="row" style={{ gap: 6 }}>{opkCatList(settings).map(c => <Chip key={c.id} on={o.cats.includes(c.id)} disabled={readOnly} onClick={() => upd(() => { o.cats = o.cats.includes(c.id) ? o.cats.filter(x => x !== c.id) : [...o.cats, c.id]; })}><Dot color={c.color} />{c.label}</Chip>)}</div></div>
           <Field label="Speltak / groep" htmlFor="om-group"><input id="om-group" value={o.group} readOnly={readOnly} onChange={ev => upd(() => { o.group = ev.target.value; })} placeholder="bijv. Scouts" /></Field>
-          <Field label="Locatie" htmlFor="om-loc"><input id="om-loc" value={o.location} readOnly={readOnly} onChange={ev => upd(() => { o.location = ev.target.value; })} placeholder="bijv. Clubhuis" /></Field>
+          <Field label="Locatie" htmlFor="om-loc" className="loc"><input id="om-loc" value={o.location} readOnly={readOnly} onChange={ev => upd(() => { o.location = ev.target.value; })} placeholder="bijv. Clubhuis" /></Field>
           {!kamp && <>
             <Field label="Begintijd" className="timefield"><TimePicker value={o.start} from={360} to={1430} disabled={readOnly} onChange={v => setTime('start', v)} /></Field>
             <Field label="Eindtijd" className="timefield"><TimePicker value={o.end} from={365} to={1435} disabled={readOnly} onChange={v => setTime('end', v)} /></Field>

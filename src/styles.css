@@ -6,7 +6,7 @@
 :root {
   --bg: #ECE9E1; --surface: #FFFFFF; --sunk: #E6E2D8; --band: #F5F3EC; --line: #D1CCC0;
   --ink: #14202E; --muted: #5A6472; --edge: #14202E; --hard: #14202E; --pop: #D98B3A;
-  --accent: #2D6A4C; --accent-soft: #DCEBE2; --accent-ink: #FFFFFF;
+  --accent: #1E3A5F; --accent-soft: #DEE6F0; --accent-ink: #FFFFFF;
   --signal: #B26E08; --good: #23704A; --danger: #B3372B; --keep: 100%; --kamp: #5B4A9B;
   /* tekst in signaalkleur en zachte tekst boven de gloed: donker genoeg om te lezen (≥ 4,5:1) */
   --signal-ink: #8A5200; --ink-2: color-mix(in srgb, var(--ink) 88%, var(--bg));
@@ -25,7 +25,7 @@
   :root:not([data-theme="light"]) {
     --bg: #0F141C; --surface: #161D27; --sunk: #1D2631; --band: #1A2230; --line: #2B3645;
     --ink: #E9EDF2; --muted: #96A1B0; --edge: #3C4A5E; --hard: #000000; --pop: #E39A4E;
-    --accent: #62BA8C; --accent-soft: #24392D; --accent-ink: #0D1A12;
+    --accent: #7FA6D4; --accent-soft: #1C2A3D; --accent-ink: #0E1210;
     --signal: #E2A846; --good: #6BC497; --danger: #E57A6E; --keep: 68%; --kamp: #B7A6E6;
     --signal-ink: #E2A846; --ink-2: #96A1B0;
     --paper: linear-gradient(165deg, #1A2230 0%, #141B25 100%);
@@ -37,7 +37,7 @@
 :root[data-theme="dark"] {
   --bg: #0F141C; --surface: #161D27; --sunk: #1D2631; --band: #1A2230; --line: #2B3645;
   --ink: #E9EDF2; --muted: #96A1B0; --edge: #3C4A5E; --hard: #000000; --pop: #E39A4E;
-  --accent: #62BA8C; --accent-soft: #24392D; --accent-ink: #0D1A12;
+  --accent: #7FA6D4; --accent-soft: #1C2A3D; --accent-ink: #0E1210;
   --signal: #E2A846; --good: #6BC497; --danger: #E57A6E; --keep: 68%; --kamp: #B7A6E6;
   --signal-ink: #E2A846; --ink-2: #96A1B0;
   --paper: linear-gradient(165deg, #1A2230 0%, #141B25 100%);
@@ -353,7 +353,7 @@ button.cday:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 /* Banken */
 .bank { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 20px; align-items: start; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.toolbar .inp { max-width: 280px; background: var(--surface); box-shadow: var(--shadow); }
+.toolbar .inp { max-width: 280px; }
 .catfilter { display: flex; flex-wrap: wrap; gap: 6px; }
 .bank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
 .bcard {
@@ -372,7 +372,7 @@ button.cday:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 .tblocks li small { display: block; color: var(--muted); font-size: 12px; }
 
 /* Instellingen */
-.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; align-items: start; }
+.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 20px; align-items: start; }
 .setlist { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .setlist li { display: flex; gap: 8px; align-items: center; }
 .setlist .inp { flex: 1; }
@@ -683,7 +683,7 @@ aside .notice .ntext { flex: none; }
 .member .heir .btn { max-width: 100%; white-space: normal; text-align: left; }
 .invite { padding-top: 14px; border-top: 2px dashed var(--edge); }
 .three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-fieldset:disabled .btn, fieldset:disabled .acc, fieldset:disabled .sw { opacity: .55; cursor: not-allowed; }
+fieldset:disabled .btn, fieldset:disabled .acc, fieldset:disabled .sw, fieldset:disabled .iconbtn { opacity: .55; cursor: not-allowed; }
 .scrim.on { display: none; }
 @media (max-width: 760px) { .three { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .scrim.on { display: block; } }
@@ -889,3 +889,62 @@ body:has(.toast.show) .plan-fab { bottom: calc(72px + env(safe-area-inset-bottom
 
 /* Telefoon: een lange paginakop van één woord (Activiteitenbank) past op één regel, zonder midden in het woord af te breken */
 @media (max-width: 600px) { h1.display { font-size: min(3rem, 10.4vw); } }
+
+/* Links: geen browserblauw. Tekstlinks lijken op .linkbtn (koperen onderstreping); een link met .btn is een knop.
+   :where() houdt de specificiteit op 0, zodat de menulinks (.nav a) en .kicker-switch hun eigen stijl houden. */
+a { color: inherit; }
+a.btn { text-decoration: none; }
+:where(a:not(.btn, .kicker-switch, .linkbtn)) { font-weight: 600; text-decoration: underline; text-decoration-thickness: 2px; text-decoration-color: var(--pop); text-underline-offset: 4px; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+
+/* Lijsten en meldingen in v3: papier met een dunne rand (zoals .lib en .stat) in plaats van een vlakke band */
+.pick, .member, .invrow, .banknote { background: var(--paper); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--edge) 40%, var(--line)); }
+/* een speltak in Beheer blijft getint: de leiding erin staat op papier */
+.member.spcard { background: var(--band); }
+.banknote.offnote { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+
+/* Instellingen: één kleurstip per categorie; een klik klapt de kleuren uit */
+.sw.cur { width: 26px; height: 26px; flex: none; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px color-mix(in srgb, var(--edge) 45%, var(--line)); }
+.sw.cur[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink); }
+
+/* Opkomstbouwer: de locatie krijgt twee kolommen (pas vanaf 601 px: in één kolom zou span 2 een extra kolom maken) */
+@media (min-width: 601px) { .meta .loc { grid-column: span 2; } }
+
+/* Banken op de telefoon: categorieën op één rij die zijwaarts schuift (de pagina zelf schuift niet) */
+@media (max-width: 600px) {
+  .toolbar .catfilter {
+    flex: 1 1 100%; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    margin-inline: -4px; padding: 3px 28px 3px 4px; mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  .toolbar .catfilter::-webkit-scrollbar { display: none; }
+  .toolbar .catfilter .chip { flex: none; }
+}
+
+/* Inloggen: geen loze ruimte onder de pagina, knoptekst in het midden, belofte met drie kaartjes */
+body:has(.auth-wrap) { padding-bottom: 0; }
+.auth-card > .btn.primary, .auth-card > form > .btn.primary { justify-content: center; min-height: 44px; }
+.auth-split { width: min(1000px, 100%); display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; justify-items: center; align-items: center; }
+.auth-pitch { width: min(440px, 100%); display: grid; gap: 18px; align-content: start; }
+.pitch-h { font-family: var(--f-display); font-weight: 800; font-size: clamp(26px, 3.6vw, 46px); line-height: 1.02; letter-spacing: -.035em; text-wrap: balance; }
+.pitch-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 14px; }
+.pitch-cards li { background: var(--paper); box-shadow: 0 0 0 2px var(--edge), 3px 3px 0 2px var(--hard); border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; align-content: start; font-size: 13px; color: var(--muted); }
+.pitch-cards li b { color: var(--ink); font-size: 14.5px; line-height: 1.2; }
+.pitch-cards .pi { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; margin-bottom: 4px; background: var(--accent); color: var(--accent-ink); box-shadow: 0 0 0 1.5px var(--edge); }
+.pitch-cards .pi.pop { background: var(--pop); color: #14202E; }
+.pitch-cards .pi.ink { background: var(--ink); color: var(--bg); }
+.pitch-cards .pi svg { width: 18px; height: 18px; }
+/* telefoon: de kaartjes als korte rijen onder elkaar (pictogram links) */
+@media (max-width: 600px) {
+  .pitch-cards { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .pitch-cards li { grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; row-gap: 0; align-items: center; padding: 10px 12px; }
+  .pitch-cards .pi { grid-row: span 2; margin-bottom: 0; }
+  .pitch-cards li > :not(.pi) { grid-column: 2; }
+}
+@media (min-width: 900px) {
+  .auth-split { grid-template-columns: minmax(0, 1fr) 440px; gap: 56px; }
+  .auth-pitch { order: -1; width: 100%; max-width: 500px; justify-self: end; }
+}
+
+/* Dashboard: eerste stappen voor een nieuwe speltak */
+.setup-day { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14px; padding: 10px 12px; border-radius: 10px; background: var(--band); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--edge) 30%, var(--line)); }
+.setup-day svg { width: 16px; height: 16px; color: var(--muted); flex: none; }

@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, type InputHTMLAttributes } from 'react';
+import { useEffect, useId, useRef, useState, type InputHTMLAttributes } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Download, Link2, Trash2, UserPlus } from 'lucide-react';
 import { useAuth } from '../store/auth';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { PageTitle } from '../components/shared';
-import { Chip, ConfirmBtn, Dot, Field, TimePicker, useDebouncedInput } from '../components/ui';
+import { Chip, ConfirmBtn, Field, TimePicker, useDebouncedInput } from '../components/ui';
 import { download, slugify } from '../lib/export';
 import { fmtNL, fmtT, plural, todayISO, uid, DAYS, MONTHS } from '../lib/time';
 import { ACCENTS, normLib, normOpk, normPlan, normSettings, prepLabel, PREP_OPTS, SPELTAKKEN, SWATCHES, type Settings } from '../lib/model';
@@ -77,11 +77,8 @@ export default function Instellingen() {
       </fieldset>
       <fieldset className="card pad stack" disabled={!edit} style={{ border: 0, margin: 0, minWidth: 0 }}>
         <h2>Categorieën</h2>
-        <div className="stack" style={{ gap: 8 }}>{settings.categories.map(c => <div key={c.id} className="catrow">
-          <div className="row"><Dot color={c.color} style={{ width: 14, height: 14 }} /><DebText className="inp" value={c.label} aria-label="Naam categorie" style={{ flex: 1 }} onCommit={v => setCat(c.id, { label: v })} />
-            <ConfirmBtn className="btn sm ghost" label="Verwijderen" confirm="Zeker?" onConfirm={() => set(s => ({ categories: s.categories.filter(x => x.id !== c.id) }))} /></div>
-          <div className="swatches">{SWATCHES.map(sw => <button key={sw} className="sw" style={{ ['--c' as any]: sw }} aria-pressed={sw === c.color} aria-label={'Kleur ' + sw} onClick={() => setCat(c.id, { color: sw })} />)}</div>
-        </div>)}</div>
+        <div className="stack" style={{ gap: 8 }}>{settings.categories.map(c => <CatRow key={c.id} label={c.label} color={c.color}
+          onLabel={v => setCat(c.id, { label: v })} onColor={v => setCat(c.id, { color: v })} onRemove={() => set(s => ({ categories: s.categories.filter(x => x.id !== c.id) }))} />)}</div>
         <AddRow placeholder="Nieuwe categorie" onAdd={v => set(s => ({ categories: [...s.categories, { id: uid(), label: v, color: SWATCHES[s.categories.length % SWATCHES.length] }] }))} />
       </fieldset>
       <fieldset className="card pad stack" disabled={!edit} style={{ border: 0, margin: 0, minWidth: 0 }}>
@@ -124,11 +121,23 @@ function Logo() {
   </div></div>;
 }
 
+/** Categorie: naam, één kleurstip (een klik klapt de kleuren uit) en verwijderen. */
+function CatRow({ label, color, onLabel, onColor, onRemove }: { label: string; color: string; onLabel: (v: string) => void; onColor: (v: string) => void; onRemove: () => void }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return <div className="catrow">
+    <div className="row"><button type="button" className="sw cur" style={{ ['--c' as any]: color }} aria-expanded={open} aria-controls={id} aria-label={`Kleur van ${label || 'categorie'} kiezen`} title="Kleur kiezen" onClick={() => setOpen(o => !o)} />
+      <DebText className="inp" value={label} aria-label="Naam categorie" style={{ flex: 1 }} onCommit={onLabel} />
+      <ConfirmBtn className="iconbtn danger" label={<Trash2 />} title="Verwijderen" ariaLabel={`${label || 'Categorie'} verwijderen`} confirm="Zeker?" onConfirm={onRemove} /></div>
+    {open && <div className="swatches" id={id} role="group" aria-label="Kleur">{SWATCHES.map(sw => <button key={sw} type="button" className="sw" style={{ ['--c' as any]: sw }} aria-pressed={sw === color} aria-label={'Kleur ' + sw} onClick={() => { onColor(sw); setOpen(false); }} />)}</div>}
+  </div>;
+}
+
 /** Lijst met namen. `onChange` krijgt een functie die de nieuwste lijst aanpast (niet de lijst van deze weergave). */
 function NameList({ items, placeholder, label, onChange, dedupe }: { items: string[]; placeholder: string; label: string; onChange: (fn: (cur: string[]) => string[]) => void; dedupe?: boolean }) {
   return <>
     {/* plek bestaat niet meer (intussen verwijderd): niets doen */}
-    <ul className="setlist">{items.map((n, i) => <li key={i}><DebText className="inp" value={n} aria-label={label} onCommit={v => onChange(cur => i < cur.length ? cur.map((x, j) => j === i ? v : x) : cur)} /><ConfirmBtn className="btn sm ghost" label="Verwijderen" confirm="Zeker?" onConfirm={() => onChange(cur => cur[i] === n ? cur.filter((_, j) => j !== i) : cur.filter(x => x !== n))} /></li>)}</ul>
+    <ul className="setlist">{items.map((n, i) => <li key={i}><DebText className="inp" value={n} aria-label={label} onCommit={v => onChange(cur => i < cur.length ? cur.map((x, j) => j === i ? v : x) : cur)} /><ConfirmBtn className="iconbtn danger" label={<Trash2 />} title="Verwijderen" ariaLabel={`${n || label} verwijderen`} confirm="Zeker?" onConfirm={() => onChange(cur => cur[i] === n ? cur.filter((_, j) => j !== i) : cur.filter(x => x !== n))} /></li>)}</ul>
     <AddRow placeholder={placeholder} onAdd={v => { if (dedupe && items.includes(v)) { toast(v + ' staat er al in.'); return; } onChange(cur => [...cur, v]); }} />
   </>;
 }

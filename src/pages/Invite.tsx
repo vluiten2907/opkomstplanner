@@ -6,6 +6,7 @@ import { useRoles } from '../store/roles';
 import { acceptInvite, alreadyJoined, claimName, forgetInvite, markInviteUsed, nameOwner, readInvite, rememberInvite, saveProfile } from '../store/beheer';
 import { Field } from '../components/ui';
 import VerifyNote from '../components/VerifyNote';
+import { applyAccent } from '../components/Layout';
 import { auth } from '../lib/firebase';
 import { inviteExpired, inviteWhere, KIND_LABELS, PERM_LABELS, type Invite } from '../lib/types';
 
@@ -26,6 +27,8 @@ export default function InvitePage() {
   const [pick, setPick] = useState<{ taken: string; name: string } | null>(null);
   // Zit je er al in (bijv. direct toegevoegd door de beheerder)? Dan heb je de uitnodiging niet meer nodig.
   const [already, setAlready] = useState(false);
+  // standaardkleur (marine), ook als je net uit een speltak met een ander accent komt
+  useEffect(() => { applyAccent('marine'); }, []);
   useEffect(() => {
     readInvite(token!).then(i => {
       setInv(i);

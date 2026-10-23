@@ -79,6 +79,20 @@ with sync_playwright() as p:
     check('/inloggen' in pg.url, 'registreren zonder uitnodiging bestaat niet meer')
     check(pg.locator('text=Nieuw account').count() == 0, 'inlogpagina heeft geen knop Nieuw account')
     check(pg.locator('main h1:text-is("Inloggen")').count() == 1 and pg.title() == 'Inloggen · Opkomstplanner', 'inlogpagina: kop (h1) in main en eigen paginatitel')
+    # huisstijl: marine (niet het oude groen), knoptekst in het midden, geen loze scrollruimte, links zonder browserblauw
+    lb = pg.evaluate("""(() => { const b = document.querySelector('.auth-card .btn.primary'), cs = getComputedStyle(b), a = document.querySelector('.auth-card a[href$="/wachtwoord"]'), ac = getComputedStyle(a);
+      return [cs.backgroundColor, cs.justifyContent, Math.round(b.getBoundingClientRect().height), document.documentElement.scrollHeight - innerHeight, ac.color, ac.textDecorationColor, ac.fontWeight]; })()""")
+    check(lb[0] == 'rgb(30, 58, 95)' and lb[1] == 'center' and lb[2] >= 44 and lb[3] <= 1, f'inlogpagina: marine knop met tekst in het midden, pagina scrolt niet ({lb[:4]})')
+    check(lb[4] == 'rgb(20, 32, 46)' and lb[5] == 'rgb(217, 139, 58)' and lb[6] == '600', f'inlogpagina: link Wachtwoord vergeten in inktkleur met koperen onderstreping ({lb[4:]})')
+    pitch = pg.locator('.auth-pitch')
+    check(pitch.locator('.pitch-cards li').count() == 3 and pitch.locator('text=account').count() == 0, 'inlogpagina: korte uitleg met drie kaartjes, niets over zelf een account maken')
+    pb, fb = pitch.bounding_box(), pg.locator('form.auth-card').bounding_box()
+    check(pb['x'] + pb['width'] <= fb['x'] + 1, 'inlogpagina breed: uitleg links naast het formulier'); shot('00a-inloggen', False)
+    pg.set_viewport_size({'width': 390, 'height': 844}); w(200)
+    pb, fb = pitch.bounding_box(), pg.locator('form.auth-card').bounding_box()
+    check(fb['y'] < 40 and pb['y'] >= fb['y'] + fb['height'] and pg.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'inlogpagina mobiel: formulier bovenaan, uitleg eronder, geen horizontale scroll')
+    shot('00b-inloggen-mobiel')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     pg.fill('input[type=email]', 'vluiten2907@gmail.com'); pg.fill('input[type=password]', 'foutje1'); pg.click('.btn.primary'); w(600)
     check(pg.locator('#a-err[role=alert]:has-text("klopt niet")').count() == 1 and pg.get_attribute('#a-pw', 'aria-invalid') == 'true' and pg.get_attribute('#a-pw', 'aria-describedby') == 'a-err',
           'fout wachtwoord: melding wordt voorgelezen (role=alert) en hoort bij het veld')
@@ -103,6 +117,11 @@ with sync_playwright() as p:
     def invite_as(email, kind):
         pg.fill('input[placeholder="e-mailadres nieuw lid"]', email); pg.select_option('.groupcard select[aria-label="Uitnodigen als"]', kind)
         pg.click('.groupcard .member >> button:text-is("Uitnodigen")'); w(800); return invite_link()
+    sel_h = pg.evaluate("[...document.querySelectorAll('.beheer select')].filter(e => e.getClientRects().length).map(e => [e.classList.contains('inp'), Math.round(e.getBoundingClientRect().height)])")
+    check(sel_h and all(c and hgt >= 36 for c, hgt in sel_h), f'beheer: keuzelijsten hebben de stijl van de velden ernaast ({sel_h})')
+    rs_row = pg.evaluate("""(() => { const s = document.querySelector('.groupcard select[aria-label="Uitnodigen als"]'), i = s.parentElement.querySelector('input[type=email]');
+      return Math.abs(s.getBoundingClientRect().top - i.getBoundingClientRect().top) < 4; })()""")
+    check(rs_row, 'beheer: Uitnodigen als staat op dezelfde regel als het e-mailadres')
     tl_link = invite_as('vincent@test.nl', 'teamleider'); check('/uitnodiging/' in tl_link, 'teamleider uitgenodigd')
     ga_link = invite_as('ga@test.nl', 'leiding'); check('/uitnodiging/' in ga_link and ga_link != tl_link, 'leiding uitgenodigd')
     invite_as('weg@test.nl', 'leiding')
@@ -112,6 +131,9 @@ with sync_playwright() as p:
     # speltak verwijderen
     pg.fill('input[placeholder^="Naam nieuwe speltak"]', 'Opruimen'); pg.click('text=Speltak aanmaken'); w(800)
     open_sp('Opruimen')
+    opr = pg.locator('.groupcard .member:has-text("Opruimen")')
+    check(opr.locator('.dangerzone').count() == 0 and opr.locator('input[aria-label="Naam ter bevestiging"]').count() == 0, 'speltak verwijderen staat dicht (achter een knop, zoals groep verwijderen)')
+    opr.locator('button:has-text("Speltak verwijderen")').click(); w(300)
     btn = pg.locator('.groupcard .member:has-text("Opruimen") >> text=Definitief verwijderen')
     check(btn.is_disabled(), 'speltak verwijderen vraagt eerst de naam')
     pg.fill('.groupcard .member:has-text("Opruimen") input[aria-label="Naam ter bevestiging"]', 'Opruimen'); btn.click(); w(900)
@@ -143,6 +165,8 @@ with sync_playwright() as p:
     tl_token = pg.evaluate("localStorage.getItem('opk.invite')")
     pg.evaluate("localStorage.removeItem('opk.invite')"); pg.goto(BASE + '/speltakken'); w(900)
     check(pg.locator('.empty:has-text("Open de link uit die mail nog een keer")').count() == 1 and pg.locator('.invitenote').count() == 0, 'mijn speltakken zonder speltak: uitleg over de link in de mail')
+    pk = pg.evaluate("(() => { const c = getComputedStyle(document.querySelector('.pick')); return [c.backgroundImage.includes('gradient'), c.boxShadow.includes('inset')]; })()")
+    check(all(pk), 'mijn speltakken: lijst in v3-stijl (papier met rand, geen vlakke band)')
     # ... en wijst op dit apparaat meteen naar de uitnodiging die er openstaat
     pg.evaluate("t => localStorage.setItem('opk.invite', t)", tl_token); pg.goto(BASE + '/speltakken'); w(900)
     check(tl_link.endswith('/' + (tl_token or '-')) and pg.locator('.invitenote:has-text("Testgroep · Scouts") a:has-text("Toetreden")').count() == 1, 'mijn speltakken: openstaande uitnodiging op dit apparaat, met Toetreden')
@@ -160,6 +184,20 @@ with sync_playwright() as p:
     check(pg.evaluate("localStorage.getItem('opk.invite')") is None, 'na toetreden: uitnodiging niet meer onthouden')
     check(pg.locator('h1').first.inner_text().strip() == 'Scouts', 'dashboard: speltaknaam is de titel')
     check(pg.locator('.kicker-switch').count() == 1, 'dashboard: knop andere speltak')
+    # nieuwe speltak: welkomstkaart noemt de opkomstdag met een link om hem aan te passen; nog geen lege kaart "Nog geen onderwerp"
+    wc = pg.locator('.welcome')
+    check(wc.count() == 1 and 'Opkomstdag: zaterdag 14:00–16:30' in wc.locator('.setup-day').inner_text() and (wc.locator('.setup-day a:text-is("Aanpassen")').get_attribute('href') or '').endswith('/instellingen')
+          and pg.locator('.hero').count() == 0 and pg.locator('text=Nog geen onderwerp').count() == 0, 'nieuwe speltak: welkomstkaart met opkomstdag en Aanpassen, geen lege opkomstkaart')
+    deco = pg.evaluate("[...document.querySelectorAll('.welcome a.btn, header nav a')].map(a => getComputedStyle(a).textDecorationLine + '|' + getComputedStyle(a).fontWeight)")
+    check(deco and all(d.split('|')[0] == 'none' for d in deco) and all(d.split('|')[1] == '700' for d in deco), f'knop-links en menulinks zonder onderstreping ({sorted(set(deco))})')
+    pg.set_viewport_size({'width': 390, 'height': 844}); w(200)
+    check(pg.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'welkomstkaart mobiel: geen horizontale scroll'); shot('01b-welkom-mobiel', False)
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    # lege opkomstbouwer: één zin uitleg en de weg naar de oefenomgeving
+    pg.click('nav >> text=Opkomstbouwer'); w(500)
+    eb = pg.locator('main .empty:has-text("tijdlijn per 5 minuten")')
+    check(eb.count() == 1 and (eb.locator('a:has-text("Oefenomgeving bekijken")').get_attribute('href') or '').endswith('/s/oefen/bouwer'), 'lege opkomstbouwer: uitleg en link naar de oefenomgeving')
+    shot('01c-bouwer-leeg', False)
     # --- team en instellingen
     pg.click('nav >> text=Team & instellingen'); w()
     check(pg.locator('#gs-name').get_attribute('readonly') is not None and pg.locator('.field:has(#gs-name) .hint:has-text("Wijzigen kan de beheerder van de groep in Beheer")').count() == 1,
@@ -202,6 +240,18 @@ with sync_playwright() as p:
           and lrow_inv.count() == 1 and lrow_inv.locator('text=verlopen').count() == 0, 'vernieuwen: nieuwe link met dezelfde rol en rechten, de oude is weg')
     for n in ['Bram', 'Carla']:
         pg.fill('input[placeholder="Naam"]', n); pg.locator('input[placeholder="Naam"]').press('Enter'); w(300)
+    cols = pg.evaluate("new Set([...document.querySelectorAll('.settings > fieldset')].map(e => Math.round(e.getBoundingClientRect().left))).size")
+    cut = pg.evaluate("[...document.querySelectorAll('.catrow .inp, .setlist .inp')].filter(e => e.scrollWidth > e.clientWidth + 1).map(e => e.value)")
+    check(cols == 3 and not cut, f'instellingen breed: 3 kolommen, namen van categorieën niet afgekapt ({cols}, {cut})')
+    check(pg.locator('.setlist button[aria-label="Bram verwijderen"]').count() == 1 and pg.locator('.catrow button[aria-label$=" verwijderen"]').count() == pg.locator('.catrow').count(),
+          'instellingen: verwijderen is een prullenbak met een naam voor de schermlezer')
+    cr = pg.locator('.catrow').first; cur = cr.locator('.sw.cur')
+    cat_h = pg.evaluate("document.querySelector('.catrow').closest('fieldset').getBoundingClientRect().height")
+    check(pg.locator('.catrow .swatches').count() == 0 and cur.get_attribute('aria-expanded') == 'false' and cat_h < 900, f'instellingen: per categorie één kleurstip, kleuren ingeklapt (kaart {cat_h:.0f} px)')
+    c0 = cur.evaluate("e => e.style.getPropertyValue('--c')")
+    cur.click(); w(200); n_sw = cr.locator('.swatches .sw').count()
+    cr.locator('.swatches .sw[aria-pressed="false"]').first.click(); w(700)
+    check(n_sw > 5 and cr.locator('.swatches').count() == 0 and cur.evaluate("e => e.style.getPropertyValue('--c')") != c0, 'instellingen: klik op de kleurstip toont de kleuren, een kleur kiezen klapt weer in')
     shot('02-instellingen')
     # opslaan mislukt (hier: te groot): duidelijke melding, en daarna geen "Logo opgeslagen"
     PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
@@ -233,6 +283,8 @@ with sync_playwright() as p:
     first.locator('.brief').click(); w(300); pg.locator('.modal input[type=checkbox]').first.check(); pg.click('.modal >> text=Opslaan'); w(300)
     first.locator('.btn:has-text("Koppelen")').click(); w(300); pg.click('.modal >> text=Nieuwe opkomst'); w(800)
     check('/bouwer/' in pg.url, 'koppelen → nieuwe opkomst in bouwer')
+    lw = pg.locator('#om-loc').bounding_box()['width']; gw = pg.locator('#om-group').bounding_box()['width']
+    check(lw > gw * 1.8, f'bouwer: veld Locatie twee kolommen breed ({lw:.0f} px)')
 
     # --- bouwer
     add_block(120, 'Kompasposten', '45', 'Bos', 'Carla')
@@ -1164,6 +1216,11 @@ with sync_playwright() as p:
     pg.set_viewport_size({'width': 390, 'height': 800}); w(300)
     pg.goto(BASE + '/s/oefen/activiteiten'); w(1200)
     check(not pg.evaluate(NONAME), 'activiteitenbank: elk veld heeft een naam')
+    cf = pg.evaluate("(() => { const c = document.querySelector('.toolbar .catfilter'), r = c.getBoundingClientRect(); return [Math.round(r.height), c.scrollWidth > c.clientWidth + 1, document.documentElement.scrollWidth <= innerWidth + 1]; })()")
+    check(cf[0] <= 50 and cf[1] and cf[2], f'banken mobiel: categorieën op één rij die zijwaarts schuift, de pagina schuift niet ({cf})')
+    pg.locator('.toolbar .catfilter .chip').last.click(); w(200)
+    check(pg.locator('.toolbar .catfilter .chip').last.get_attribute('aria-pressed') == 'true', 'banken mobiel: laatste categorie bereikbaar en te kiezen')
+    pg.locator('.toolbar .catfilter .chip:text-is("Alle")').click(); w(200); shot('16a-bank-filter-mobiel', False)
     card = pg.locator('.bcard').first; card.click(); w(400)
     ok = sheet.count() == 1 and in_sheet(); shot('16b-vel-venster-mobiel', False)
     pg.keyboard.press('Escape'); w(400)
@@ -1266,6 +1323,10 @@ with sync_playwright() as p:
     pg.click('a:has-text("Oefenomgeving")'); w(1200)
     check('/s/oefen/' in pg.url and pg.locator('.watermark.on').count() == 1, 'oefenomgeving werkt zonder inloggen')
     shot('14-oefenen')
+    green = pg.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--accent').trim().toLowerCase()")
+    pg.evaluate('history.back()'); w(800)
+    check('/inloggen' in pg.url and green != '#1e3a5f' and pg.evaluate("getComputedStyle(document.querySelector('.auth-card .btn.primary')).backgroundColor") == 'rgb(30, 58, 95)',
+          f'terug van de oefenomgeving ({green}) naar inloggen: weer marine')
     # opkomstbouwer: de komende opkomsten staan bovenaan, met datum en status
     pg.goto(BASE + '/s/oefen/bouwer'); w(1000)
     coming = pg.locator('.picklist.coming .pick')
