@@ -70,6 +70,12 @@ async function sendVerifyMail() {
     if (e?.code === 'auth/unauthorized-continue-uri' || e?.code === 'auth/invalid-continue-uri') await sendEmailVerification(u);
     else throw e;
   }
+  try { sessionStorage.setItem(MAILED, (u.email || '').toLowerCase()); } catch { /* geen opslag: dan zegt de melding niet dat er een mail is */ }
+}
+const MAILED = 'opk.verifymail';
+/** Is er in deze sessie echt een bevestigingsmail naar dit adres gestuurd? (Oude accounts kregen er nooit een.) */
+export function verifyMailSent(email: string | null | undefined) {
+  try { return !!email && sessionStorage.getItem(MAILED) === email.toLowerCase(); } catch { return false; }
 }
 
 /** Vaste, nep-ingelogde gebruiker (oefenomgeving): niets gaat naar Firebase. */

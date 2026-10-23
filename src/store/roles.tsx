@@ -21,15 +21,22 @@ type RolesCtx = {
   isGroupAdmin: (gid: string | null | undefined) => boolean;
   /** Voor- en achternaam uit je profiel; null zolang het laadt. */
   profile: { firstName: string; lastName: string } | null;
+  /** Beheer (totaal) opnieuw ophalen, bijv. net nadat je via een uitnodiging bent toegetreden (de vorige poging werd geweigerd). */
+  recheck: () => void;
 };
-const Ctx = createContext<RolesCtx>({ ready: false, root: null, isRoot: false, groups: [], ownGroups: [], isAdmin: false, isGroupAdmin: () => false, profile: null });
+const Ctx = createContext<RolesCtx>({ ready: false, root: null, isRoot: false, groups: [], ownGroups: [], isAdmin: false, isGroupAdmin: () => false, profile: null, recheck: () => {} });
 
 export const normGroep = (id: string, d: any): Groep => ({ id, name: d.name || '', admins: d.admins || {}, adminIds: d.adminIds || [], createdAt: d.createdAt || 0, createdBy: d.createdBy || '' });
 
 export function RolesProvider({ children }: { children: ReactNode }) {
   const { user, verified } = useAuth();
-  const [root, setRoot] = useState<Root | null>(null);
-  const [rootReady, setRootReady] = useState(false);
+  // Beheer (totaal) per gebruiker en per poging: zolang de nieuwste poging nog niets heeft opgeleverd, is het nog niet klaar
+  // (zo flitst na toetreden niet even "geen beheerder").
+  const [check, setCheck] = useState(0);
+  const rootKey = (user?.uid || '') + ':' + check;
+  const [rootSnap, setRootSnap] = useState<{ key: string; root: Root | null } | null>(null);
+  const rootReady = rootSnap?.key === rootKey;
+  const root = rootReady ? rootSnap!.root : null;
   const [groups, setGroups] = useState<Groep[] | null>(null);
   const uid = user?.uid;
   const [profile, setProfile] = useState<RolesCtx['profile']>(null);
@@ -48,8 +55,8 @@ export function RolesProvider({ children }: { children: ReactNode }) {
 
   // Beheer (totaal) volgen; het hoofdaccount maakt het de eerste keer zelf aan.
   useEffect(() => {
-    setRoot(null); setRootReady(false);
     if (!user) return;
+    const key = rootKey;
     const ref = doc(db, 'beheer', 'totaal');
     let stop = () => {};
     let alive = true;
@@ -61,14 +68,15 @@ export function RolesProvider({ children }: { children: ReactNode }) {
         } catch { /* geen rechten (bijv. oude regels): dan gewoon geen beheer */ }
       }
       if (!alive) return;
+      // Wie (nog) niet in Beheer (totaal) staat, mag het niet lezen: dan stopt deze listener met een fout. recheck() begint opnieuw.
       stop = onSnapshot(ref, s => {
         const d = s.exists() ? s.data() as any : null;
-        setRoot(d && Array.isArray(d.ids) && d.ids.includes(user.uid) ? { ids: d.ids, people: d.people || {} } : null);
-        setRootReady(true);
-      }, () => { setRoot(null); setRootReady(true); });
+        setRootSnap({ key, root: d && Array.isArray(d.ids) && d.ids.includes(user.uid) ? { ids: d.ids, people: d.people || {} } : null });
+      }, () => setRootSnap({ key, root: null }));
     })();
     return () => { alive = false; stop(); };
-  }, [user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, check]);
 
   const isRoot = !!root;
   // Groepen: Beheer totaal ziet alles, anders alleen de groepen waar je beheerder bent.
@@ -86,6 +94,7 @@ export function RolesProvider({ children }: { children: ReactNode }) {
     isAdmin: isRoot || ownGroups.length > 0,
     isGroupAdmin: gid => isRoot || (!!gid && ownGroups.some(g => g.id === gid)),
     profile,
+    recheck: () => setCheck(n => n + 1),
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -93,5 +102,5 @@ export const useRoles = () => useContext(Ctx);
 
 /** Geen beheerrollen (oefenomgeving). */
 export function NoRoles({ children }: { children: ReactNode }) {
-  return <Ctx.Provider value={{ ready: true, root: null, isRoot: false, groups: [], ownGroups: [], isAdmin: false, isGroupAdmin: () => false, profile: null }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ ready: true, root: null, isRoot: false, groups: [], ownGroups: [], isAdmin: false, isGroupAdmin: () => false, profile: null, recheck: () => {} }}>{children}</Ctx.Provider>;
 }

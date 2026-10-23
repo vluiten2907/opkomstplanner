@@ -147,7 +147,7 @@ function Hero({ r, today }: { r: Row; today: string }) {
     <div className="hero-top">
       <div className={'hero-date patch -mt-14 -rotate-6 md:-ml-10' + (kamp ? ' kamp' : '')}><span>{DAYS[dt.getDay()].slice(0, 2)}</span><b>{dt.getDate()}</b><span>{mon3(d)}</span></div>
       <div className="hero-main">
-        <div className="row"><span className="eyebrow">{kamp ? 'Komend kamp' : 'Komende opkomst'}</span><span className="pill acc">{when}</span>{o && <StatusPill o={o} />}</div>
+        <div className="row hero-eyebrow"><span className="eyebrow">{kamp ? 'Komend kamp' : 'Komende opkomst'}</span><span className="pill acc">{when}</span>{o && <StatusPill o={o} />}</div>
         <InlineText value={(o && o.title) || (e && e.topic) || ''} enabled={canEdit} label="Opkomst titel" className="hero-title" onSave={saveTitle}
           render={tap => <h2 className="hero-title" {...tap}>{title}</h2>} />
         {o && <CatTags o={o} />}

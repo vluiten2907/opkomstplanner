@@ -82,9 +82,31 @@ const failCode = (k: string, path: string) => { const c = localStorage.getItem(k
 const failErr = (c: string) => c === 'too-big'
   ? Object.assign(new Error('Document cannot be written because its size (1,300,000 bytes) exceeds the maximum allowed size of 1,048,576 bytes.'), { code: 'invalid-argument' })
   : err(c);
+/*
+ * Twee leesregels uit firestore.rules nagebootst, omdat de app er anders op moet reageren:
+ * - de lijst met uitnodigingen alleen per niveau: Beheer (totaal), beheerder van de groep (gid in de zoekvraag)
+ *   of teamleider van de speltak (sid in de zoekvraag);
+ * - beheer/totaal lezen alleen als je erin staat (of als het nog niet bestaat); een listener stopt dan met een fout.
+ */
+const inRoot = (u: string) => (store['beheer/totaal']?.ids || []).includes(u);
+function invitesDenied(ref: Ref) {
+  if (ref.kind !== 'coll' || ref.path !== 'invites') return false;
+  const u = current?.uid; if (!u) return true;
+  if (inRoot(u)) return false;
+  const eq: Record<string, any> = {}; (ref.filters || []).forEach(([k, op, v]) => { if (op === '==') eq[k] = v; });
+  if (typeof eq.gid === 'string' && (store['groepen/' + eq.gid]?.adminIds || []).includes(u)) return false;
+  const sp = typeof eq.sid === 'string' ? store['speltakken/' + eq.sid] : null;
+  return !(sp && (sp.memberIds || []).includes(u) && (Array.isArray(sp.tlIds) ? sp.tlIds.includes(u) : sp.members?.[u]?.role === 'teamleider'));
+}
+const rootDenied = (ref: Ref) => ref.kind === 'doc' && ref.path === 'beheer/totaal' && ref.path in store && !(current && inRoot(current.uid));
 export function onSnapshot(ref: Ref, cb: (s: any) => void, onErr?: (e: any) => void) {
   const f = failCode('fake.failListen', ref.path);
   if (f) { const t = setTimeout(() => onErr?.(failErr(f)), 0); return () => clearTimeout(t); }
+  if (invitesDenied(ref)) { const t = setTimeout(() => onErr?.(err('permission-denied')), 0); return () => clearTimeout(t); }
+  if (ref.kind === 'doc' && ref.path === 'beheer/totaal') {
+    const g = () => { if (rootDenied(ref)) { listeners.delete(g); onErr?.(err('permission-denied')); } else cb(snap(ref)); };
+    listeners.add(g); setTimeout(() => { if (listeners.has(g)) g(); }, 0); return () => listeners.delete(g);
+  }
   const l = () => cb(snap(ref));
   // Testhaak 'fake.delayListen' = ms: lijsten in een speltak komen later binnen, zoals bij echte Firestore (los van het speltakdocument).
   const d = ref.kind === 'coll' ? Number(failCode('fake.delayListen', ref.path)) || 0 : 0;
@@ -92,7 +114,7 @@ export function onSnapshot(ref: Ref, cb: (s: any) => void, onErr?: (e: any) => v
   listeners.add(l); setTimeout(l, 0); return () => listeners.delete(l);
 }
 export async function getDoc(ref: Ref) { return snap(ref); }
-export async function getDocs(ref: Ref) { return snap(ref); }
+export async function getDocs(ref: Ref) { if (invitesDenied(ref)) throw err('permission-denied'); return snap(ref); }
 export async function setDoc(ref: Ref, data: any, opts?: { merge?: boolean }) {
   const f = failCode('fake.failWrite', ref.path); if (f) throw failErr(f);
   const cur = opts?.merge && store[ref.path] ? store[ref.path] : {};

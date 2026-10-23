@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { TentTree } from 'lucide-react';
 import { useAuth, authError } from '../store/auth';
+import { useRoles } from '../store/roles';
 import { acceptInvite, claimName, nameOwner, readInvite, saveProfile } from '../store/beheer';
 import { Field } from '../components/ui';
 import VerifyNote from '../components/VerifyNote';
@@ -11,7 +12,8 @@ import { inviteExpired, inviteWhere, KIND_LABELS, PERM_LABELS, type Invite } fro
 /** Uitnodiging openen. Een account aanmaken kan alleen hier, met het e-mailadres van de uitnodiging. */
 export default function InvitePage() {
   const { token } = useParams();
-  const { user, ready, verified, login, register, logout } = useAuth();
+  const { user, ready, verified, login, register, logout, sendVerify } = useAuth();
+  const { recheck } = useRoles();
   const nav = useNavigate();
   const [inv, setInv] = useState<Invite | null | undefined>(undefined);
   const [mode, setMode] = useState<'register' | 'login'>('register');
@@ -20,6 +22,8 @@ export default function InvitePage() {
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
   // gebruikersnaam die bij het aanmaken is gekozen, voor het toetreden na het bevestigen van het e-mailadres
   const [chosen, setChosen] = useState('');
+  // Naam al bezet in deze groep (bijv. een bestaand account uit een andere groep): dan kies je hier een naam voor deze groep.
+  const [pick, setPick] = useState<{ taken: string; name: string } | null>(null);
   useEffect(() => { readInvite(token!).then(setInv).catch(() => setInv(null)); }, [token]);
   if (!ready || inv === undefined) return <div className="loading">Uitnodiging ophalen…</div>;
   const box = (body: React.ReactNode) => <div className="auth-wrap"><div className="card pad stack auth-card">
@@ -42,10 +46,19 @@ export default function InvitePage() {
     if (inv.gid) await claimName(inv.gid, u.uid, nm || u.displayName || '', inv.id);
     await acceptInvite(inv, { uid: u.uid, name: nm || u.displayName || u.email || 'Leiding', email: u.email || '' });
     if (inv.sid) { localStorage.setItem('opk.sid', inv.sid); nav(`/s/${inv.sid}`, { replace: true }); }
-    else nav('/beheer', { replace: true });
+    else {
+      // Beheer (totaal) lezen werd vóór het toetreden geweigerd; opnieuw ophalen, anders zie je "geen beheerder" tot herladen
+      if (inv.kind === 'totaal') recheck();
+      nav('/beheer', { replace: true });
+    }
   };
   const taken = `Deze naam is al in gebruik binnen ${inv.groupName || 'de groep'}. Namen zijn uniek binnen een groep; kies een andere, bijvoorbeeld met je speltak erbij.`;
-  const joinErr = (e: any) => e?.code === 'name-taken' ? taken : e?.message === 'name-taken' ? `Je naam is al in gebruik binnen ${inv.groupName || 'de groep'}. Vraag de beheerder van de groep om hulp.` : e?.code === 'permission-denied' ? 'Toetreden lukt niet: de uitnodiging is al gebruikt, ingetrokken of hoort bij een ander e-mailadres.' : authError(e);
+  const joinErr = (e: any) => e?.code === 'name-taken' ? taken : e?.message === 'name-taken' ? '' : e?.code === 'permission-denied' ? 'Toetreden lukt niet: de uitnodiging is al gebruikt, ingetrokken of hoort bij een ander e-mailadres.' : authError(e);
+  /** Toetreden mislukt; bij een bezette naam verschijnt het veld om een naam voor deze groep te kiezen. */
+  const failJoin = (e: any, tried: string) => {
+    if (e?.message === 'name-taken') setPick(p => ({ taken: tried || p?.taken || '', name: p?.name || '' }));
+    setErr(joinErr(e));
+  };
 
   if (!user) {
     const submit = async (e: FormEvent) => {
@@ -62,9 +75,16 @@ export default function InvitePage() {
         const u = auth.currentUser; if (!u) throw new Error('niet ingelogd');
         // Nieuw account: eerst het e-mailadres bevestigen; daarna treed je toe vanaf het scherm hieronder.
         if (mode === 'register') { await saveProfile(u.uid, inv.email, first, last).catch(() => {}); setBusy(false); return; }
-        if (!u.emailVerified) { setBusy(false); return; }
+        // Nog niet bevestigd (bijv. een account van vóór de bevestigingsmail, dat er nooit een kreeg): nu een mail sturen.
+        // Lukt dat niet (te veel mails), dan kan het later met de knop; inloggen gaat gewoon door.
+        if (!u.emailVerified) { await sendVerify().catch(() => {}); setBusy(false); return; }
         await accept(u);
-      } catch (e: any) { setErr(e?.code === 'name' ? 'Vul je gebruikersnaam in.' : e?.code === 'fullname' ? 'Vul je voor- en achternaam in.' : joinErr(e)); setBusy(false); }
+      } catch (e: any) {
+        if (e?.code === 'name') setErr('Vul je gebruikersnaam in.');
+        else if (e?.code === 'fullname') setErr('Vul je voor- en achternaam in.');
+        else failJoin(e, auth.currentUser?.displayName || '');
+        setBusy(false);
+      }
     };
     return box(<form className="stack" onSubmit={submit}>{intro}
       <Field label="E-mailadres"><input type="email" value={inv.email} readOnly aria-readonly="true" /></Field>
@@ -85,7 +105,16 @@ export default function InvitePage() {
   }
 
   const mine = (user.email || '').toLowerCase() === inv.email;
-  const join = async () => { setBusy(true); setErr(''); try { await accept(auth.currentUser || user, chosen || undefined); } catch (e: any) { setErr(joinErr(e)); setBusy(false); } };
+  const join = async () => {
+    const u = auth.currentUser || user;
+    const nm = pick ? pick.name.trim() : chosen || undefined;
+    if (pick && !nm) { setErr(`Kies een naam voor ${inv.groupName || 'de groep'}.`); return; }
+    setBusy(true); setErr('');
+    try { await accept(u, nm); } catch (e: any) { failJoin(e, nm || u.displayName || ''); setBusy(false); }
+  };
+  const group = inv.groupName || 'de groep';
+  const pickField = pick && <Field label={`Kies een naam voor ${group}`} htmlFor="i-pick" hint={`${pick.taken ? `${pick.taken} is al in gebruik binnen ${group}` : `Deze naam is al in gebruik binnen ${group}`}. Namen zijn uniek binnen een groep; kies er een, bijvoorbeeld met je speltak erbij.`}>
+    <input id="i-pick" value={pick.name} maxLength={40} onChange={e => setPick({ ...pick, name: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') join(); }} placeholder="bijv. Akela Welpen" autoComplete="off" /></Field>;
   if (mine && !verified) return box(<>{intro}
     <VerifyNote box onVerified={join} />
     {err && <p className="hint err">{err}</p>}
@@ -93,6 +122,7 @@ export default function InvitePage() {
   </>);
   return box(<>{intro}
     {!mine && <p className="hint err">Je bent ingelogd als {user.email}, maar de uitnodiging is voor {inv.email}.</p>}
+    {mine && pickField}
     {err && <p className="hint err">{err}</p>}
     <div className="row">{mine ? <button className="btn primary" disabled={busy} onClick={join}>Toetreden</button>
       : <button className="btn primary" onClick={() => logout()}>Uitloggen en opnieuw</button>}<Link className="btn ghost" to="/">Niet nu</Link></div>

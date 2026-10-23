@@ -8,7 +8,9 @@ import { ConfirmBtn } from './ui';
 import { inviteExpired, inviteWhere, INVITE_DAYS, KIND_LABELS, normInvite, type Invite } from '../lib/types';
 import { fmtNL } from '../lib/time';
 
-export type InviteScope = { all: true } | { gid: string } | { sid: string };
+/** Welke uitnodigingen: alle (Beheer totaal), van een groep, van een speltak (teamleider), of van een speltak binnen een groep
+ *  (beheerder van de groep: firestore.rules laat de lijst alleen toe als gid in de zoekvraag staat). */
+export type InviteScope = { all: true } | { gid: string; sid?: string } | { sid: string };
 
 /** Openstaande (nog niet gebruikte) uitnodigingen, live bijgewerkt. */
 export function useOpenInvites(scopes: InviteScope[]) {
@@ -18,7 +20,9 @@ export function useOpenInvites(scopes: InviteScope[]) {
     setByScope({});
     const c = collection(db, 'invites');
     const stops = scopes.map((sc, i) => {
-      const q = 'all' in sc ? c : 'gid' in sc ? query(c, where('gid', '==', sc.gid)) : query(c, where('sid', '==', sc.sid));
+      const q = 'all' in sc ? c
+        : 'gid' in sc ? (sc.sid ? query(c, where('gid', '==', sc.gid), where('sid', '==', sc.sid)) : query(c, where('gid', '==', sc.gid)))
+        : query(c, where('sid', '==', sc.sid));
       return onSnapshot(q, s => setByScope(m => ({ ...m, [i]: s.docs.map(d => normInvite(d.id, d.data())).filter(x => !x.usedBy) })), () => setByScope(m => ({ ...m, [i]: [] })));
     });
     return () => stops.forEach(f => f());

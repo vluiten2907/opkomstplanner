@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { useToast } from '../store/toast';
 import { pad2 } from '../lib/time';
@@ -12,19 +12,41 @@ export function Toast() {
 }
 
 /** Klik twee keer om te bevestigen (geen alert/confirm in de browser). */
-export function ConfirmBtn({ label, confirm, onConfirm, className = 'btn ghost', title }: { label: ReactNode; confirm: string; onConfirm: () => void; className?: string; title?: string }) {
+export function ConfirmBtn({ label, confirm, onConfirm, className = 'btn ghost', title, ariaLabel }: { label: ReactNode; confirm: string; onConfirm: () => void; className?: string; title?: string; ariaLabel?: string }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => { if (!armed) return; const t = setTimeout(() => setArmed(false), 3000); return () => clearTimeout(t); }, [armed]);
-  return <button type="button" className={className} data-armed={armed || undefined} title={title} onClick={() => { if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}>{armed ? confirm : label}</button>;
+  // aria-label alleen in rust (bijv. een knop met alleen een pictogram); gewapend is de zichtbare vraag de naam
+  return <button type="button" className={className} data-armed={armed || undefined} title={title} aria-label={armed ? undefined : ariaLabel} onClick={() => { if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}>{armed ? confirm : label}</button>;
 }
 
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function Modal({ title, sub, onClose, wide, children }: { title: string; sub?: string; onClose: () => void; wide?: boolean; children: ReactNode }) {
+  const card = useRef<HTMLDivElement>(null);
+  const id = useId();
+  // wat de focus had vóór het venster (bij het renderen, dus vóór een autoFocus in het venster): daar gaat hij na het sluiten heen
+  const [prev] = useState(() => document.activeElement as HTMLElement | null);
   useEffect(() => { const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose]);
+  useEffect(() => {
+    // focus in het venster; op de kaart zelf, zodat op een telefoon niet meteen het toetsenbord opent (een veld met autoFocus houdt hem)
+    const c = card.current;
+    if (c && !c.contains(document.activeElement)) c.focus({ preventScroll: true });
+    return () => { if (prev && prev !== document.body && prev.isConnected) prev.focus({ preventScroll: true }); };
+  }, [prev]);
+  // Tab en Shift+Tab blijven binnen het venster
+  const trap = (e: ReactKeyboardEvent) => {
+    const c = card.current; if (e.key !== 'Tab' || !c) return;
+    const list = [...c.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(x => x.getClientRects().length > 0);
+    const first = list[0], last = list[list.length - 1], at = document.activeElement;
+    if (!first) { e.preventDefault(); c.focus(); return; }
+    if (e.shiftKey && (at === first || at === c)) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && at === last) { e.preventDefault(); first.focus(); }
+  };
   return <div className="modal" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-    <div className={'modal-card' + (wide ? ' wide' : '')} role="dialog" aria-modal="true">
+    <div ref={card} className={'modal-card' + (wide ? ' wide' : '')} role="dialog" aria-modal="true" aria-labelledby={id + 't'} aria-describedby={sub ? id + 's' : undefined} tabIndex={-1} onKeyDown={trap}>
       <div className="pad stack">
         <div className="row between" style={{ alignItems: 'flex-start', flexWrap: 'nowrap' }}>
-          <div><h2>{title}</h2>{sub && <p className="hint" style={{ marginTop: 4 }}>{sub}</p>}</div>
+          <div><h2 id={id + 't'}>{title}</h2>{sub && <p id={id + 's'} className="hint" style={{ marginTop: 4 }}>{sub}</p>}</div>
           <button className="closex" onClick={onClose} aria-label="Sluiten"><X size={18} /></button>
         </div>
         {children}

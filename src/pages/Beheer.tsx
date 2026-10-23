@@ -287,9 +287,11 @@ function releaseIfGone(g: Groep, all: Speltak[], exceptSid: string, uid: string,
   releaseName(g.id, uid, name).catch(() => {});
 }
 
-/** Iemand kiezen die al een account heeft: uit de bekende mensen van de groep, of op e-mailadres. */
-function PersonPicker({ pool, exclude, label, button, onPick, children }: { pool: Person[]; exclude: string[]; label: string; button: string; onPick: (p: Person) => Promise<unknown>; children?: ReactNode }) {
+/** Iemand kiezen die al een account heeft: uit de bekende mensen van de groep, of op e-mailadres.
+ *  Is de naam van die persoon al van iemand anders in de groep (onPick gooit 'name-taken'), dan kies je hier een andere naam. */
+function PersonPicker({ pool, exclude, label, button, groupName, onPick, children }: { pool: Person[]; exclude: string[]; label: string; button: string; groupName: string; onPick: (p: Person) => Promise<unknown>; children?: ReactNode }) {
   const [sel, setSel] = useState(''); const [email, setEmail] = useState(''); const [busy, setBusy] = useState(false);
+  const [taken, setTaken] = useState<{ p: Person; tried: string; name: string } | null>(null);
   const list = pool.filter(p => !exclude.includes(p.uid));
   const go = async () => {
     let p = list.find(x => x.uid === sel) || null;
@@ -298,20 +300,35 @@ function PersonPicker({ pool, exclude, label, button, onPick, children }: { pool
       setBusy(true);
       p = await findAccount(email).catch(() => null);
       setBusy(false);
-      if (!p) { toast('Geen account gevonden met dit e-mailadres. Stuur een uitnodiging, of laat die persoon eerst één keer opnieuw inloggen.'); return; }
+      if (!p) { toast('Geen account gevonden met dit e-mailadres. Stuur een uitnodiging, of laat die persoon eerst inloggen en zijn e-mailadres bevestigen.'); return; }
       if (exclude.includes(p.uid)) { toast('Deze persoon zit al in het team.'); return; }
     }
+    // zelfde persoon als bij de bezette naam: met de nieuw gekozen naam
+    const pickName = taken && taken.p.uid === p.uid;
+    if (pickName && !taken.name.trim()) { toast(`Kies een naam voor ${groupName}.`); return; }
+    const person = pickName ? { ...p, name: taken.name.trim() } : p;
     setBusy(true);
-    try { await onPick(p); setSel(''); setEmail(''); } finally { setBusy(false); }
+    try { await onPick(person); setSel(''); setEmail(''); setTaken(null); }
+    catch (e: any) {
+      if (e?.message !== 'name-taken') throw e;
+      setTaken({ p, tried: person.name, name: pickName ? taken.name : '' });
+      toast(`${person.name} is al in gebruik binnen ${groupName}. Kies een andere naam voor deze groep.`);
+    }
+    finally { setBusy(false); }
   };
-  return <div className="row">
-    {list.length > 0 && <select value={sel} onChange={e => setSel(e.target.value)} aria-label={label} style={{ flex: '1 1 200px' }}>
-      <option value="">{email ? 'Iemand uit de groep kiezen…' : 'Kies iemand uit de groep…'}</option>
-      {list.map(p => <option key={p.uid} value={p.uid}>{p.name}{p.email ? ` · ${p.email}` : ''}</option>)}
-    </select>}
-    {!sel && <input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') go(); }} placeholder={list.length ? 'of e-mailadres van een account' : 'e-mailadres van een account'} aria-label="E-mailadres van een account" style={{ flex: '1 1 200px' }} />}
-    {children}
-    <button className="btn" disabled={busy} onClick={go}><UserPlus size={16} />{button}</button>
+  return <div className="stack" style={{ gap: 8 }}>
+    <div className="row">
+      {list.length > 0 && <select value={sel} onChange={e => { setSel(e.target.value); setTaken(null); }} aria-label={label} style={{ flex: '1 1 200px' }}>
+        <option value="">{email ? 'Iemand uit de groep kiezen…' : 'Kies iemand uit de groep…'}</option>
+        {list.map(p => <option key={p.uid} value={p.uid}>{p.name}{p.email ? ` · ${p.email}` : ''}</option>)}
+      </select>}
+      {!sel && <input className="inp" type="email" value={email} onChange={e => { setEmail(e.target.value); setTaken(null); }} onKeyDown={e => { if (e.key === 'Enter') go(); }} placeholder={list.length ? 'of e-mailadres van een account' : 'e-mailadres van een account'} aria-label="E-mailadres van een account" style={{ flex: '1 1 200px' }} />}
+      {children}
+      <button className="btn" disabled={busy} onClick={go}><UserPlus size={16} />{button}</button>
+    </div>
+    {taken && <Field label={`Naam in ${groupName}`} htmlFor={'pp-name-' + taken.p.uid} hint={`${taken.tried} is al in gebruik binnen ${groupName}. Namen zijn uniek binnen een groep; kies een naam waaronder ${taken.p.email || 'deze persoon'} hier bekend is.`}>
+      <input id={'pp-name-' + taken.p.uid} value={taken.name} maxLength={40} onChange={e => setTaken({ ...taken, name: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') go(); }} placeholder="bijv. Akela Welpen" autoComplete="off" />
+    </Field>}
   </div>;
 }
 
@@ -333,8 +350,15 @@ function SpeltakRow({ sp, g, me, pool, all, names }: { sp: Speltak; g: Groep; me
     try { if (k === 'teamleider') await ensureTlIds(sp); setInv(await createInvite({ kind: k, email, gid: g.id, groupName: g.name, sid: sp.id, speltakName: sp.name, perms: DEFAULT_LEIDING_PERMS }, me)); setEmail(''); } catch (e) { err(e, 'Uitnodiging maken mislukt.'); }
     setBusy(false);
   };
-  const add = (p: Person) => { const role = tl ? addRole : 'teamleider';
-    return claimName(g.id, p.uid, p.name).then(() => addMember(sp, p, role, DEFAULT_LEIDING_PERMS)).then(() => toast(`${p.name} is toegevoegd als ${role}`)).catch(e => err(e, e?.message === 'member' ? 'Deze persoon zit al in het team.' : 'Toevoegen mislukt.')); };
+  const add = async (p: Person) => {
+    const role = tl ? addRole : 'teamleider';
+    try { await claimName(g.id, p.uid, p.name); await addMember(sp, p, role, DEFAULT_LEIDING_PERMS); toast(`${p.name} is toegevoegd als ${role}`); }
+    catch (e: any) {
+      // naam bezet: de keuze laat dan een veld zien voor een andere naam
+      if (e?.message === 'name-taken') throw e;
+      err(e, e?.message === 'member' ? 'Deze persoon zit al in het team.' : 'Toevoegen mislukt.');
+    }
+  };
   const remove = async () => {
     setDeleting(true);
     try { await deleteSpeltak(sp); Object.entries(sp.members).forEach(([u, m]) => releaseIfGone(g, all, sp.id, u, m.name)); if (localStorage.getItem('opk.sid') === sp.id) localStorage.removeItem('opk.sid'); toast(`${word} is verwijderd`); }
@@ -355,7 +379,7 @@ function SpeltakRow({ sp, g, me, pool, all, names }: { sp: Speltak; g: Groep; me
         {!members.length && <p className="hint">Nog niemand in deze speltak.</p>}
       </div>
       <b>Iemand met een account toevoegen</b>
-      <PersonPicker pool={pool} exclude={sp.memberIds} label="Persoon kiezen voor de speltak" button="Toevoegen" onPick={add}>
+      <PersonPicker pool={pool} exclude={sp.memberIds} label="Persoon kiezen voor de speltak" button="Toevoegen" groupName={g.name || 'de groep'} onPick={add}>
         {tl ? <select value={addRole} onChange={e => setAddRole(e.target.value as 'leiding' | 'teamleider')} aria-label="Toevoegen als"><option value="leiding">als leiding</option><option value="teamleider">als teamleider</option></select> : null}
       </PersonPicker>
       {!tl && <p className="hint">Er is nog geen teamleider: wie je nu toevoegt of uitnodigt, wordt teamleider.</p>}

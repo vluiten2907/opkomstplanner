@@ -239,7 +239,9 @@ with sync_playwright() as p:
     # --- inplannen vanuit bouwer houdt namen, bank verwijdert ze
     pg.click('nav >> text=Opkomstbouwer'); w(300); pg.click('text=Nieuwe opkomst'); w(700); pg.fill('#om-title', 'Sluipspel'); w()
     add_block(120, 'Sluipen', '30', 'Veld', 'Vincent Test')
-    pg.click('text=Inplannen'); w(); pg.click('.modal >> text=Hier inplannen >> nth=0'); w(800)
+    pg.click('text=Inplannen'); w()
+    check(pg.locator('.modal p:text-is("Kies een datum waar nog geen opkomst aan gekoppeld is. De ingedeelde leiding gaat mee.")').count() == 1 and pg.locator('.modal >> text=eindverantwoordelijke').count() == 0, 'inplannen: uitleg zonder eindverantwoordelijke')
+    pg.click('.modal >> text=Hier inplannen >> nth=0'); w(800)
     check('Vincent Test' in pg.locator('.blk:has-text("Sluipen") .names').inner_text(), 'inplannen vanuit bouwer houdt leiding')
     pg.click('text=In bank'); w(600)
     pg.click('nav >> text=Opkomstenbank'); w(500); pg.click('.bcard:has-text("Sluipspel")'); w(); pg.click('.side >> text=Bewerken'); w(700)
@@ -421,6 +423,10 @@ with sync_playwright() as p:
     shot('07-mobiel', False)
     pg.click('nav >> text=Dashboard'); w(500)
     check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'mobiel dashboard: geen horizontale scroll'); shot('07-mobiel-dashboard', False)
+    hero_ok = pg.evaluate("""(() => { const r = s => document.querySelector(s).getBoundingClientRect();
+      const h = r('.hero'), t = r('.hero .hero-title'), d = r('.hero .hero-date'), e = r('.hero .eyebrow');
+      return t.left - h.left < 40 && t.width > h.width * 0.8 && t.top >= d.bottom - 2 && e.left >= d.right - 2 && e.top < d.bottom; })()""")
+    check(hero_ok, 'mobiel dashboard: titel en feiten over de hele breedte, datum-sticker linksboven zonder overlap')
     pg.click('nav >> text=Dashboard'); w(600); pg.locator('.hero .facts [data-editable]').first.dblclick(); w(300)
     check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'mobiel: dashboard tijden bewerken zonder horizontale scroll')
     shot('07b-mobiel-dashboard', False); pg.keyboard.press('Escape'); w(200)
@@ -493,6 +499,9 @@ with sync_playwright() as p:
     pg.click('.groupcard .member:has-text("Welpen") >> text=Openen'); w(1000)
     check(pg.locator('.adminnote').count() == 1, 'beheerder bekijkt speltak alleen-lezen')
     check(pg.locator('text=Nieuwe opkomst').count() == 0, 'beheerder kan geen opkomst maken')
+    pg.goto(BASE + '/beheer'); w(900); open_group()
+    pg.click('.groupcard .member:has-text("Scouts") >> text=Openen'); w(1000); pg.click('nav >> text=Instellingen'); w(700)
+    check(pg.locator('.invrow:has-text("lid@test.nl")').count() == 1, 'beheerder van de groep (geen teamleider) ziet in Team de openstaande uitnodigingen')
 
     # --- groepsbank: tweede speltak in dezelfde groep kopieert een gedeelde opkomst
     pg.goto(BASE + '/beheer'); w(900); open_group()
@@ -549,6 +558,74 @@ with sync_playwright() as p:
     heir.locator('button').click(); w(150); heir.locator('button').click(); w(900)
     olga_row, wim_row = pg.locator('.member:has-text("Olga Opvolger")').inner_text(), pg.locator('.member:has-text("Wim Welp (jij)")').inner_text()
     check('Teamleider' in olga_row and 'Leiding' in wim_row and 'Teamleider' not in wim_row and pg.locator('.heir').count() == 0, 'na overdragen: opvolger is teamleider, jij blijft leiding')
+
+    # --- bestaande accounts: Beheer (totaal) uitnodigen, naam al bezet in de groep, oud account zonder bevestigingsmail
+    def opened(loc, head):
+        if 'open' not in (loc.get_attribute('class') or ''): loc.locator(head).first.click(); w(300)
+    login('vluiten2907@gmail.com', 'demo123')
+    rs = pg.locator('section:has(h2:text-is("Beheer (totaal)"))')
+    rs.locator('input[type=email]').fill('mede@test.nl'); rs.locator('button:has-text("Uitnodigingslink maken")').click(); w(700)
+    mede_link = rs.locator('.mono-code').inner_text()
+    pg.click('text=Nieuwe Scouting-groep'); w(); pg.fill('#ng-name', 'Zeegroep'); pg.click('text=Groep aanmaken'); w(800)
+    zg = pg.locator('.groupcard:has-text("Zeegroep")'); opened(zg, '.gc-head')
+    zg.locator('input[placeholder^="Naam nieuwe speltak"]').fill('Zeeverkenners'); zg.locator('button:has-text("Speltak aanmaken")').click(); w(800)
+    zs = zg.locator('.spcard:has-text("Zeeverkenners")'); opened(zs, '.sp-head')
+    zs.locator('input[placeholder="e-mailadres teamleider"]').fill('greet2@test.nl'); zs.locator('button:has-text("Teamleider uitnodigen")').click(); w(800)
+    greet2_link = zs.locator('.mono-code').inner_text()
+    tg = pg.locator('.groupcard:has-text("Testgroep")'); opened(tg, '.gc-head')
+    sc = tg.locator('.spcard:has-text("Scouts")'); opened(sc, '.sp-head')
+    sc.locator('input[aria-label="E-mailadres van een account"]').fill('niemand@test.nl'); sc.locator('button:text-is("Toevoegen")').click(); w(400)
+    check('e-mailadres bevestigen' in pg.locator('.toast').inner_text(), 'iemand toevoegen zonder (bevestigd) account: uitleg noemt e-mailadres bevestigen')
+    sc.locator('input[placeholder="e-mailadres nieuw lid"]').fill('greet2@test.nl'); sc.locator('button:text-is("Uitnodigen")').click(); w(800)
+    greet2_scouts = sc.locator('.mono-code').inner_text()
+    check('/uitnodiging/' in mede_link and '/uitnodiging/' in greet2_link and '/uitnodiging/' in greet2_scouts, 'uitnodigingen voor Beheer (totaal), Zeegroep en Scouts gemaakt')
+    # Beheer (totaal): na accepteren meteen beheerder (de eerdere leespoging werd geweigerd)
+    logout_to(mede_link); register('Mede Beheer', 'mede@test.nl')
+    check(soon(lambda: '/beheer' in pg.url and pg.locator('h2:has-text("Beheer (totaal)")').count() == 1) and pg.locator('text=Je bent geen beheerder').count() == 0,
+          'uitnodiging Beheer (totaal) geaccepteerd: meteen beheerder, zonder herladen')
+    # dezelfde naam in een andere groep mag
+    logout_to(greet2_link); register('Greet Beheer', 'greet2@test.nl')
+    check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'naam uit de ene groep is vrij in een andere groep (Zeegroep)')
+    # oud account: nooit een bevestigingsmail gehad (van vóór de bevestiging)
+    pg.evaluate("""() => { const k = 'fake.auth.users', u = JSON.parse(localStorage.getItem(k)); const x = Object.values(u).find(v => v.email === 'greet2@test.nl');
+      x.verified = false; delete x.mailed; localStorage.setItem(k, JSON.stringify(u)); localStorage.setItem('fake.noverify', '1'); sessionStorage.clear(); }""")
+    logout_to(greet2_scouts)
+    pg.click('text=Ik heb al een account'); pg.fill('input[type=password]', 'geheim123'); pg.click('.btn.primary'); w(1000)
+    mailed = pg.evaluate("Object.values(JSON.parse(localStorage.getItem('fake.auth.users'))).find(v => v.email === 'greet2@test.nl').mailed === true")
+    check(mailed and pg.locator('text=We hebben een mail gestuurd naar').count() == 1, 'oud account zonder bevestiging: inloggen op een uitnodiging stuurt echt een bevestigingsmail')
+    pg.evaluate('sessionStorage.clear()'); pg.reload(); w(1000)
+    check(pg.locator('text=We hebben een mail gestuurd').count() == 0 and pg.locator('.verifynote button.primary:has-text("Bevestigingsmail sturen")').count() == 1,
+          'geen mail verstuurd in deze sessie: geen "we hebben gemaild", wel de knop Bevestigingsmail sturen'); shot('22-bevestigen-oud-account', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('22b-bevestigen-oud-account-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'bevestigen oud account mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    # naam al bezet in de groep: zelf een naam voor deze groep kiezen
+    pg.evaluate("localStorage.setItem('fake.clicked', 'greet2@test.nl'); localStorage.removeItem('fake.noverify')")
+    pg.click('text=Ik heb bevestigd'); w(1000)
+    check(pg.locator('#i-pick').count() == 1 and pg.locator('text=Greet Beheer is al in gebruik binnen Testgroep').count() == 1, 'naam al bezet in de groep: veld om een naam voor deze groep te kiezen')
+    shot('23-naam-kiezen', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('23b-naam-kiezen-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'naam kiezen mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    pg.click('button:text-is("Toetreden")'); w(300)
+    check(pg.locator('#i-pick').count() == 1 and '/uitnodiging/' in pg.url, 'zonder naam niet toetreden')
+    pg.fill('#i-pick', 'Greet Zee'); pg.click('button:text-is("Toetreden")')
+    check(soon(lambda: re.search(r'/s/[^/]+/dashboard', pg.url) is not None), 'met een eigen naam voor de groep toegetreden')
+    pg.click('nav >> text=Instellingen'); w(600)
+    check(pg.locator('text=Greet Zee (jij)').count() == 1, 'gekozen naam staat in het team')
+    # Beheer: iemand toevoegen wiens naam in de groep al bezet is
+    login('vluiten2907@gmail.com', 'demo123')
+    zg = pg.locator('.groupcard:has-text("Zeegroep")'); opened(zg, '.gc-head')
+    zs = zg.locator('.spcard:has-text("Zeeverkenners")'); opened(zs, '.sp-head')
+    zs.locator('input[aria-label="E-mailadres van een account"]').fill('ga@test.nl'); zs.locator('button:text-is("Toevoegen")').click(); w(600)
+    check(zs.locator('input[id^="pp-name-"]').count() == 1 and 'al in gebruik binnen Zeegroep' in pg.locator('.toast').inner_text(), 'beheer: naam bezet in de groep → veld voor een andere naam')
+    zs.locator('input[id^="pp-name-"]').scroll_into_view_if_needed(); shot('24-beheer-naam-bezet', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'beheer naam bezet mobiel: geen horizontale scroll')
+    zs.locator('input[id^="pp-name-"]').scroll_into_view_if_needed(); shot('24b-beheer-naam-bezet-mobiel', False)
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    zs.locator('input[id^="pp-name-"]').fill('Greet Test'); zs.locator('button:text-is("Toevoegen")').click(); w(800)
+    check(zs.locator('.subrow:has-text("Greet Test")').count() == 1 and zs.locator('input[id^="pp-name-"]').count() == 0, 'beheer: toegevoegd met de gekozen naam')
 
     # --- laden: pagina's pas tonen als alles binnen is; een andere speltak (ook via de terugknop) begint schoon
     login('vluiten2907@gmail.com', 'demo123')
@@ -752,6 +829,23 @@ with sync_playwright() as p:
     tf(1).select_option('17'); w(300)
     check(tf(1).input_value() == '19' and 'moet na de begintijd' in pg.locator('.toast').inner_text(), 'bouwer: eindtijd vóór de begintijd wordt geweigerd')
     w(700); check(oefen_get("s['speltakken/oefen/opkomsten/opk-vuur'].end") // 60 == 19, 'bouwer: nieuwe tijden opgeslagen')
+    # venster met het toetsenbord: focus gaat erin, Tab blijft erin, de kop is de naam, Esc sluit en de focus gaat terug
+    pg.goto(BASE + '/s/oefen/jaarplanning'); w(1000); pg.click('.presets >> text=Komende 3 maanden'); w(300)
+    trig = pg.locator('.prow [aria-label="Afwezigheid aanpassen"]').first
+    trig.focus(); pg.keyboard.press('Enter'); w(300)
+    in_card = lambda: pg.evaluate("!!document.activeElement && !!document.activeElement.closest('.modal-card')")
+    focus_in, stays = in_card(), True
+    for k in ['Tab'] * 15 + ['Shift+Tab'] * 4: pg.keyboard.press(k); stays = stays and in_card()
+    dname = pg.evaluate("""(() => { const d = document.querySelector('.modal [role=dialog]'); const t = d && document.getElementById(d.getAttribute('aria-labelledby') || ''); return t ? t.textContent : null; })()""")
+    pg.keyboard.press('Escape'); w(300)
+    check(focus_in and stays and dname == 'Wie is er afwezig?' and pg.locator('.modal').count() == 0 and trig.evaluate('e => e === document.activeElement'),
+          'venster: focus erin, Tab blijft erin, kop is de naam, Esc sluit en de focus gaat terug naar de knop')
+    # ontkoppelen vraagt eerst bevestiging
+    vk = lambda: pg.locator('.prow:has(.plink:has-text("Vuur en kompas"))')
+    vk().locator('[aria-label="Opkomst ontkoppelen"]').click(); w(200)
+    armed = vk().count() == 1 and vk().locator('button:text-is("Ontkoppelen?")').count() == 1
+    vk().locator('button:text-is("Ontkoppelen?")').click(); w(700)
+    check(armed and vk().count() == 0 and 'Ontkoppeld' in pg.locator('.toast').inner_text(), 'ontkoppelen in de jaarplanning: eerst Ontkoppelen?, pas daarna los')
     # terugknop met een venster open: het venster gaat dicht (op Android is dat de gewone manier om iets te sluiten)
     pg.click('header nav a[href$="/dashboard"]'); w(800); pg.click('header nav a[href$="/jaarplanning"]'); w(1000)
     pg.locator('.prow [aria-label="Afwezigheid aanpassen"]').first.click(); w(300)
@@ -811,7 +905,17 @@ with sync_playwright() as p:
     pg.click('.oefenbar >> text=Opnieuw beginnen'); w(1800)
     pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(900)
     check(pg.input_value('#om-title') == 'Junglejacht en stratego', 'oefenomgeving: opnieuw beginnen zet voorbeelddata terug')
-    pg.set_viewport_size({'width': 390, 'height': 800}); pg.goto(BASE + '/s/oefen/jaarplanning'); w(900)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(300)
+    tt = pg.locator('#om-title')
+    whole = "e => e.scrollHeight <= e.clientHeight + 1 && e.scrollWidth <= e.clientWidth + 1"
+    one = tt.evaluate(whole); h1 = tt.bounding_box()['height']
+    pg.fill('#om-title', 'Junglejacht en stratego in het grote bos'); w(300)
+    check(one and tt.evaluate(whole) and tt.bounding_box()['height'] > h1 * 1.5, 'bouwer mobiel: lange titel loopt door op een volgende regel, niets afgekapt')
+    tt.click(); pg.keyboard.press('End'); pg.keyboard.press('Enter'); w(200)
+    check('\n' not in tt.input_value(), 'bouwer: Enter maakt geen regeleinde in de titel')
+    pg.evaluate("window.scrollTo(0, 0)"); shot('03c-bouwer-titel-mobiel', False)
+    pg.fill('#om-title', 'Junglejacht en stratego'); w(700)
+    pg.goto(BASE + '/s/oefen/jaarplanning'); w(900)
     check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'oefenomgeving mobiel: geen horizontale scroll'); shot('13-oefenen-mobiel', False)
     pg.set_viewport_size({'width': 1360, 'height': 900})
     pg.click('.oefenbar >> text=Stoppen'); w(1200)

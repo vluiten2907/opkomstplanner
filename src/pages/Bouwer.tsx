@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Bookmark, CalendarDays, Copy, Download, Plus, Tent, Trash2, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
@@ -11,6 +11,21 @@ import { Ticks, PrepZones, blkGeom, lanesStyle } from '../components/timeline';
 import { CatSelect, LocInput } from '../components/fields';
 import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, uid, DAYS } from '../lib/time';
 import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, LIB_FIELDS, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+
+/** Titel van de opkomst: loopt door op een volgende regel in plaats van af te breken (smal scherm), zonder echte regeleinden. */
+function TitleArea({ value, readOnly, onChange, placeholder }: { value: string; readOnly: boolean; onChange: (v: string) => void; placeholder: string }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current; if (!el) return;
+    const fit = () => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
+    fit();
+    window.addEventListener('resize', fit);
+    document.fonts?.ready.then(fit).catch(() => {});
+    return () => window.removeEventListener('resize', fit);
+  }, [value]);
+  return <textarea ref={ref} id="om-title" rows={1} value={value} readOnly={readOnly} aria-label="Opkomst titel" placeholder={placeholder}
+    onKeyDown={ev => { if (ev.key === 'Enter' && !ev.nativeEvent.isComposing) ev.preventDefault(); }} onChange={ev => onChange(ev.target.value.replace(/[\r\n]+/g, ' '))} />;
+}
 
 /* ============ Startscherm ============ */
 export default function Bouwer() {
@@ -159,7 +174,7 @@ function Builder({ o: stored }: { o: Opk }) {
       <div className="row between" style={{ alignItems: 'flex-end' }}>
         <div style={{ flex: '1 1 340px', minWidth: 0, display: 'grid', gap: 2 }}>
           <div className="row"><span className="eyebrow">{kamp ? 'Weekendkampplanner' : 'Opkomstbouwer'}</span>{kamp && <span className="pill kamp">Kamp</span>}{pill}{readOnly && <span className="pill neutral">Alleen lezen</span>}</div>
-          <input id="om-title" value={o.title} readOnly={readOnly} onChange={ev => upd(() => { o.title = ev.target.value; if (e) savePlan({ ...e, topic: ev.target.value }); })} aria-label="Opkomst titel" placeholder={kamp ? 'Titel van het kamp' : 'Opkomst titel'} />
+          <TitleArea value={o.title} readOnly={readOnly} onChange={v => upd(() => { o.title = v; if (e) savePlan({ ...e, topic: v }); })} placeholder={kamp ? 'Titel van het kamp' : 'Opkomst titel'} />
         </div>
         <div className="row">{actions}<button className="btn ghost" onClick={() => go(`/s/${sid}/bouwer`)} title="Nieuwe opkomst of weekendkamp"><Plus size={16} />Nieuw</button></div>
       </div>

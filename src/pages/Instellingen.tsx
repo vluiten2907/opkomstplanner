@@ -182,7 +182,8 @@ function Team() {
   const manage = isTL || isAdmin;
   const [email, setEmail] = useState(''); const [kind, setKind] = useState<'leiding' | 'teamleider' | 'transfer'>('leiding'); const [perms, setPerms] = useState<Perms>(DEFAULT_LEIDING_PERMS);
   const [inv, setInv] = useState<Invite | null>(null); const [busy, setBusy] = useState(false);
-  const open = useOpenInvites(manage && sp && !practice ? [{ sid: sp.id }] : []);
+  // Teamleider: per speltak (ook oude uitnodigingen van vóór de groep). Beheerder van de groep: met gid erbij, anders weigert Firestore de lijst.
+  const open = useOpenInvites(manage && sp && !practice ? [!isTL && sp.gid ? { gid: sp.gid, sid: sp.id } : { sid: sp.id }] : []);
   const roles = useRoles();
   // Wie kwam binnen via mijn "Mijn rol overdragen"? Bij die persoon staat dan de knop om de rol over te dragen.
   const [heirs, setHeirs] = useState<string[]>([]);
