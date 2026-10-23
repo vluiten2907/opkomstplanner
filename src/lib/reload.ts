@@ -1,3 +1,5 @@
+import { settleAll } from '../store/saving';
+
 /**
  * Na een update van de site bestaan de oude stukjes code (assets/…js) niet meer. Een tabblad dat nog openstond,
  * kan een pagina dan niet laden; één keer opnieuw laden haalt de nieuwe versie op.
@@ -5,6 +7,8 @@
  * en een volgende update later in hetzelfde tabblad herlaadt gewoon weer. Zonder verbinding niet herladen.
  */
 const KEY = 'opk.herladen', GAP = 60_000;
+/** Zo lang wachten we hooguit tot wijzigingen die nog wachten of onderweg zijn, zijn opgeslagen. */
+export const SETTLE_MS = 3000;
 let busy = false;
 
 /** Fout van een pagina die niet geladen kon worden (Chrome, Firefox, Safari, Vite). */
@@ -26,8 +30,11 @@ export function reloadForUpdate(): boolean {
     sessionStorage.setItem(KEY, String(Date.now()));
   } catch { return false; }
   busy = true;
-  // de browser kan het herladen tegenhouden (bijv. "Wijzigingen niet opgeslagen"): dan na even toch de melding
-  setTimeout(() => { busy = false; }, 4000);
-  window.location.reload();
+  // Eerst wegschrijven wat nog wacht of onderweg is (hooguit 3 s), anders vraagt de browser midden in "Nieuwe versie laden…"
+  // of je wijzigingen kwijt mag. De browser kan het herladen dan nog tegenhouden: na even toch de melding (ErrorBoundary).
+  settleAll(SETTLE_MS).finally(() => {
+    setTimeout(() => { busy = false; }, 4000);
+    window.location.reload();
+  });
   return true;
 }

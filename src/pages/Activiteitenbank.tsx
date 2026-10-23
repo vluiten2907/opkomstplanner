@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { guardLeave, useDirty } from '../store/unsaved';
 import { Plus, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
-import { toast } from '../store/toast';
+import { toast, undoAction } from '../store/toast';
 import { BankCard, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, useEscapeClose, useSheetDialog } from '../components/ui';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
@@ -20,7 +20,7 @@ export default function Activiteitenbank() {
   opks.forEach(o => allBlocks(o).forEach(b => { if (b.libId) uses[b.libId] = (uses[b.libId] || 0) + 1; }));
   const edit = can('bank');
   // terugzetten met hetzelfde id, zodat onderdelen die ernaar verwijzen weer kloppen
-  const remove = (l: Lib) => { deleteLib(l.id); if (sel === l.id) setSelRaw(null); toast(`"${l.title || 'Activiteit'}" verwijderd${uses[l.id] ? '. Opkomsten die hem gebruiken blijven staan' : ''}`, { label: 'Ongedaan maken', fn: () => saveLib(clone(l)) }); };
+  const remove = (l: Lib) => { deleteLib(l.id); if (sel === l.id) setSelRaw(null); toast(`"${l.title || 'Activiteit'}" verwijderd${uses[l.id] ? '. Opkomsten die hem gebruiken blijven staan' : ''}`, undoAction(() => saveLib(clone(l)))); };
   const create = () => guardLeave(() => { const l = normLib({ id: uid(), cat: (settings.categories[0] || {}).id || '', minLeaders: 1 }); setFresh(l); setSelRaw(l.id); setQ(''); setCat(''); setTimeout(() => document.getElementById('lf-title')?.focus(), 30); });
   const L = sel ? lib.find(l => l.id === sel) || (fresh && fresh.id === sel ? fresh : undefined) : undefined;
   const isNew = !!L && !lib.some(l => l.id === L.id);

@@ -1,6 +1,8 @@
 import { useId, useRef, useState, type ReactNode } from 'react';
 import { useSpeltak } from '../store/speltak';
-import { progBlocks, analyze, catOf, isKamp, minNeed, opkCatOf, progEmpty, type Cat, type Opk, type Day } from '../lib/model';
+import { withFreeName } from '../store/modal';
+import type { Gedeeld } from '../store/groepsbank';
+import { progBlocks, analyze, catOf, freeName, isKamp, minNeed, nameTaken, opkCatOf, progEmpty, type Cat, type Opk, type Day } from '../lib/model';
 import { fmtDur, fmtT, plural } from '../lib/time';
 import { makePdf } from '../lib/export';
 import { Trash2 } from 'lucide-react';
@@ -10,6 +12,36 @@ import { ConfirmBtn } from './ui';
 export function usePdf() {
   const { settings, entryOfOpk, presentFor, practice } = useSpeltak();
   return (o: Opk | undefined | null) => { if (!o) return; makePdf(o, settings, o.state === 'planned' ? entryOfOpk(o) : null, presentFor(o), practice); };
+}
+
+type Speltak = ReturnType<typeof useSpeltak>;
+
+/** Zin voor de melding als categorieën uit de groep bij jullie nog niet bestaan (zonder recht Instellingen vallen ze weg); anders ''. */
+export const droppedNote = (dropped: string[]) => !dropped.length ? '' : (dropped.length === 1 ? `Categorie ${dropped[0]} bestaat` : `${dropped.length} categorieën (${dropped.join(', ')}) bestaan`)
+  + ' bij jullie nog niet; die onderdelen staan zonder categorie.';
+
+/**
+ * Gedeelde opkomst uit de groep als kopie in de eigen opkomstenbank zetten: met de eigen titel als die vrij is, anders eerst om een andere naam vragen.
+ * Kopieert met de nieuwste stand (`latest`), want het venster voor een andere naam kan ertussen hebben gestaan.
+ * `then` krijgt de kopie, de zin over weggevallen categorieën (droppedNote, of '') en die nieuwste stand.
+ */
+export function copySharedToBank(g: Gedeeld, bank: Opk[], okLabel: string, latest: () => Speltak, then: (copy: Opk, note: string, L: Speltak) => void) {
+  withFreeName(g.opk.title, {
+    title: 'Andere naam kiezen', sub: `"${g.opk.title || 'Naamloos'}" staat al in jullie opkomstenbank. Geef de kopie een andere naam.`, label: 'Opkomst titel', okLabel,
+    suggest: freeName(bank, g.opk.title), taken: n => nameTaken(bank, n),
+    ok: name => { const L = latest(), { opk, dropped } = L.importShared(g, name); then(opk, droppedNote(dropped), L); },
+  });
+}
+
+/**
+ * Om een vrije naam in de opkomstenbank vragen voor opkomst `o` (In bank zetten). `except`: een concept dat zelf de bank in gaat
+ * mag zijn eigen naam houden (o.id); een kopie (bijv. van een ingeplande opkomst) niet (null).
+ */
+export function askBankName(o: Opk, bank: Opk[], except: string | null, ok: (name: string) => void) {
+  withFreeName(o.title, {
+    title: 'Andere naam kiezen', sub: o.title.trim() ? `"${o.title.trim()}" staat al in de opkomstenbank. Kies een andere naam.` : 'Geef de opkomst een titel voor de bank.', label: 'Opkomst titel', okLabel: 'In bank zetten',
+    suggest: o.title.trim() ? freeName(bank, o.title) : '', taken: n => nameTaken(bank, n, except), ok,
+  });
 }
 
 /** Paginakop. `small`: op het dashboard, zodat de komende opkomst (64 px) het grootst blijft. */

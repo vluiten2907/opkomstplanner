@@ -279,8 +279,10 @@ await seed();
 await env.withSecurityRulesDisabled(async c => {
   const db = c.firestore();
   const BANK = { plan: false, build: false, bank: true, settings: false };
-  await setDoc(doc(db, 'speltakken/s2'), { name: 'Welpen', groupName: 'G1', gid: 'g1', createdBy: 'ga', settings: {}, tlIds: [], memberIds: ['w', 'wn'],
-    members: { w: { name: 'W', email: 'w@t.nl', role: 'leiding', perms: BANK, since: 1 }, wn: { name: 'WN', email: 'wn@t.nl', role: 'leiding', perms: NONE, since: 1 } } });
+  const BUILD = { plan: false, build: true, bank: false, settings: false };
+  await setDoc(doc(db, 'speltakken/s2'), { name: 'Welpen', groupName: 'G1', gid: 'g1', createdBy: 'ga', settings: {}, tlIds: [], memberIds: ['w', 'wn', 'wb'],
+    members: { w: { name: 'W', email: 'w@t.nl', role: 'leiding', perms: BANK, since: 1 }, wn: { name: 'WN', email: 'wn@t.nl', role: 'leiding', perms: NONE, since: 1 },
+      wb: { name: 'WB', email: 'wb@t.nl', role: 'leiding', perms: BUILD, since: 1 } } });
   await setDoc(doc(db, 'speltakken/s3'), { name: 'Anders', groupName: 'G2', gid: 'g2', createdBy: 'root', settings: {}, tlIds: ['z'], memberIds: ['z'],
     members: { z: { name: 'Z', email: 'z@t.nl', role: 'teamleider', perms: ALL, since: 1 } } });
 });
@@ -296,6 +298,16 @@ await t('groepsbank: delen met eindverantwoordelijke niet', () => assertFails(se
 await t('groepsbank: delen in andere groep niet', () => assertFails(setDoc(doc(tl1, 'groepen/g2/gedeeld/s1_o1'), snapOf('s1', 'o1'))));
 await t('groepsbank: leiding zonder recht deelt niet', () => assertFails(setDoc(doc(ld1, 'groepen/g1/gedeeld/s1_o4'), snapOf('s1', 'o4'))));
 await t('groepsbank: leiding met recht Banken deelt', () => assertSucceeds(setDoc(doc(w, 'groepen/g1/gedeeld/s2_o9'), snapOf('s2', 'o9'))));
+// de opkomstenbank hoort bij Banken: met alleen Opkomsten niets in de groepsbank aanmaken, overschrijven of weghalen
+const wb = as('wb', 'wb@t.nl');
+await t('groepsbank: alleen Opkomsten deelt niet', () => assertFails(setDoc(doc(wb, 'groepen/g1/gedeeld/s2_o8'), snapOf('s2', 'o8'))));
+await t('groepsbank: alleen Opkomsten overschrijft niet', () => assertFails(setDoc(doc(wb, 'groepen/g1/gedeeld/s2_o9'), snapOf('s2', 'o9', { updatedAt: 5, opk: { title: 'Anders', lead: '', blocks: [] } }), { merge: true })));
+await t('groepsbank: alleen Opkomsten verwijdert niet', () => assertFails(deleteDoc(doc(wb, 'groepen/g1/gedeeld/s2_o9'))));
+await t('groepsbank: leiding met recht Banken werkt bij en haalt weg', async () => {
+  await assertSucceeds(setDoc(doc(w, 'groepen/g1/gedeeld/s2_o7'), snapOf('s2', 'o7')));
+  await assertSucceeds(setDoc(doc(w, 'groepen/g1/gedeeld/s2_o7'), snapOf('s2', 'o7', { updatedAt: 2 }), { merge: true }));
+  await assertSucceeds(deleteDoc(doc(w, 'groepen/g1/gedeeld/s2_o7')));
+});
 await t('groepsbank: andere speltak overschrijft niet', () => assertFails(setDoc(doc(w, 'groepen/g1/gedeeld/s1_o1'), snapOf('s1', 'o1', { updatedAt: 2 }))));
 await t('groepsbank: lezen zonder lidmaatschap niet', () => assertFails(getDocs(collection(wn, 'groepen/g1/gedeeld'))));
 await t('groepsbank: lid legt vast en leest', async () => { await assertSucceeds(setDoc(doc(wn, 'groepen/g1/leden/wn'), { sid: 's2', since: 1 })); await assertSucceeds(getDocs(collection(wn, 'groepen/g1/gedeeld'))); });

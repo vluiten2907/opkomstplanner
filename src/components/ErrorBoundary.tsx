@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
-import { isLoadError, isReloading, reloadForUpdate } from '../lib/reload';
+import { isLoadError, isReloading, reloadForUpdate, SETTLE_MS } from '../lib/reload';
 
 type State = { failed: boolean; reloading: boolean };
 
@@ -16,8 +16,8 @@ export default class ErrorBoundary extends Component<{ resetKey?: string; inline
   componentDidCatch(error: unknown, info: ErrorInfo) {
     if (isLoadError(error) && (this.state.reloading || reloadForUpdate())) {
       if (!this.state.reloading) this.setState({ reloading: true });
-      // het herladen werd tegengehouden: dan toch de melding tonen
-      clearTimeout(this.timer); this.timer = setTimeout(() => this.setState({ reloading: false }), 4500);
+      // het herladen werd tegengehouden: dan toch de melding tonen (eerst wordt hooguit SETTLE_MS gewacht op het opslaan)
+      clearTimeout(this.timer); this.timer = setTimeout(() => this.setState({ reloading: false }), SETTLE_MS + 4500);
       return;
     }
     console.warn('Pagina kon niet worden getoond:', error, info.componentStack);

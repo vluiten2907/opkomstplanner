@@ -441,3 +441,12 @@ test('libSearchText: ook uitgebreide beschrijving, voorbereiding en materiaal', 
   const t = M.libSearchText(M.normLib({ id: 'L', title: 'Junglejacht', short: 'Tikspel', desc: 'Wie getikt wordt, wordt een tijger.', location: 'Grasveld', prep: 'Kaartjes lamineren', materials: 'Lintjes' }));
   for (const w of ['junglejacht', 'tikspel', 'tijger', 'grasveld', 'lamineren', 'lintjes']) assert.ok(t.includes(w), w);
 });
+
+test('hexColor en normSettings: alleen #rrggbb als kleur van een categorie (geen CSS uit een back-up of de groep)', () => {
+  assert.equal(M.hexColor('#2D7A4F', 'x'), '#2D7A4F');
+  assert.equal(M.hexColor('#abc', 'x'), 'x');
+  assert.equal(M.hexColor('red, red) url("https://evil/p.png', 'x'), 'x');
+  assert.equal(M.hexColor(undefined, 'x'), 'x');
+  const s = M.normSettings({ categories: [{ id: 'a', label: 'A', color: 'red, red) url("https://evil/p.png' }, { id: 'b', label: 'B', color: '#123abc' }] });
+  assert.deepEqual(s.categories.map(c => c.color), [M.SWATCHES[0], '#123abc']);
+});

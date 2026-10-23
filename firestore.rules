@@ -132,10 +132,10 @@ service cloud.firestore {
       function lidSp() { return get(spPath(get(lidPath()).data.sid)).data; }
       // lid van een speltak in deze groep (vastgelegd in leden/{uid}, en nog steeds lid)
       function inGroup() { return signedIn() && exists(lidPath()) && me() in lidSp().memberIds && spGid(lidSp()) == gid; }
-      // mag de bank van speltak-data d delen: lid met recht Banken of Opkomsten, speltak hoort bij deze groep
+      // mag de bank van speltak-data d delen: teamleider of lid met recht Banken (de opkomstenbank hoort bij Banken), speltak hoort bij deze groep
       function canShare(d) {
         return signedIn() && spGid(d) == gid && me() in d.memberIds
-          && (tlOf(d) || d.members[me()].perms.bank == true || d.members[me()].perms.build == true);
+          && (tlOf(d) || d.members[me()].perms.bank == true);
       }
 
       function nameInviteOk(i) { return verified() && i.get('gid', null) == gid && i.email == myEmail() && i.usedBy == null; }

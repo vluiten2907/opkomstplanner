@@ -18,7 +18,8 @@ export const markQueued = (key: string, on: boolean) => { if (on) queued.add(key
 /** Houdt een schrijfactie bij tot de server hem bevestigt (of weigert). */
 export function track<T>(p: Promise<T>): Promise<T> {
   inflight.add(p); sync();
-  const end = (ok: boolean) => { inflight.delete(p); useSaving.setState({ last: ok ? 'ok' : 'fail' }); sync(); };
+  // na uitloggen (forgetPending) telt een late bevestiging niet meer mee
+  const end = (ok: boolean) => { if (!inflight.delete(p)) return; useSaving.setState({ last: ok ? 'ok' : 'fail' }); sync(); };
   p.then(() => end(true), () => end(false));
   return p;
 }
@@ -33,11 +34,17 @@ export const settle = (ms = 3000) => new Promise<void>(res => {
 });
 
 /** Wacht tot ook de wijzigingen die nog op de korte vertraging wachten zijn verstuurd en bevestigd, hooguit `ms` in totaal. */
-async function settleAll(ms = 3000) {
+export async function settleAll(ms = 3000) {
   const end = Date.now() + ms;
   while (queued.size && Date.now() < end) await new Promise(r => setTimeout(r, 100));
   await settle(Math.max(0, end - Date.now()));
 }
+
+/**
+ * Na uitloggen: wat het vorige account nog had openstaan, telt niet meer mee. Firestore bevestigt die schrijfacties nooit meer,
+ * en anders bleef het tabblad (ook voor wie daarna inlogt) eeuwig op "Opslaan…" staan en waarschuwen bij sluiten.
+ */
+export function forgetPending() { queued.clear(); inflight.clear(); useSaving.setState({ last: null }); sync(); }
 
 /**
  * Uitloggen zonder werk kwijt te raken: eerst alles wegschrijven (`flush`, bijv. de speltak) en even wachten op de server.
@@ -46,8 +53,9 @@ async function settleAll(ms = 3000) {
 export async function safeLogout(logout: () => Promise<unknown>, done?: () => void, flush?: () => unknown) {
   flush?.(); // alleen versturen; het wachten (hooguit 3 s) doet settleAll
   await settleAll();
-  const out = () => logout().then(() => done?.());
-  if (hasUnsaved()) { toast('Nog niet alles is opgeslagen. Wacht tot je weer verbinding hebt.', { label: 'Toch uitloggen', fn: () => { out(); } }); return; }
+  // ook wat je tijdens de melding nog aanpaste eerst versturen (nog als jij), dan pas uitloggen
+  const out = () => { flush?.(); return logout().then(() => { forgetPending(); done?.(); }); };
+  if (hasUnsaved()) { toast('Nog niet alles is opgeslagen. Log je nu uit, dan gaat dat verloren.', { label: 'Toch uitloggen', fn: () => { out(); } }); return; }
   await out();
 }
 

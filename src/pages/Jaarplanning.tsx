@@ -2,7 +2,7 @@ import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Mail, Plus, SquarePen, Users, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
-import { toast } from '../store/toast';
+import { toast, undoAction } from '../store/toast';
 import { openModal } from '../store/modal';
 import { StatusPill, PeopleChips, PageTitle } from '../components/shared';
 import { Chip, ConfirmBtn, Dot } from '../components/ui';
@@ -123,7 +123,7 @@ function PlanRow({ r, today }: { r: Row; today: string }) {
         {o.cats.length > 0 && <span className="cdots">{o.cats.map(c => opkCatOf(settings, c)).filter(Boolean).map(c => <Dot key={c!.id} color={c!.color} />)}</span>}</button>
       <StatusPill o={o} />
       {can('build') && <button className="iconbtn" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })} title="Leiding indelen" aria-label={`Leiding indelen ${fmtShort(d)}`}><Users size={15} /></button>}
-      {canLink && <ConfirmBtn className="iconbtn danger" label={<X size={15} />} confirm="Ontkoppelen?" title="Ontkoppelen" ariaLabel={`Opkomst ${fmtShort(d)} ontkoppelen`} onConfirm={() => { unlinkEntry(e!); toast('Ontkoppeld. De opkomst staat nu bij de concepten in de opkomstenbank.', { label: 'Ongedaan maken', fn: () => relink(o.id, e!.id) }); }} />}
+      {canLink && <ConfirmBtn className="iconbtn danger" label={<X size={15} />} confirm="Ontkoppelen?" title="Ontkoppelen" ariaLabel={`Opkomst ${fmtShort(d)} ontkoppelen`} onConfirm={() => { unlinkEntry(e!); toast('Ontkoppeld. De opkomst staat nu bij de concepten in de opkomstenbank.', undoAction(() => relink(o.id, e!.id))); }} />}
     </div> : <div className="pcell">{canLink ? <button className="btn sm" onClick={() => openModal({ kind: 'link', keyId: r.key })} aria-label={`Koppelen ${fmtShort(d)}`}><Plus size={14} />Koppelen</button> : <span className="hint">Nog geen programma</span>}</div>}</div>
     <div className="pf f-plan"><span className="plabel">Planning door</span>{people('planners', plannersOf(e, o))}</div>
     <div className={'pf f-abs' + (absent.length ? '' : ' none')}><span className="plabel">Afwezig</span>{people('absent', absent)}</div>

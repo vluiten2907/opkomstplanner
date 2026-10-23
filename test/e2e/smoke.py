@@ -491,6 +491,16 @@ with sync_playwright() as p:
     check(n_links0 > 0 and pg.locator('.prow:not(.head)').count() == n_rows0 and pg.locator('.prow .plink').count() == n_links0,
           f'verbinding terug: de jaarplanning verschijnt pas met alle rijen en gekoppelde opkomsten ({n_rows0}/{n_links0})')
     pg.evaluate("localStorage.removeItem('fake.offlineFirst'); localStorage.removeItem('fake.offlineSlow')")
+    # Mijn speltakken zonder verbinding: Firestore meldt eerst een lege lijst uit de cache. Niet "nog geen lid", maar wachten op de verbinding
+    pg.evaluate("localStorage.setItem('fake.offlineList', '3000')"); pg.goto(BASE + '/speltakken')
+    check(soon(lambda: pg.locator('.empty:has-text("Geen verbinding. Je speltakken verschijnen zodra er weer verbinding is.")').count() == 1, 2000)
+          and pg.locator('text=geen lid').count() == 0, 'mijn speltakken zonder verbinding: melding Geen verbinding, niet "nog geen lid"')
+    shot('40c-speltakken-geen-verbinding', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(150)
+    check(pg.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'mijn speltakken zonder verbinding mobiel: geen horizontale scroll'); shot('40d-speltakken-geen-verbinding-mobiel', False)
+    pg.set_viewport_size({'width': 1360, 'height': 900})
+    check(soon(lambda: pg.locator('.picklist .pick:has-text("Scouts")').count() == 1, 5000) and pg.locator('.empty').count() == 0, 'verbinding terug: mijn speltakken verschijnen vanzelf')
+    pg.evaluate("localStorage.removeItem('fake.offlineList')")
     pg.goto(BASE + '/s/bestaatniet/dashboard'); w(800)
     check(pg.locator('.auth-card h2:text-is("Geen toegang")').count() == 1, 'speltak die niet bestaat: Geen toegang')
     pg.goto(BASE + f'/s/{scouts}/dashboard'); w(900)
@@ -510,6 +520,47 @@ with sync_playwright() as p:
     pg.evaluate("localStorage.removeItem('fake.holdWrite')")
     pg.goto(BASE + f'/s/{scouts}/bouwer'); w(900)
     pg.click('.pick:has-text("Trage verbinding") >> button:has-text("Verwijderen")'); w(200); pg.click('.pick:has-text("Trage verbinding") >> text=Klik nogmaals'); w(700)
+    drop_titled = lambda t: pg.evaluate("t => { const s = JSON.parse(localStorage.getItem('fake.firestore')); Object.keys(s).filter(k => s[k] && s[k].title === t).forEach(k => window.__fakeRemote(k, null)); }", t)
+    titled = lambda t: pg.evaluate("t => Object.values(JSON.parse(localStorage.getItem('fake.firestore'))).some(d => d && d.title === t)", t)
+    # speltak verlaten vlak na een wijziging (binnen de korte vertraging): meteen weggeschreven, niet pas na een halve seconde.
+    # Eerst via Mijn speltakken binnenkomen, zodat die pagina al geladen is en de speltak meteen sluit.
+    pg.goto(BASE + '/speltakken'); w(900); pg.click('.picklist .pick:has-text("Scouts") >> button:has-text("Openen")'); w(900)
+    pg.click('nav >> text=Opkomstbouwer'); w(600); pg.click('text=Nieuwe opkomst'); w(900)
+    left = pg.evaluate("""async () => { const tick = (ms = 25) => new Promise(r => setTimeout(r, ms)), t0 = performance.now();
+      const t = document.querySelector('#om-title'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, 'Snel weg'); t.dispatchEvent(new Event('input', { bubbles: true }));
+      await tick(); document.querySelector('header.bar .acct .btn').click(); await tick();
+      [...document.querySelectorAll('.menu [role=menuitem]')].find(b => b.textContent.includes('Andere speltak')).click();
+      for (let i = 0; i < 100 && document.querySelector('header.bar'); i++) await tick(10);
+      await tick(40);
+      return [location.pathname, Object.values(JSON.parse(localStorage.getItem('fake.firestore'))).some(d => d && d.title === 'Snel weg'), Math.round(performance.now() - t0)]; }""")
+    check(left[0].endswith('/speltakken') and left[1] and left[2] < 450, f'speltak verlaten vlak na een wijziging: meteen opgeslagen, niet pas na de korte vertraging ({left})')
+    drop_titled('Snel weg')
+    # nieuwe versie van de site terwijl er nog iets wordt opgeslagen: eerst wegschrijven (hooguit 3 s), dan pas vanzelf opnieuw laden
+    pg.goto(BASE + f'/s/{scouts}/bouwer'); w(900)
+    pg.click('text=Nieuwe opkomst'); w(900)
+    pg.evaluate("localStorage.setItem('fake.holdWrite', '1200'); sessionStorage.removeItem('opk.herladen'); window.__oud = 1")
+    pg.fill('#om-title', 'Net voor de update')
+    try:
+        with pg.expect_event('load', timeout=7000): pg.evaluate("window.dispatchEvent(new Event('vite:preloadError'))")
+    except Exception: pass
+    check(pg.evaluate('window.__oud') is None and titled('Net voor de update'), 'nieuwe versie terwijl er nog iets wordt opgeslagen: eerst opgeslagen, dan vanzelf opnieuw geladen')
+    pg.evaluate("localStorage.removeItem('fake.holdWrite'); sessionStorage.removeItem('opk.herladen')")
+    drop_titled('Net voor de update')
+    # Toch uitloggen terwijl er nog iets onderweg is: de melding zegt eerlijk dat het verloren gaat, en daarna telt het niet meer mee
+    # (geen waarschuwing bij sluiten en niet eeuwig "Opslaan…" voor wie hierna op deze laptop inlogt)
+    pg.goto(BASE + f'/s/{scouts}/bouwer'); w(900)
+    auth0 = pg.evaluate("localStorage.getItem('fake.auth.current')")
+    pg.evaluate("localStorage.setItem('fake.holdWrite', '7000')")
+    pg.click('text=Nieuwe opkomst'); w(300); pg.fill('#om-title', 'Toch weg')
+    pg.click('header.bar .acct .btn'); pg.click('.menu >> text=Uitloggen')
+    check(soon(lambda: pg.locator('.toast button:has-text("Toch uitloggen")').count() == 1, 5000)
+          and 'Log je nu uit, dan gaat dat verloren.' in pg.locator('.toast').inner_text(), 'uitloggen terwijl er nog iets wordt opgeslagen: melding zegt dat het anders verloren gaat')
+    pg.click('.toast button:has-text("Toch uitloggen")')
+    check(soon(lambda: '/inloggen' in pg.url, 3000) and not pg.evaluate(leave_warns), 'Toch uitloggen: daarna geen waarschuwing meer bij sluiten, ook niet voor wie hierna inlogt')
+    soon(lambda: titled('Toch weg'), 8000)
+    pg.evaluate("a => { localStorage.removeItem('fake.holdWrite'); localStorage.setItem('fake.auth.current', a); }", auth0)
+    drop_titled('Toch weg'); pg.goto(BASE + f'/s/{scouts}/dashboard'); w(900)
+    check(pg.locator('header.bar .savestate.busy').count() == 0 and not pg.evaluate(leave_warns), 'weer ingelogd: kopbalk niet op Opslaan…')
 
     # --- jaarplanning: datum controleren, eigen tijden bij koppelen, iedereen afwezig, weekendkamp op zaterdag
     prow = lambda i: pg.locator('.prow:not(.head)').nth(i)
@@ -1030,6 +1081,19 @@ with sync_playwright() as p:
     # terugzetten: Wim weer teamleider, kopie weg, gedeelde opkomst zonder de extra categorie
     pg.evaluate("""([sid, gk, sp, g, ck]) => { const s = JSON.parse(localStorage.getItem('fake.firestore'));
       window.__fakeRemote(ck, null); window.__fakeRemote('speltakken/' + sid, sp); window.__fakeRemote(gk, { ...s[gk], catDefs: g.catDefs, opk: g.opk }); }""", [welpen, gk, sp0, g0, ck]); w(600)
+    # categorie uit de groep met een "kleur" die CSS meestuurt (bijv. via de API gedeeld): de kopie krijgt er een gewone kleur (#rrggbb) bij
+    pg.evaluate("""([gk, g]) => { const s = JSON.parse(localStorage.getItem('fake.firestore'));
+      window.__fakeRemote(gk, { ...s[gk], catDefs: [...g.catDefs, { id: 'cat-vreemd', label: 'Vreemd', color: 'red, red) url("/pixel-groep.png' }],
+        opk: { ...g.opk, blocks: g.opk.blocks.map(b => b.title === 'Sluipen' ? { ...b, cat: 'cat-vreemd' } : b) } }); }""", [gk, g0]); w(600)
+    pg.click('.tabs.page >> text=Groep'); w(400); pg.click('.bcard:has-text("Sluipspel")'); w(300)
+    check(pg.evaluate("[...document.querySelectorAll('.side [style*=\"--c\"]')].every(e => !e.getAttribute('style').includes('url'))"), 'groepsbank: een vreemde kleur komt niet in de pagina')
+    pg.click('.side >> text=Kopieer naar onze bank'); w(900)
+    vcats = pg.evaluate("sid => " + fsjs + "['speltakken/' + sid].settings.categories", welpen)
+    check(any(c['label'] == 'Vreemd' for c in vcats) and all(re.fullmatch(r'#[0-9A-Fa-f]{6}', c['color']) for c in vcats),
+          f'kopie uit de groep met een vreemde kleur: categorie erbij met een gewone kleur ({[c["color"] for c in vcats]})')
+    ck2 = pg.evaluate(copy_of, welpen)
+    pg.evaluate("""([sid, gk, sp, g, ck]) => { const s = JSON.parse(localStorage.getItem('fake.firestore'));
+      if (ck) window.__fakeRemote(ck, null); window.__fakeRemote('speltakken/' + sid, sp); window.__fakeRemote(gk, { ...s[gk], catDefs: g.catDefs, opk: g.opk }); }""", [welpen, gk, sp0, g0, ck2]); w(600)
     pg.click('.tabs.page >> text=Groep'); w(400)
     # koppelen uit de groep: de eigen bank is leeg, dus "Uit de groep" staat bovenaan; Kiezen zet een kopie in de eigen bank en plant een kopie daarvan in (zonder namen)
     pg.goto(f'{BASE}/s/{welpen}/dashboard'); w(1000)
@@ -1078,6 +1142,17 @@ with sync_playwright() as p:
     pg.set_viewport_size({'width': 390, 'height': 800}); w(300); heir.scroll_into_view_if_needed(); w(100)
     check(no_hscroll(), 'rol overdragen mobiel: geen horizontale scroll'); shot('20b-overdragen-mobiel', False)
     pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    # rechten aanpassen telt mee in de opslagstatus: zolang het onderweg is Opslaan… in de kopbalk en een waarschuwing bij sluiten
+    olrow = pg.locator('.member:has-text("Olga Opvolger")')
+    olrow.locator('button[aria-expanded]').click(); w(200)
+    pg.evaluate("localStorage.setItem('fake.holdWrite', '1500')")
+    olrow.locator('.perm-grid input[type=checkbox]').first.click(); w(100)
+    check(pg.evaluate(leave_warns) and pg.locator('header.bar .savestate.busy').count() == 1, 'rechten aanpassen: zolang het onderweg is Opslaan… in de kopbalk en een waarschuwing bij sluiten')
+    check(soon(lambda: not pg.evaluate(leave_warns), 4000) and not olrow.locator('.perm-grid input[type=checkbox]').first.is_checked(), 'rechten aanpassen: daarna opgeslagen, geen waarschuwing meer')
+    pg.evaluate("localStorage.removeItem('fake.holdWrite')")
+    olrow.locator('.perm-grid input[type=checkbox]').first.click(); w(500)
+    check(olrow.locator('.perm-grid input[type=checkbox]').first.is_checked(), 'rechten weer terug')
+    olrow.locator('button[aria-expanded]').click(); w(200)
     heir.locator('button').click(); w(150); heir.locator('button').click(); w(900)
     olga_row, wim_row = pg.locator('.member:has-text("Olga Opvolger")').inner_text(), pg.locator('.member:has-text("Wim Welp (jij)")').inner_text()
     check('Teamleider' in olga_row and 'Leiding' in wim_row and 'Teamleider' not in wim_row and pg.locator('.heir').count() == 0, 'na overdragen: opvolger is teamleider, jij blijft leiding')
@@ -2137,6 +2212,22 @@ with sync_playwright() as p:
     check(hs[0] < hs[1], f'dashboard: paginakop kleiner dan de titel van de komende opkomst ({hs})')
     bl = q.evaluate("(() => { const e = document.querySelector('.catspread .barrow .bl'); if (!e) return null; const s = getComputedStyle(e); return [s.backgroundColor, s.fontWeight, s.paddingLeft]; })()")
     check(bl == ['rgba(0, 0, 0, 0)', '400', '0px'] and q.locator('.catspread .barrow .nm').count() == 0, f'dashboard: Activiteitengebieden met gewone labels, geen naam-pillen ({bl})')
+    # categorie met een "kleur" die CSS meestuurt (oude data, een back-up of een kopie uit de groep): Activiteitengebieden laadt niets van buiten
+    FILLS = "[...document.querySelectorAll('.catspread .barrow .fill')].map(e => [e.getAttribute('style') || '', getComputedStyle(e).backgroundImage, getComputedStyle(e).backgroundColor])"
+    f0 = q.evaluate(FILLS)
+    check(len(f0) > 1 and all('--c: #' in x[0] and 'background' not in x[0] and x[1] == 'none' for x in f0) and len(set(x[2] for x in f0)) > 1,
+          f'dashboard: Activiteitengebieden krijgen hun kleur via --c (geen kleur als tekst in de stijl), elk gebied zijn eigen kleur ({f0[:2]})')
+    pix = []
+    q.on('request', lambda r: pix.append(r.url) if 'pixel-cat' in r.url else None)
+    cats0 = q.evaluate("JSON.parse(localStorage.getItem('opk.oefen.v1'))['speltakken/oefen'].settings.categories")
+    q.evaluate("""() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k));
+      s['speltakken/oefen'].settings.categories.forEach(c => c.color = 'red, red) url("/pixel-cat.png'); localStorage.setItem(k, JSON.stringify(s)); }""")
+    q.reload(); q.wait_for_timeout(1200)
+    f1 = q.evaluate(FILLS)
+    check(len(f1) > 1 and not pix and all('url' not in x[0] and x[1] == 'none' for x in f1) and all(re.search(r'--c: #[0-9A-Fa-f]{6}', x[0]) for x in f1),
+          f'dashboard: categorie met een kleur die CSS meestuurt → gewone kleur (#rrggbb), niets van buiten geladen ({pix}, {f1[:1]})')
+    q.evaluate("c => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)); s['speltakken/oefen'].settings.categories = c; localStorage.setItem(k, JSON.stringify(s)); }", cats0)
+    q.reload(); q.wait_for_timeout(1000)
     sig = q.evaluate("[...document.querySelectorAll('.nextlist .pill.warn')].map(e => getComputedStyle(e).color)")
     lg = q.evaluate("[...document.querySelectorAll('.counts .legend-dot, .cal .cday.topic:not(.today)')].map(e => getComputedStyle(e).boxShadow.includes('inset'))")
     check(sig and all(c == 'rgb(138, 82, 0)' for c in sig) and len(lg) >= 6 and all(lg), f'contrast: waarschuwingstekst donker oranje, legenda en kalendervakjes met rand ({set(sig)}, {len(lg)})')

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-type Action = { label: string; fn: () => void };
+/** `undo`: de knop zet iets terug en mag ook met Ctrl+Z (⌘Z). Maak zo'n knop met `undoAction(fn)`. */
+type Action = { label: string; fn: () => void; undo?: true };
 /**
  * `scope`: het venster dat open stond toen de melding kwam (of null). Ctrl+Z werkt alleen in dat venster of zonder venster,
  * zodat een melding van de pagina niets terugzet terwijl je in een ander venster bezig bent.
@@ -24,5 +25,8 @@ export const useToast = create<S>((set, get) => {
 });
 /** Melding onderin; `ms` voor een langere tekst die meer leestijd nodig heeft. */
 export const toast = (msg: string, action?: Action, ms?: number) => useToast.getState().show(msg, action, ms);
-/** Alleen "Ongedaan maken" mag met Ctrl+Z (⌘Z): nooit uitloggen, weggooien of naar een andere pagina gaan. */
-export const isUndo = (a: Action | null | undefined) => !!a && a.label === 'Ongedaan maken';
+const UNDO_LABEL = 'Ongedaan maken';
+/** Knop "Ongedaan maken" in een melding; alleen zo'n knop werkt ook met Ctrl+Z (⌘Z). */
+export const undoAction = (fn: () => void): Action => ({ label: UNDO_LABEL, fn, undo: true });
+/** Alleen Ongedaan maken (`undoAction(fn)`) mag met Ctrl+Z (⌘Z): nooit uitloggen, weggooien of naar een andere pagina gaan. */
+export const isUndo = (a: Action | null | undefined) => !!a?.undo;

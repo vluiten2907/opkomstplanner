@@ -4,8 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { CalendarDays, Copy, ExternalLink, Plus, Users, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
-import { openModal, withFreeName } from '../store/modal';
-import { BankCard, Strip, CatTags, PageTitle, SaveBar } from '../components/shared';
+import { openModal } from '../store/modal';
+import { BankCard, Strip, CatTags, PageTitle, SaveBar, askBankName, copySharedToBank } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, useEscapeClose, useSheetDialog } from '../components/ui';
 import { fmtDur, fmtT, plural } from '../lib/time';
 import { progBlocks, isFixed, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, newOpk, opkCatList, opkCatOf, opkSearchText, toBank, type Cat, type Opk } from '../lib/model';
@@ -15,7 +15,7 @@ import type { Gedeeld } from '../store/groepsbank';
 type Tab = 'own' | 'group';
 
 export default function Opkomstenbank() {
-  const { settings, opks, saveOpk, removeOpk, sid, can, sp, shared, importShared } = useSpeltak();
+  const { settings, opks, saveOpk, removeOpk, sid, can, sp, shared, latest } = useSpeltak();
   const nav = useNavigate();
   const [tab, setTab] = useState<Tab>('own');
   const [q, setQ] = useState(''); const [cat, setCat] = useState(''); const [from, setFrom] = useState('');
@@ -55,24 +55,13 @@ export default function Opkomstenbank() {
   const bare = g ? !others.length : !total && !opks.some(o => o.state === 'draft');
   const newOpkomst = () => guardLeave(() => { const o = newOpk(settings); saveOpk(o); markFresh(o.id); nav(`/s/${sid}/bouwer/${o.id}`); });
   const switchTab = (t: Tab) => guardLeave(() => { setTab(t); setSelRaw(null); setFrom(''); });
-  const taken = (n: string, except?: string) => nameTaken(own, n, except);
-  const doCopy = (x: Gedeeld) => withFreeName(x.opk.title, {
-    title: 'Andere naam kiezen', sub: `"${x.opk.title || 'Naamloos'}" staat al in jullie opkomstenbank. Geef de kopie een andere naam.`, label: 'Opkomst titel', okLabel: 'Kopieer naar onze bank',
-    suggest: freeName(own, x.opk.title), taken: n => taken(n),
-    ok: name => {
-      const { opk: o, dropped } = importShared(x, name);
-      const t = `"${o.title || 'Opkomst'}" staat nu in jullie opkomstenbank`;
-      // zonder recht Instellingen komen categorieën die jullie nog niet hebben er niet bij: zeg dat, met de namen
-      if (!dropped.length) toast(t);
-      else toast(t + '. ' + (dropped.length === 1 ? `Categorie ${dropped[0]} bestaat` : `${dropped.length} categorieën (${dropped.join(', ')}) bestaan`) + ' bij jullie nog niet; die onderdelen staan zonder categorie.', undefined, 8000);
-      setTab('own'); setSelRaw(o.id);
-    },
+  const doCopy = (x: Gedeeld) => copySharedToBank(x, own, 'Kopieer naar onze bank', latest, (o, note) => {
+    const t = `"${o.title || 'Opkomst'}" staat nu in jullie opkomstenbank`;
+    // zonder recht Instellingen komen categorieën die jullie nog niet hebben er niet bij: zeg dat, met de namen
+    if (!note) toast(t); else toast(t + '. ' + note, undefined, 8000);
+    setTab('own'); setSelRaw(o.id);
   });
-  const draftToBank = (o: Opk) => withFreeName(o.title, {
-    title: 'Andere naam kiezen', sub: o.title.trim() ? `"${o.title.trim()}" staat al in de opkomstenbank. Kies een andere naam.` : 'Geef de opkomst een titel voor de bank.', label: 'Opkomst titel', okLabel: 'In bank zetten',
-    suggest: o.title.trim() ? freeName(own, o.title) : '', taken: n => taken(n, o.id),
-    ok: name => { saveOpk(toBank(o, name)); toast(groupOn ? 'In de opkomstenbank gezet en gedeeld met de groep' : 'In de opkomstenbank gezet'); },
-  });
+  const draftToBank = (o: Opk) => askBankName(o, own, o.id, name => { saveOpk(toBank(o, name)); toast(groupOn ? 'In de opkomstenbank gezet en gedeeld met de groep' : 'In de opkomstenbank gezet'); });
 
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title="Opkomstenbank"

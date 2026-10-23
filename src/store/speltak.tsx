@@ -7,7 +7,7 @@ import { isTeamleider, normPerms, normSpeltak, type Member, type PermKey, type S
 import { useRoles } from './roles';
 import { createInvite as mkInvite } from './beheer';
 import { addDays, clone, fmtT } from '../lib/time';
-import { toast } from './toast';
+import { toast, undoAction } from './toast';
 import { markQueued, settle, track } from './saving';
 import { ensureLid, normGedeeld, snapshotOf, sharedSig, writeShared, removeShared, sharedId, copyFromShared, countCopy, type Gedeeld } from './groepsbank';
 
@@ -199,10 +199,11 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
   const flushAll = () => { flushNow(); return settle(); };
   // Tabblad naar de achtergrond (telefoon: andere app), sluiten of herladen: direct wegschrijven, niet op de vertraging wachten.
   // Is er dan nog iets onderweg, dan vraagt de browser of je echt weg wilt (dat regelt saving.ts, ook buiten de speltak).
+  // De speltak sluiten (Andere speltak, Mijn account, Beheer) schrijft ook meteen weg: daarna luistert niemand meer naar pagehide.
   useEffect(() => {
     const vis = () => { if (document.visibilityState === 'hidden') flushNow(); };
     window.addEventListener('pagehide', flushNow); document.addEventListener('visibilitychange', vis); window.addEventListener('beforeunload', flushNow);
-    return () => { window.removeEventListener('pagehide', flushNow); document.removeEventListener('visibilitychange', vis); window.removeEventListener('beforeunload', flushNow); };
+    return () => { window.removeEventListener('pagehide', flushNow); document.removeEventListener('visibilitychange', vis); window.removeEventListener('beforeunload', flushNow); flushNow(); };
   }, []);
 
   const saveOpk = (o: Opk) => { setOpks(a => a.some(x => x.id === o.id) ? a.map(x => x.id === o.id ? o : x) : [...a, o]); queue('opkomsten', o); };
@@ -227,7 +228,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
       const cur = e && plansRef.current.find(p => p.id === e.id);
       if (cur && !cur.opkId) savePlan({ ...cur, opkId: back.id });
     };
-    toast(o.state === 'bank' ? `"${o.title || 'Opkomst'}" uit de bank verwijderd${used ? '. Ingeplande opkomsten blijven staan' : ''}` : 'Concept verwijderd', { label: 'Ongedaan maken', fn: undo });
+    toast(o.state === 'bank' ? `"${o.title || 'Opkomst'}" uit de bank verwijderd${used ? '. Ingeplande opkomsten blijven staan' : ''}` : 'Concept verwijderd', undoAction(undo));
     await deleteOpk(o.id);
   };
   // Alleen de gewijzigde velden wegschrijven ('settings.accent', 'groupName', 'name'): twee wijzigingen vlak na elkaar,
@@ -250,12 +251,13 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
       apply(back); toast(saveErrorText(e)); return false;
     }
   };
+  // teamwijzigingen tellen mee in de opslagstatus (kopbalk, waarschuwing bij sluiten), net als de instellingen
   const setMember = async (uidX: string, patch: Partial<Member>) => {
     const cur = sp?.members[uidX]; if (!cur) return;
-    await updateDoc(doc(db, 'speltakken', sid), { ['members.' + uidX]: { ...cur, ...patch, perms: normPerms(patch.perms || cur.perms) } });
+    await track(updateDoc(doc(db, 'speltakken', sid), { ['members.' + uidX]: { ...cur, ...patch, perms: normPerms(patch.perms || cur.perms) } }));
   };
   const removeMember = async (uidX: string) => {
-    await updateDoc(doc(db, 'speltakken', sid), { ['members.' + uidX]: deleteField(), memberIds: arrayRemove(uidX), ...(sp?.tlIds?.includes(uidX) ? { tlIds: arrayRemove(uidX) } : {}) });
+    await track(updateDoc(doc(db, 'speltakken', sid), { ['members.' + uidX]: deleteField(), memberIds: arrayRemove(uidX), ...(sp?.tlIds?.includes(uidX) ? { tlIds: arrayRemove(uidX) } : {}) }));
   };
   const createInvite = (email: string, kind: 'teamleider' | 'leiding', perms: Perms, transfer = false) => practice ? Promise.reject(new Error('oefenen')) :
     mkInvite({ kind, email, gid: sp?.gid || null, groupName: sp?.groupName || '', sid, speltakName: sp?.name || '', perms, transfer },
@@ -364,8 +366,8 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
     return () => { alive = false; stop(); };
   }, [user, gid, sid, isMemberNow, isAdmin]);
 
-  // Eigen bank en groepsbank gelijk houden: gedeelde bank-opkomsten erin, de rest eruit.
-  const mayShare = isMemberNow && (can('bank') || can('build'));
+  // Eigen bank en groepsbank gelijk houden: gedeelde bank-opkomsten erin, de rest eruit. Dat hoort bij Banken (zo dwingen de regels het af).
+  const mayShare = isMemberNow && can('bank');
   // wat nu onderweg is naar de groepsbank: handtekening per gedeelde opkomst, of 'del' bij weghalen
   const inflight = useRef(new Map<string, string>());
   useEffect(() => {

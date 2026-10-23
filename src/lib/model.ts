@@ -76,11 +76,13 @@ export function defaultSettings(): Settings {
     seasonStartMonth: 9, seasonEndMonth: 7, letterDays: 14, letterNotice: 14, groupName: '', speltak: '', logo: '', logoW: 0, logoH: 0,
     accent: 'marine', prepMin: 30, postMin: 30, fixedOn: true, fixedOpen: 5, fixedClose: 5, fixedRanja: 15 };
 }
+/** Alleen een kleur als #rrggbb (zoals de kleurkeuze en de pdf die kennen); anders `d`. Een kleur uit de groepsbank of een back-up kan zo geen CSS meesturen. */
+export const hexColor = (c: unknown, d: string) => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c) ? c : d;
 export function normSettings(s: any): Settings {
   const d = defaultSettings();
   if (!s) return d;
   const out: Settings = { ...d, ...s };
-  out.categories = Array.isArray(s.categories) && s.categories.length ? s.categories.map((c: any) => ({ id: c.id, label: c.label || 'Categorie', color: c.color || SWATCHES[0] })) : d.categories;
+  out.categories = Array.isArray(s.categories) && s.categories.length ? s.categories.map((c: any) => ({ id: c.id, label: c.label || 'Categorie', color: hexColor(c.color, SWATCHES[0]) })) : d.categories;
   out.leaders = splitNames(s.leaders); out.locations = Array.isArray(s.locations) ? s.locations.filter(Boolean) : [];
   (['defStart', 'defEnd', 'opkDay', 'seasonStartMonth', 'seasonEndMonth', 'letterDays', 'letterNotice', 'logoW', 'logoH', 'prepMin', 'postMin', 'fixedOpen', 'fixedClose', 'fixedRanja'] as const)
     .forEach(k => { (out as any)[k] = num(s[k], (d as any)[k]); });

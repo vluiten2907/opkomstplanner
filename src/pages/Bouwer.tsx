@@ -2,11 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Bookmark, CalendarDays, ChevronRight, Copy, Download, GraduationCap, Plus, Tent, Trash2, TriangleAlert, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
-import { toast } from '../store/toast';
+import { toast, undoAction } from '../store/toast';
 import { openModal, withFreeName } from '../store/modal';
 import { guardLeave, setUnsaved, useDirty } from '../store/unsaved';
 import { isFresh, markFresh, watchFresh } from '../store/fresh';
-import { Strip, PickOpk, usePdf, PageTitle, SaveBar, StatusPill } from '../components/shared';
+import { Strip, PickOpk, usePdf, PageTitle, SaveBar, StatusPill, askBankName } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, TimePicker, useMedia, useSheetDialog } from '../components/ui';
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
@@ -214,10 +214,10 @@ function Builder({ o: stored }: { o: Opk }) {
     upd(() => {});
     focusSoon(...(nb ? [blkSel(nb.id)] : []), '#bf-add');
     // terugzetten in de opkomst zoals hij nú is, zodat wat je intussen aanpaste blijft staan
-    toast(`"${b.title || 'Naamloos onderdeel'}" verwijderd`, { label: 'Ongedaan maken', fn: () => live.current.upd(() => {
+    toast(`"${b.title || 'Naamloos onderdeel'}" verwijderd`, undoAction(() => live.current.upd(() => {
       const to = blocksOf(live.current.o); if (!to || to.some(x => x.id === b.id)) return;
       to.splice(Math.min(i, to.length), 0, b);
-    }) });
+    })));
   };
   const insertLib = (l: Lib, start: number) => {
     const dur = Math.min(l.dur, T1 - T0), s = Math.max(T0, Math.min(T1 - dur, start));
@@ -251,13 +251,12 @@ function Builder({ o: stored }: { o: Opk }) {
   const pill = o.state === 'bank' ? <span className="pill good">In opkomstenbank</span> : o.state === 'planned' ? <span className="pill acc">Ingepland</span> : <span className="pill neutral">Concept</span>;
   const putInBank = () => {
     if (!allBlocks(o).length && !o.title) { toast('Geef de opkomst eerst een titel of een onderdeel.'); return; }
-    const ask = { title: 'Andere naam kiezen', sub: o.title.trim() ? `"${o.title.trim()}" staat al in de opkomstenbank. Kies een andere naam.` : 'Geef de opkomst een titel voor de bank.', label: 'Opkomst titel', okLabel: 'In bank zetten', suggest: o.title.trim() ? freeName(bankOpks, o.title) : '' };
-    // concept: gaat zelf de bank in; ingepland: er komt een kopie in de bank (allebei zonder namen)
-    if (o.state === 'draft') return withFreeName(o.title, { ...ask, taken: n => nameTaken(bankOpks, n, o.id), ok: name => { if (!can('bank')) return; saveOpk(toBank(o, name)); toast(S.sp?.gid ? 'In de opkomstenbank gezet en gedeeld met de groep, zonder namen' : 'Opgeslagen in de opkomstenbank, zonder namen van leiding'); } });
-    withFreeName(o.title, { ...ask, taken: n => nameTaken(bankOpks, n), ok: name => {
+    // concept: gaat zelf de bank in (mag zijn eigen naam houden); ingepland: er komt een kopie in de bank (allebei zonder namen)
+    if (o.state === 'draft') return askBankName(o, bankOpks, o.id, name => { if (!can('bank')) return; saveOpk(toBank(o, name)); toast(S.sp?.gid ? 'In de opkomstenbank gezet en gedeeld met de groep, zonder namen' : 'Opgeslagen in de opkomstenbank, zonder namen van leiding'); });
+    askBankName(o, bankOpks, null, name => {
       // zonder recht Opkomsten blijft de ingeplande opkomst zelf ongemoeid (upd doet dan niets)
       const b = toBank(o, name); saveOpk(b); upd(() => { o.srcId = b.id; }); toast('Kopie opgeslagen in de opkomstenbank, zonder leiding');
-    } });
+    });
   };
   // kopie van de opgeslagen bank-versie: na Weggooien is `o` in deze functie nog de kladversie met de weggegooide wijzigingen
   const dup = () => guardLeave(() => { const c = copyOpk(stored); c.state = 'draft'; c.srcId = null; c.title = (stored.title || 'Opkomst') + ' (kopie)'; saveOpk(c); nav(`/s/${sid}/bouwer/${c.id}`); toast('Kopie gemaakt'); });
@@ -284,10 +283,10 @@ function Builder({ o: stored }: { o: Opk }) {
     const was = { date: e.date, endDate: e.endDate }, fit = kampFitRow(o, e.date, e.endDate);
     savePlan({ ...e, ...fit });
     if (!readOnly && relabelDays(clone(o), fit.date)) upd(() => { relabelDays(o, fit.date); });
-    toast(`Jaarplanning aangepast: ${fmtRange(fit.date, fit.endDate, true)}`, { label: 'Ongedaan maken', fn: () => {
+    toast(`Jaarplanning aangepast: ${fmtRange(fit.date, fit.endDate, true)}`, undoAction(() => {
       const L = latest(), row = L.plans.find(p => p.id === e.id);
       if (row && row.date === fit.date && row.endDate === fit.endDate) L.savePlan({ ...row, ...was });
-    } });
+    }));
   };
   return <div className="stack pt-5 md:pt-7" style={{ gap: 16 }}>
     <section className="plan-head">
@@ -378,10 +377,10 @@ function DaysBar({ o, di, setDayIdx, upd, date, readOnly }: { o: Opk; di: number
     if (o.days.length < 2) return; const [rm] = o.days.splice(di, 1); const at = di;
     setDayIdx(Math.max(0, di - 1)); upd(() => {});
     // terugzetten in het kamp zoals het nú is (na het opslaan een nieuw object), wat je intussen aanpaste blijft staan
-    toast(`${rm.label} verwijderd`, { label: 'Ongedaan maken', fn: () => {
+    toast(`${rm.label} verwijderd`, undoAction(() => {
       live.current.upd(() => { const cur = live.current.o; if (!cur.days.some(x => x.id === rm.id)) cur.days.splice(Math.min(at, cur.days.length), 0, rm); });
       setDayIdx(at);
-    } });
+    }));
   };
   const meals = () => {
     const pauze = settings.categories.find(c => /eten|maaltijd/i.test(c.label)) || settings.categories.find(c => /pauze/i.test(c.label));

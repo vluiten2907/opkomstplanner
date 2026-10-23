@@ -7,6 +7,7 @@ import { auth, db } from '../lib/firebase';
 import { defaultSettings } from '../lib/model';
 import { ALL_PERMS, INVITE_DAYS, NO_PERMS, inviteExpired, normInvite, normPerms, type Admin, type Groep, type Invite, type InviteKind, type Member, type PermKey, type Perms, type Speltak } from '../lib/types';
 import { uid as mkId } from '../lib/time';
+import { track } from './saving';
 
 /** De ingelogde gebruiker die de actie doet. */
 export type Me = { uid: string; name: string; email: string };
@@ -158,11 +159,12 @@ export async function renameGroep(g: Groep, name: string, speltakIds: string[]) 
   speltakIds.forEach(sid => b.update(doc(db, 'speltakken', sid), { groupName: name.trim() }));
   await b.commit();
 }
-export const setGroupAdmin = (gid: string, uid: string, p: Admin) => updateDoc(doc(db, 'groepen', gid), { ['admins.' + uid]: p, adminIds: arrayUnion(uid) });
+/* Teamwijzigingen (beheerders, teamleiders, rechten) tellen mee in de opslagstatus: kopbalk en waarschuwing bij sluiten (saving.ts). */
+export const setGroupAdmin = (gid: string, uid: string, p: Admin) => track(updateDoc(doc(db, 'groepen', gid), { ['admins.' + uid]: p, adminIds: arrayUnion(uid) }));
 export async function removeGroupAdmin(g: Groep, uid: string, allowEmpty = false) {
   const ids = g.adminIds.filter(x => x !== uid);
   if (!ids.length && !allowEmpty) throw new Error('last');
-  await updateDoc(doc(db, 'groepen', g.id), { ['admins.' + uid]: deleteField(), adminIds: ids });
+  await track(updateDoc(doc(db, 'groepen', g.id), { ['admins.' + uid]: deleteField(), adminIds: ids }));
 }
 
 /* ---------- speltakken onder een groep ---------- */
@@ -184,18 +186,18 @@ export async function setTeamleider(sp: Speltak, uid: string, on: boolean) {
   const m = sp.members[uid]; if (!m) return;
   const cur = sp.tlIds || tlFromRoles(sp);
   const next = on ? [...new Set([...cur, uid])] : cur.filter(x => x !== uid);
-  await updateDoc(doc(db, 'speltakken', sp.id), { ['members.' + uid]: { ...m, role: on ? 'teamleider' : 'leiding', perms: on ? ALL_PERMS : normPerms(m.perms) }, tlIds: next });
+  await track(updateDoc(doc(db, 'speltakken', sp.id), { ['members.' + uid]: { ...m, role: on ? 'teamleider' : 'leiding', perms: on ? ALL_PERMS : normPerms(m.perms) }, tlIds: next }));
 }
 /** Teamleiderschap overdragen aan een lid van het team: hij wordt teamleider, jij leiding. */
 export async function transferTeamleider(sp: Speltak, from: string, to: string) {
   const a = sp.members[from], b = sp.members[to]; if (!a || !b) return;
   const cur = sp.tlIds || tlFromRoles(sp);
   const next = [...new Set([...cur.filter(x => x !== from), to])];
-  await updateDoc(doc(db, 'speltakken', sp.id), {
+  await track(updateDoc(doc(db, 'speltakken', sp.id), {
     ['members.' + to]: { ...b, role: 'teamleider', perms: ALL_PERMS },
     ['members.' + from]: { ...a, role: 'leiding', perms: ALL_PERMS },
     tlIds: next,
-  });
+  }));
 }
 /** Als teamleider aftreden (je blijft leiding). */
 export async function stepDownTeamleider(sp: Speltak, uid: string) {
@@ -203,7 +205,7 @@ export async function stepDownTeamleider(sp: Speltak, uid: string) {
   const cur = sp.tlIds || tlFromRoles(sp);
   const next = cur.filter(x => x !== uid);
   if (!next.length) throw new Error('last');
-  await updateDoc(doc(db, 'speltakken', sp.id), { ['members.' + uid]: { ...m, role: 'leiding', perms: ALL_PERMS }, tlIds: next });
+  await track(updateDoc(doc(db, 'speltakken', sp.id), { ['members.' + uid]: { ...m, role: 'leiding', perms: ALL_PERMS }, tlIds: next }));
 }
 
 /* ---------- bestaande accounts ---------- */
@@ -351,7 +353,7 @@ export async function releaseOwnName(gid: string, uid: string, name: string, lef
 }
 
 /** Rechten van een leiding aanpassen (teamleider of beheerder van de groep). Bekijken mag altijd. */
-export const setPerms = (sp: Speltak, uid: string, perms: Perms) => updateDoc(doc(db, 'speltakken', sp.id), { ['members.' + uid + '.perms']: normPerms(perms) });
+export const setPerms = (sp: Speltak, uid: string, perms: Perms) => track(updateDoc(doc(db, 'speltakken', sp.id), { ['members.' + uid + '.perms']: normPerms(perms) }));
 
 /* ---------- hele groep verwijderen (Beheer totaal) ---------- */
 /** Aantal opkomsten in deze speltakken (voor de bevestiging). */

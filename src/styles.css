@@ -129,6 +129,8 @@ html { scroll-padding-top: calc(var(--barh, 0px) + 12px); }
 .barrow { display: grid; grid-template-columns: minmax(70px, 120px) minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 14px; }
 .barrow .track { height: 8px; background: var(--sunk); border-radius: 99px; overflow: hidden; }
 .barrow .fill { height: 100%; background: var(--accent); border-radius: 99px; }
+/* kleur per categorie via --c (nooit als tekst in de stijlregel: een kleur uit een andere speltak kan geen eigen CSS meesturen) */
+.catspread .barrow .fill { background: color-mix(in srgb, var(--c) var(--keep), #fff); }
 .barrow .val { font-size: 12.5px; color: var(--muted); }
 .barrow .bl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .notices { display: grid; gap: 10px; }

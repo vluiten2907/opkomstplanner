@@ -102,7 +102,9 @@ const rootDenied = (ref: Ref) => ref.kind === 'doc' && ref.path === 'beheer/tota
 // Testhaak 'fake.offlineFirst' = ms: een speltak komt eerst als "bestaat niet" uit een lege cache (zoals Firestore offline doet),
 // pas na ms het echte document (de verbinding is terug). De lijsten in de speltak (opkomsten, activiteiten, planning) komen eerst
 // leeg uit de cache en pas 'fake.offlineSlow' ms na het document van de server (een trage verbinding). Alleen voor de rooktest.
+// 'fake.offlineList' = ms: zo komt ook de lijst met je speltakken (Mijn speltakken) eerst leeg uit de cache.
 const offlineFirst = (ref: Ref) => {
+  if (ref.kind === 'coll' && ref.path === 'speltakken') return Number(localStorage.getItem('fake.offlineList')) || 0;
   const ms = Number(localStorage.getItem('fake.offlineFirst')) || 0;
   if (!ms) return 0;
   if (ref.kind === 'doc' && /^speltakken\/[^/]+$/.test(ref.path)) return ms;

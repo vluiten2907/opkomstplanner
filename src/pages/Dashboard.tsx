@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CalendarClock, ChevronLeft, ChevronRight, Download, ExternalLink, Mail, Plus, SquarePen, Tent, Users } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
-import { toast } from '../store/toast';
+import { toast, undoAction } from '../store/toast';
 import { openModal } from '../store/modal';
 import { markFresh } from '../store/fresh';
 import { Strip, StatusPill, CatTags, PeopleChips, usePdf, PageTitle } from '../components/shared';
@@ -70,7 +70,7 @@ function Notice({ e, due, today }: { e: Plan; due: string; today: string }) {
     // de melding verdwijnt: de focus naar de volgende brief (of de vorige), anders naar de kalender eronder, niet kwijt naar het begin
     const all = [...document.querySelectorAll<HTMLElement>('.notices .notice')], i = all.indexOf(box.current!), nx = all[i + 1] || all[i - 1];
     const had = !!box.current?.contains(document.activeElement) || document.activeElement === document.body;
-    savePlan({ ...e, letter: { ...e.letter, sent: true } }); toast('Brief gemarkeerd als verstuurd', { label: 'Ongedaan maken', fn: unsent });
+    savePlan({ ...e, letter: { ...e.letter, sent: true } }); toast('Brief gemarkeerd als verstuurd', undoAction(unsent));
     if (had) setTimeout(() => { const to = (nx?.isConnected && nx.querySelector<HTMLElement>('button')) || document.getElementById('dash-cal'); to?.focus({ preventScroll: true }); to?.scrollIntoView?.({ block: 'nearest' }); }, 0);
   };
   // de brief op verstuurd zetten is een wijziging in de jaarplanning (zoals de briefknop daar): alleen met dat recht
@@ -287,7 +287,7 @@ function CatSpread({ today }: { today: string }) {
   // nog geen enkele opkomst met een categorie: geen rij nullen laten zien
   if (!list.some(c => cnt[c.id])) return null;
   return <section className="card pad stack catspread"><h3>Activiteitengebieden</h3>
-    <div className="bars wide">{list.map(c => <div key={c.id} className="barrow"><span className="bl" title={c.label}>{c.label}</span><div className="track"><div className="fill" style={{ width: `${(cnt[c.id] || 0) / max * 100}%`, background: `color-mix(in srgb, ${c.color} var(--keep), #fff)` }} /></div><span className="val">{cnt[c.id] || 0}</span></div>)}</div></section>;
+    <div className="bars wide">{list.map(c => <div key={c.id} className="barrow"><span className="bl" title={c.label}>{c.label}</span><div className="track"><div className="fill" style={{ width: `${(cnt[c.id] || 0) / max * 100}%`, ['--c' as any]: c.color }} /></div><span className="val">{cnt[c.id] || 0}</span></div>)}</div></section>;
 }
 
 /** Een datum waar nog niets voor is ingevuld: geen onderwerp, planner, programma, afwezigen, brief of notitie. */

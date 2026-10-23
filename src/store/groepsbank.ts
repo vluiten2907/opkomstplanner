@@ -5,7 +5,7 @@
  */
 import { doc, getDoc, setDoc, deleteDoc, updateDoc, increment } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { allBlocks, catOf, normOpk, opkCatOf, FIXED_CATS, OPK_EXTRA, type Cat, type Opk, type Settings } from '../lib/model';
+import { allBlocks, catOf, hexColor, normOpk, opkCatOf, FIXED_CATS, OPK_EXTRA, SWATCHES, type Cat, type Opk, type Settings } from '../lib/model';
 import { clone, uid as mkId } from '../lib/time';
 
 export type Gedeeld = {
@@ -19,7 +19,10 @@ export const sharedId = (sid: string, oid: string) => sid + '_' + oid;
 const UNIVERSAL = new Set([...FIXED_CATS.map(c => c.id), ...OPK_EXTRA.map(c => c.id), '']);
 
 export function normGedeeld(id: string, d: any): Gedeeld {
-  return { id, sid: d.sid || '', oid: d.oid || '', speltakName: d.speltakName || '', catDefs: Array.isArray(d.catDefs) ? d.catDefs : [],
+  // categorieën van een andere speltak: alleen id, naam en een echte kleur (#rrggbb) overnemen
+  const catDefs: Cat[] = Array.isArray(d.catDefs) ? d.catDefs.filter((c: any) => c && typeof c === 'object')
+    .map((c: any) => ({ id: String(c.id ?? ''), label: String(c.label ?? ''), color: hexColor(c.color, SWATCHES[0]) })) : [];
+  return { id, sid: d.sid || '', oid: d.oid || '', speltakName: d.speltakName || '', catDefs,
     opk: normOpk({ ...(d.opk || {}), state: 'bank' }), updatedAt: d.updatedAt || 0, copies: d.copies || 0 };
 }
 
@@ -76,7 +79,7 @@ export function copyFromShared(g: Gedeeld, s: Settings, canAddCats: boolean): { 
     if (mine) { map.set(c.id, mine.id); return; }
     if (!canAddCats) { map.set(c.id, ''); if (c.label && !dropped.includes(c.label)) dropped.push(c.label); return; }
     const id = s.categories.some(x => x.id === c.id) ? mkId() : c.id;
-    add.push({ id, label: c.label, color: c.color }); map.set(c.id, id);
+    add.push({ id, label: c.label, color: hexColor(c.color, SWATCHES[0]) }); map.set(c.id, id);
   });
   const conv = (id: string) => UNIVERSAL.has(id) ? id : (map.get(id) ?? (catOf(s, id).id ? id : ''));
   const o = normOpk(clone(g.opk));

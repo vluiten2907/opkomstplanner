@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Tent, Trash2, SquarePen, Users } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
-import { toast } from '../store/toast';
+import { toast, undoAction } from '../store/toast';
 import { Modal, TimePicker, Field, Chip, ConfirmBtn, useMedia } from './ui';
-import { PickOpk } from './shared';
+import { PickOpk, copySharedToBank } from './shared';
 import { addDays, clone, fmtLong, fmtNL, fmtRange, parseNL, parseRange, tidyNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, plural, todayISO } from '../lib/time';
-import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, defaultTimes, entryTimes, ownTimes, firstFree, fitsTopic, freeName, isKamp, kampMismatch, kampMismatchNote, kampStart, lanesLayout, minNeed, nameTaken, newEntry, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
+import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, defaultTimes, entryTimes, ownTimes, firstFree, fitsTopic, isKamp, kampMismatch, kampMismatchNote, kampStart, lanesLayout, minNeed, newEntry, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from './timeline';
-import { withFreeName, type NameSpec } from '../store/modal';
+import type { NameSpec } from '../store/modal';
 import type { Gedeeld } from '../store/groepsbank';
 
 const NO_UNLINK = 'Hier hangt een opkomst aan. Ontkoppelen kan alleen met het recht Opkomsten of Banken.';
@@ -109,7 +109,7 @@ export function ExtraModal({ onClose, onCreated }: { onClose: () => void; onCrea
         });
       };
       const msg = done.length ? `${plural(done.length, day, day + 'en')} op Geen opkomst gezet` : 'Niets aangepast';
-      toast(msg + (skipped ? `. ${plural(skipped, 'datum', 'data')} met een opkomst, onderwerp of kamp overgeslagen.` : ''), done.length ? { label: 'Ongedaan maken', fn: undo } : undefined, skipped ? 8000 : undefined);
+      toast(msg + (skipped ? `. ${plural(skipped, 'datum', 'data')} met een opkomst, onderwerp of kamp overgeslagen.` : ''), done.length ? undoAction(undo) : undefined, skipped ? 8000 : undefined);
       if (done.length) onCreated(done[0]);
       onClose(); return;
     }
@@ -200,17 +200,11 @@ export function LinkModal({ keyId, onClose, onTakeover }: { keyId: string; onClo
   const pickDraft = (o: Opk) => { const en = { ...entryFor(keyId) }; linkOpk(o, en, false, true); onClose(); const note = kampMismatchNote(o, en.date, en.endDate);
     if (!offerPlanTimes(o, en, 'Gekoppeld.')) toast(note ? 'Gekoppeld. ' + note : 'Gekoppeld', { label: 'Opkomst openen', fn: openOpk(o.id) }, note ? 9000 : undefined); };
   // uit de groep: eerst een kopie in de eigen bank (met een vrije naam), dan een kopie daarvan inplannen, zonder namen (zoals uit de eigen bank)
-  const pickShared = (g: Gedeeld) => withFreeName(g.opk.title, {
-    title: 'Andere naam kiezen', sub: `"${g.opk.title || 'Naamloos'}" staat al in jullie opkomstenbank. Geef de kopie een andere naam.`, label: 'Opkomst titel', okLabel: 'Kopiëren en inplannen',
-    suggest: freeName(allBank, g.opk.title), taken: n => nameTaken(allBank, n),
-    ok: name => {
-      // het venster voor een andere naam kan ertussen hebben gestaan: met de nieuwste stand
-      const L = latest(), { opk: copy, dropped } = L.importShared(g, name);
-      const en = { ...L.entryFor(keyId) }, linked = L.linkOpk(copy, en, true, false); onClose();
-      const pre = `"${copy.title || 'Opkomst'}" staat nu ook in jullie opkomstenbank.` + (!dropped.length ? ''
-        : ' ' + (dropped.length === 1 ? `Categorie ${dropped[0]} bestaat` : `${dropped.length} categorieën (${dropped.join(', ')}) bestaan`) + ' bij jullie nog niet; die onderdelen staan zonder categorie.');
-      afterBankCopy(linked, en, onTakeover, L.offerPlanTimes, L.can('build'), openOpk(linked.id), pre);
-    },
+  // (het venster voor een andere naam kan ertussen hebben gestaan: L is de nieuwste stand)
+  const pickShared = (g: Gedeeld) => copySharedToBank(g, allBank, 'Kopiëren en inplannen', latest, (copy, note, L) => {
+    const en = { ...L.entryFor(keyId) }, linked = L.linkOpk(copy, en, true, false); onClose();
+    const pre = `"${copy.title || 'Opkomst'}" staat nu ook in jullie opkomstenbank.` + (note ? ' ' + note : '');
+    afterBankCopy(linked, en, onTakeover, L.offerPlanTimes, L.can('build'), openOpk(linked.id), pre);
   });
   const groupBlock = group.length > 0 || (ql && allGroup.length > 0) ? <><h3 className="gap-lg">Uit de groep</h3>
     {group.length ? <div className="picklist">{group.map(g => <PickOpk key={g.id} o={g.opk} cats={g.catDefs} label="Kiezen" primary={false}
@@ -284,7 +278,7 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
     const was = before.topic.trim() && before.topic.trim() !== (linked.title || '').trim() ? ` Onderwerp was "${before.topic.trim()}".` : '';
     const msg = 'Ingepland op ' + fmtRange(en.date, en.endDate, true), note = kampMismatchNote(linked, en.date, en.endDate);
     if (offerPlanTimes(linked, en, msg + '.')) return;
-    const back = { label: 'Ongedaan maken', fn: undo };
+    const back = undoAction(undo);
     if (linked !== o) toast(msg + '. Er is een kopie gemaakt.' + was + (note ? ' ' + note : ''), back, note ? 9000 : 8000);
     else toast(msg + '.' + was + (note ? ' ' + note : ''), back, note ? 9000 : 8000);
   };
@@ -345,13 +339,13 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
     const rest = C.d.blocks.filter(x => x !== b).sort((x, y) => x.start - y.start), nb = rest.find(x => x.start >= b.start) || rest[rest.length - 1];
     upd(() => { C.d.blocks = C.d.blocks.filter(x => x !== b); }); setSelId(null);
     focusSoon(nb ? pickSel(nb.id) : '', '.modal select[aria-label="Activiteit om toe te voegen"]', '.modal .btn.primary');
-    toast(`"${b.title || 'Naamloos onderdeel'}" verwijderd`, { label: 'Ongedaan maken', fn: () => {
+    toast(`"${b.title || 'Naamloos onderdeel'}" verwijderd`, undoAction(() => {
       // de nieuwste versie van de opkomst (na het opslaan is dat een nieuw object), ook als dit venster al dicht is
       const cur = latestO(oid); if (!cur) return;
       const list = dayId ? cur.days.find(d => d.id === dayId)?.blocks : cur.blocks;
       if (!list || list.some(x => x.id === b.id)) return;
       list.splice(Math.min(at, list.length), 0, b); if (isKamp(cur)) syncKamp(cur); saveOpk({ ...cur });
-    } });
+    }));
   };
   /* Compacte tijdlijn: onderdelen die tegelijk zijn staan naast elkaar, net als in de bouwer. */
   const ROW = coarse ? 26 : 20;
