@@ -7,7 +7,7 @@ import { BankCard, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, useEscapeClose, useSheetDialog } from '../components/ui';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { clone, fmtDur, plural, uid } from '../lib/time';
-import { allBlocks, byTitle, catOf, freeName, nameTaken, normLib, type Lib } from '../lib/model';
+import { allBlocks, byTitle, catOf, freeName, libSearchText, nameTaken, normLib, type Lib } from '../lib/model';
 
 export default function Activiteitenbank() {
   const { settings, lib, opks, saveLib, deleteLib, can } = useSpeltak();
@@ -15,7 +15,7 @@ export default function Activiteitenbank() {
   const [fresh, setFresh] = useState<Lib | null>(null); // nieuwe activiteit, nog niet in de bank
   const setSel = (id: string | null) => guardLeave(() => { setSelRaw(id); if (!id || id !== fresh?.id) setFresh(null); });
   const ql = q.toLowerCase();
-  const items = lib.filter(l => (!cat || l.cat === cat) && (!ql || (l.title + ' ' + l.short + ' ' + l.location).toLowerCase().includes(ql))).sort(byTitle);
+  const items = lib.filter(l => (!cat || l.cat === cat) && (!ql || libSearchText(l).includes(ql))).sort(byTitle);
   const uses: Record<string, number> = {};
   opks.forEach(o => allBlocks(o).forEach(b => { if (b.libId) uses[b.libId] = (uses[b.libId] || 0) + 1; }));
   const edit = can('bank');
@@ -30,7 +30,8 @@ export default function Activiteitenbank() {
   // lege bank (en niets open): geen zoekveld, filters of zijpaneel, alleen uitleg met één knop
   if (!lib.length && !L) return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title="Activiteitenbank" sub="Nog geen activiteiten" />
-    <div className="empty bank-empty"><span>Bewaar hier spellen en onderdelen die je vaker gebruikt. Maak er een, of bewaar een onderdeel vanuit de opkomstbouwer.</span>
+    <div className="empty bank-empty"><span>{edit ? 'Bewaar hier spellen en onderdelen die je vaker gebruikt. Maak er een, of bewaar een onderdeel vanuit de opkomstbouwer.'
+      : 'Hier komen spellen en onderdelen die jullie vaker gebruiken. Toevoegen kan met het recht Banken.'}</span>
       {edit && <button className="btn primary" onClick={create}><Plus size={16} />Nieuwe activiteit</button>}</div>
   </div>;
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
@@ -72,10 +73,11 @@ function LibEditor({ l, isNew, lib, readOnly, onClose, onCancelNew, onSave, onCo
   useDirty(dirty, cancel);
   const copy = (name: string) => { const x = { ...clone(d), id: uid(), title: name }; setD(clone(l)); setDirty(false); onCopy(x); };
   return <div className="pad stack">
-    <div className="row between" style={{ alignItems: 'flex-start' }}><span className="eyebrow">{isNew ? 'Nieuwe activiteit' : 'Activiteit'}</span><button className="closex" onClick={onClose} aria-label="Sluiten"><X size={18} /></button></div>
+    <div className="row between" style={{ alignItems: 'flex-start' }}><div className="row"><span className="eyebrow">{isNew ? 'Nieuwe activiteit' : 'Activiteit'}</span>{readOnly && <span className="pill neutral">Alleen lezen</span>}</div><button className="closex" onClick={onClose} aria-label="Sluiten"><X size={18} /></button></div>
+    {readOnly && <p className="hint">Aanpassen kan met het recht Banken.</p>}
     <Field label="Titel van de activiteit" htmlFor="lf-title"><input id="lf-title" value={d.title} readOnly={readOnly} onChange={e => upd(() => { d.title = e.target.value; })} placeholder="bijv. Levend Stratego" /></Field>
     <div className="two"><Field label="Duur" htmlFor="lf-dur"><select id="lf-dur" value={d.dur} disabled={readOnly} onChange={e => upd(() => { d.dur = +e.target.value; })}>{durs.sort((a, b) => a - b).map(x => <option key={x} value={x}>{fmtDur(x)}</option>)}</select></Field>
-      <Field label="Minimaal aantal leiding" htmlFor="lf-min"><NumInput id="lf-min" min={1} max={30} readOnly={readOnly} value={d.minLeaders} onChange={n => upd(() => { d.minLeaders = n; })} /></Field></div>
+      <Field label="Minimaal aantal leiding" htmlFor="lf-min"><NumInput id="lf-min" min={0} max={30} readOnly={readOnly} value={d.minLeaders} onChange={n => upd(() => { d.minLeaders = n; })} /></Field></div>
     <CatSelect prefix="lf" value={d.cat} disabled={readOnly} onChange={id => upd(() => { d.cat = id; })} />
     <Field label="Locatie" htmlFor="lf-loc"><LocInput id="lf-loc" value={d.location} readOnly={readOnly} onChange={v => upd(() => { d.location = v; })} placeholder="bijv. Bos" /></Field>
     <Field label="Korte beschrijving" htmlFor="lf-short"><textarea id="lf-short" rows={2} readOnly={readOnly} value={d.short} onChange={e => upd(() => { d.short = e.target.value; })} /></Field>

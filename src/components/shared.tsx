@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useId, useRef, useState, type ReactNode } from 'react';
 import { useSpeltak } from '../store/speltak';
 import { allBlocks, analyze, catOf, isKamp, minNeed, opkCatOf, progEmpty, type Cat, type Opk, type Day } from '../lib/model';
 import { fmtDur, fmtT, plural } from '../lib/time';
@@ -74,23 +74,37 @@ export function SaveBar({ dirty, isNew, title, taken, suggest, onCancel, onSave,
   const [copying, setCopying] = useState(false);
   const [name, setName] = useState('');
   const errId = useId();
+  const copyBtn = useRef<HTMLButtonElement>(null);
   const why = (n: string, copy = false) => !n.trim() ? 'Geef een titel op.' : taken(n, copy) ? 'Deze naam bestaat al in de bank. Kies een andere naam.' : '';
   const saveErr = dirty || isNew ? why(title) : '';
   const copyErr = why(name, true);
+  // voorstel: de (aangepaste) titel als die nog vrij is, anders een vrije naam met (kopie)
+  const startCopy = () => { setName(title.trim() && !taken(title, true) ? title.trim() : suggest); setCopying(true); };
+  // terug uit de naamvraag (Terug, Esc of Kopie opslaan): de focus naar Opslaan als kopie, niet kwijt naar het begin van de pagina.
+  // Na Kopie opslaan staat er vaak een nieuw paneel (de kopie): dan de knop daarin.
+  const endCopy = () => {
+    setCopying(false);
+    setTimeout(() => {
+      const a = document.activeElement; if (a && a !== document.body && a.isConnected) return;
+      (copyBtn.current?.isConnected ? copyBtn.current : document.querySelector<HTMLElement>('.savebar .sb-copy'))?.focus();
+    }, 30);
+  };
+  const doCopy = () => { endCopy(); onCopy(name.trim()); };
   return <div className={'savebar' + (sticky ? ' sticky' : '') + (dirty || isNew ? ' on' : '')} role="group" aria-label="Opslaan">
     {copying ? <>
       <label htmlFor="sb-name" className="lbl">Naam van de kopie</label>
-      <input id="sb-name" className="inp" value={name} autoFocus aria-invalid={!!copyErr} aria-describedby={errId} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !copyErr) { setCopying(false); onCopy(name.trim()); } if (e.key === 'Escape') setCopying(false); }} />
+      <input id="sb-name" className="inp" value={name} autoFocus aria-invalid={!!copyErr} aria-describedby={errId} onChange={e => setName(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter' && !copyErr) doCopy(); if (e.key === 'Escape') { e.preventDefault(); endCopy(); } }} />
       {/* altijd aanwezig, alleen de tekst verandert: zo leest een schermlezer de fout voor tijdens het typen */}
       <span className="sb-err" id={errId} aria-live="polite">{copyErr}</span>
-      <div className="row"><button className="btn ghost" onClick={() => setCopying(false)}>Terug</button><button className="btn primary" disabled={!!copyErr} onClick={() => { setCopying(false); onCopy(name.trim()); }}>Kopie opslaan</button></div>
+      <div className="row"><button className="btn ghost" onClick={endCopy}>Terug</button><button className="btn primary" disabled={!!copyErr} onClick={doCopy}>Kopie opslaan</button></div>
     </> : <>
       <span className="sb-err" id={errId} aria-live="polite">{saveErr}</span>
       {(dirty || isNew) && !saveErr ? <span className="sb-msg">{isNew ? 'Nog niet in de bank.' : 'Niet opgeslagen wijzigingen.'}</span> : null}
       <div className="row">
         <button className="btn ghost" disabled={!dirty && !isNew} onClick={onCancel}>Annuleren</button>
         <button className="btn primary" disabled={(!dirty && !isNew) || !!saveErr} onClick={onSave}>Opslaan</button>
-        {!isNew && <button className="btn" onClick={() => { setName(suggest); setCopying(true); }}>Opslaan als kopie</button>}
+        {!isNew && <button ref={copyBtn} className="btn sb-copy" onClick={startCopy}>Opslaan als kopie</button>}
       </div>
     </>}
   </div>;

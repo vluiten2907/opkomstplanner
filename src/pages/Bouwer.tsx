@@ -11,7 +11,7 @@ import { Chip, ConfirmBtn, Dot, Field, TimePicker, useMedia, useSheetDialog } fr
 import { Ticks, PrepZones, blkGeom, blkLabel, lanesStyle } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, todayISO, uid, DAYS } from '../lib/time';
-import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isBlankOpk, isFixed, isKamp, lanesLayout, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isBlankOpk, isFixed, isKamp, lanesLayout, libSearchText, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /** Titel van de opkomst: loopt door op een volgende regel in plaats van af te breken (smal scherm), zonder echte regeleinden. */
 function TitleArea({ value, readOnly, onChange, placeholder, autoFocus }: { value: string; readOnly: boolean; onChange: (v: string) => void; placeholder: string; autoFocus?: boolean }) {
@@ -449,7 +449,7 @@ function SidePanel({ tab, setTab, ctx, A, lanesRef, onSelect, onPlan, onDrop }: 
   }, [T0, T1, row, onDrop]);
   const tabs = <div className="tabs" role="tablist"><button role="tab" aria-selected={tab === 'bank'} onClick={() => setTab('bank')}>Activiteitenbank</button><button role="tab" aria-selected={tab === 'check'} onClick={() => setTab('check')}>Controle</button></div>;
   if (tab === 'bank') {
-    const ql = q.toLowerCase(), items = lib.filter(l => (!cat || l.cat === cat) && (!ql || (l.title + ' ' + l.short + ' ' + l.location).toLowerCase().includes(ql))).sort(byTitle);
+    const ql = q.toLowerCase(), items = lib.filter(l => (!cat || l.cat === cat) && (!ql || libSearchText(l).includes(ql))).sort(byTitle);
     return <>{tabs}<div className="pad stack">
       <div className="row"><input className="inp" type="search" placeholder="Zoek activiteit" aria-label="Zoek activiteit" value={q} onChange={e => setQ(e.target.value)} style={{ flex: '1 1 140px' }} />
         <select className="inp" aria-label="Categorie" value={cat} onChange={e => setCat(e.target.value)} style={{ flex: '1 1 120px' }}><option value="">Alle categorieën</option>{settings.categories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></div>

@@ -369,3 +369,12 @@ test('libFields en blockFromLib', () => {
   assert.deepEqual(M.libFields(b), M.libFields(l));
   assert.deepEqual(b.names, [], 'geen namen uit de bank');
 });
+test('normLib: minimaal 0 leiding blijft 0 (zonder waarde 1)', () => {
+  assert.equal(M.normLib({ id: 'L0', minLeaders: 0 }).minLeaders, 0, 'onderdeel zonder leiding uit de bouwer');
+  assert.equal(M.normLib({ id: 'L1' }).minLeaders, 1, 'zonder waarde: 1');
+  assert.equal(M.normLib({ id: 'L2', minLeaders: -3 }).minLeaders, 0, 'negatief wordt 0');
+});
+test('libSearchText: ook uitgebreide beschrijving, voorbereiding en materiaal', () => {
+  const t = M.libSearchText(M.normLib({ id: 'L', title: 'Junglejacht', short: 'Tikspel', desc: 'Wie getikt wordt, wordt een tijger.', location: 'Grasveld', prep: 'Kaartjes lamineren', materials: 'Lintjes' }));
+  for (const w of ['junglejacht', 'tikspel', 'tijger', 'grasveld', 'lamineren', 'lintjes']) assert.ok(t.includes(w), w);
+});

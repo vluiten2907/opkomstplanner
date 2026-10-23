@@ -192,9 +192,12 @@ function Restore() {
         // opkomsten: een ingeplande opkomst hoort bij een rij; is die er niet (overgeslagen of nooit), dan wordt het een concept
         const linked = new Set([...L.plans, ...rows].map(p => p.opkId).filter(Boolean));
         const newOpks = new Map<string, Opk>();
+        // de opkomstenbank ook alleen met het recht Banken (zo staat het ook in de regels)
+        let skipBank = false;
         d.opks.forEach((x: any) => {
           const o = normOpk(x, settings);
           if (haveO.has(o.id)) { present++; return; }
+          if (o.state === 'bank' && !can('bank')) { skipBank = true; return; }
           haveO.add(o.id);
           if (o.state === 'planned' && !linked.has(o.id)) { o.state = 'draft'; drafts++; }
           newOpks.set(o.id, o); saveOpk(o); added++;
@@ -209,7 +212,8 @@ function Restore() {
         });
         const parts = [`${added} nieuw`, ...(present ? [`${present} al aanwezig (overgeslagen)`] : []), ...(taken ? [`${plural(taken, 'datum', 'data')} al bezet (overgeslagen)`] : [])];
         toast(`Back-up teruggezet: ${parts.join(', ')}.` + (drafts ? ` ${plural(drafts, 'opkomst', 'opkomsten')} zonder datum bij de concepten gezet.` : '')
-          + (skipLib ? ' Activiteiten overgeslagen: daarvoor heb je het recht Banken nodig.' : ''), undefined, present || taken || drafts || skipLib ? 9000 : undefined);
+          + (skipLib || skipBank ? ` ${skipLib && skipBank ? 'Activiteiten en opkomsten uit de bank' : skipLib ? 'Activiteiten' : 'Opkomsten uit de bank'} overgeslagen: daarvoor heb je het recht Banken nodig.` : ''),
+          undefined, present || taken || drafts || skipLib || skipBank ? 9000 : undefined);
       } catch { toast('Dit bestand kan niet worden gelezen.'); }
     };
     rd.readAsText(f);

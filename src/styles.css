@@ -612,6 +612,10 @@ body { background: var(--grain), radial-gradient(90% 70% at 100% 0%, color-mix(i
 .field input, .field select, .field textarea, .inp { background: var(--paper); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--edge) 55%, var(--line)); }
 .field input:focus, .field select:focus, .field textarea:focus, .inp:focus { outline: none; box-shadow: inset 0 0 0 2px var(--edge), 0 0 0 4px color-mix(in srgb, var(--pop) 55%, transparent); }
 .toggle { background: var(--paper); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--edge) 55%, var(--line)); }
+/* alleen lezen: een rustig vlak zonder typcursor, rand of hover; met het toetsenbord blijft zichtbaar waar je bent */
+.field input[readonly], .field textarea[readonly], .field input[readonly]:hover, .field textarea[readonly]:hover,
+.field input[readonly]:focus, .field textarea[readonly]:focus { background: var(--sunk); box-shadow: none; cursor: default; }
+.field input[readonly]:focus-visible, .field textarea[readonly]:focus-visible { outline: 2px solid var(--edge); outline-offset: 2px; }
 
 /* Vlakken met harde schaduw */
 .card, .bcard, .prow:not(.head):not(.geen) { background: var(--paper); box-shadow: var(--shadow); border-radius: 14px; }

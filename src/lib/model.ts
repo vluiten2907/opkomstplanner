@@ -130,7 +130,7 @@ export function normOpk(o: any, s?: Settings): Opk {
   return n;
 }
 export function normLib(l: any): Lib {
-  return { id: l.id || uid(), title: l.title || '', dur: Math.max(5, num(l.dur, 15)), cat: l.cat || '', minLeaders: Math.max(1, num(l.minLeaders, 1)),
+  return { id: l.id || uid(), title: l.title || '', dur: Math.max(5, num(l.dur, 15)), cat: l.cat || '', minLeaders: Math.max(0, num(l.minLeaders, 1)),
     location: l.location || '', short: l.short || '', desc: l.desc || '', prep: l.prep || '', materials: l.materials || '', updatedAt: l.updatedAt || Date.now() };
 }
 export function newEntry(slot: string | null, date?: string): Plan {
@@ -167,6 +167,8 @@ export const progEmpty = (o: Opk) => allBlocks(o).every(isFixed);
 /** Nog niets ingevuld: geen titel, beschrijving, locatie of categorie, en alleen de vaste blokken (kamp: dagen zonder onderdelen). */
 export const isBlankOpk = (o: Opk) => !o.title.trim() && !o.short.trim() && !o.location.trim() && !o.cats.length && progEmpty(o);
 /** Zoektekst van een opkomst: titel, beschrijving, locatie en de onderdelen (zonder de vaste blokken). */
+/** Zoektekst van een activiteit: alles wat je in de editor ziet (ook de uitgebreide beschrijving, voorbereiding en materiaal). */
+export const libSearchText = (l: Lib) => [l.title, l.short, l.desc, l.location, l.prep, l.materials].join(' ').toLowerCase();
 export const opkSearchText = (o: Opk) => [o.title, o.short, o.location, ...allBlocks(o).filter(b => !isFixed(b)).map(b => b.title)].join(' ').toLowerCase();
 const TOPIC_SKIP = new Set(['opkomst', 'opkomsten', 'spel', 'spellen', 'avond', 'middag', 'ochtend', 'weekend', 'kamp', 'voor', 'naar', 'met', 'van', 'het', 'een', 'and', 'de', 'en', 'in', 'op']);
 const topicWords = (s: string, min: number) => (s || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length >= min && !TOPIC_SKIP.has(w));

@@ -313,13 +313,17 @@ service cloud.firestore {
       function newState() { return request.resource.data.get('state', ''); }
       match /opkomsten/{id} {
         allow read: if isMember() || isAdmin();
-        // Opkomsten: alles. Banken + Jaarplanning: ook koppelen en inplannen (dat schrijft de opkomst mee).
+        // De opkomstenbank (state 'bank') hoort bij Banken, de rest (concepten en ingeplande opkomsten) bij Opkomsten.
+        // Alleen Opkomsten: niets in de bank aanmaken, bewerken of verwijderen (wel een kopie uit de bank als concept of ingepland).
         // Alleen Banken: alleen de opkomstenbank (ook een concept in de bank zetten), niets wat ingepland is.
+        // Banken + Jaarplanning: ook koppelen en inplannen (dat schrijft de opkomst mee).
         // Nieuw aanmaken zonder Opkomsten: alleen in de bank, of een kopie uit de bank die meteen wordt ingepland (geen concept).
-        allow create: if can('build') || (can('bank') && (newState() == 'bank' || (can('plan') && newState() == 'planned')));
-        allow update: if can('build') || (can('bank') && can('plan'))
+        allow create: if (can('build') && newState() != 'bank')
+          || (can('bank') && (newState() == 'bank' || (can('plan') && newState() == 'planned')));
+        allow update: if (can('build') && oldState() != 'bank' && newState() != 'bank')
+          || (can('bank') && can('plan') && oldState() != 'bank' && newState() != 'bank')
           || (can('bank') && newState() == 'bank' && oldState() != 'planned');
-        allow delete: if can('build') || (can('bank') && oldState() == 'bank') || isAdmin();
+        allow delete: if (can('build') && oldState() != 'bank') || (can('bank') && oldState() == 'bank') || isAdmin();
       }
       match /activiteiten/{id} {
         allow read: if isMember() || isAdmin();

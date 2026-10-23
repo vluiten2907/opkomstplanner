@@ -84,7 +84,8 @@ export default function Opkomstenbank() {
       <button role="tab" aria-selected={g} onClick={() => switchTab('group')}>Groep <span className="count">{others.length}</span></button>
     </div>}
     {bare ? <div className="empty bank-empty">{g ? <span>Andere speltakken van {sp?.groupName || 'de groep'} hebben nog niets gedeeld. Wat zij in hun opkomstenbank zetten, verschijnt hier.</span>
-      : <><span>Bewaar hier opkomsten die je vaker gebruikt: bouw een opkomst en kies "In bank". Namen van leiding gaan niet mee.</span>
+      : <><span>{can('bank') ? 'Bewaar hier opkomsten die je vaker gebruikt: bouw een opkomst en kies "In bank". Namen van leiding gaan niet mee.'
+        : 'Hier komen opkomsten die jullie vaker gebruiken, zonder namen van leiding. In de bank zetten kan met het recht Banken.'}</span>
         {can('build') && <button className="btn primary" onClick={newOpkomst}><Plus size={16} />Nieuwe opkomst</button>}</>}</div> : <>
     <div className="toolbar"><input className="inp" type="search" placeholder={g ? 'Zoek in de groep' : 'Zoek opkomst'} aria-label={g ? 'Zoek in de groep' : 'Zoek opkomst'} value={q} onChange={e => setQ(e.target.value)} />
       {g && speltakken.length > 1 && <div className="catfilter" role="group" aria-label="Speltak"><Chip on={!from} onClick={() => setFrom('')}>Alle speltakken</Chip>{speltakken.map(([id, name]) => <Chip key={id} on={from === id} onClick={() => setFrom(id)}>{name}</Chip>)}</div>}
@@ -111,7 +112,7 @@ export default function Opkomstenbank() {
             {t.short && <span className="bs">{t.short}</span>}
             <span className="hint">{uses[t.id] ? `${uses[t.id]}× ingepland` : 'Nog niet ingepland'}</span>
           </button></BankCard>)}</div>
-            : !total ? <div className="empty"><span>Nog leeg. Bewaar een opkomst met "In bank".</span></div>
+            : !total ? <div className="empty"><span>{can('bank') ? 'Nog leeg. Bewaar een opkomst met "In bank".' : 'Nog leeg. In de bank zetten kan met het recht Banken.'}</span></div>
               : !drafts.length && <div className="empty"><span>Niets gevonden.</span></div>}
           {drafts.length > 0 && <section className="stack"><h2>Concepten</h2>
             <div className="picklist">{drafts.map(o => <div key={o.id} className="pick"><div className="info"><b>{o.title || 'Naamloze opkomst'}</b><span className="hint">{isKamp(o) ? 'Weekendkamp · ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(allBlocks(o).length, 'onderdeel', 'onderdelen')}</span></div>
@@ -158,7 +159,8 @@ function TplEditor({ t, own, groupOn, onClose, onDelete, onCopied }: { t: Opk; o
   const copy = (name: string) => { const c = copyOpk({ ...t, ...d }); c.title = name; c.srcId = null; c.fromShared = null; saveOpk(c); setDirty(false); onCopied(c.id); toast(`Kopie "${name}" opgeslagen`); };
   const src = t.fromShared ? (shared || []).find(x => x.id === t.fromShared) : undefined;
   return <div className="pad stack">
-    <div className="row between" style={{ alignItems: 'flex-start' }}><span className="eyebrow">Opkomst uit de bank</span><button className="closex" onClick={onClose} aria-label="Sluiten"><X size={18} /></button></div>
+    <div className="row between" style={{ alignItems: 'flex-start' }}><div className="row"><span className="eyebrow">Opkomst uit de bank</span>{ro && <span className="pill neutral">Alleen lezen</span>}</div><button className="closex" onClick={onClose} aria-label="Sluiten"><X size={18} /></button></div>
+    {ro && <p className="hint">Aanpassen kan met het recht Banken.</p>}
     <Field label="Opkomst titel" htmlFor="tf-title"><input id="tf-title" value={d.title} readOnly={ro} onChange={e => upd({ title: e.target.value })} /></Field>
     <Field label="Korte beschrijving" htmlFor="tf-short"><textarea id="tf-short" rows={2} readOnly={ro} value={d.short} onChange={e => upd({ short: e.target.value })} placeholder="Waar gaat deze opkomst over?" /></Field>
     {groupOn && <label className="toggle"><input id="tf-share" type="checkbox" checked={d.shared} disabled={ro} onChange={e => upd({ shared: e.target.checked })} />
