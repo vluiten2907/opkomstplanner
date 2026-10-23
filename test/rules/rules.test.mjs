@@ -88,6 +88,10 @@ await t('groep: uitnodiging intrekken', () => assertSucceeds(deleteDoc(doc(ga, '
 await t('groep: extra teamleider aanstellen', () => assertSucceeds(updateDoc(doc(ga, 'speltakken/s1'), { 'members.ld.role': 'teamleider', tlIds: ['tl', 'ld'] })));
 await t('groep: speltak niet naar andere groep', () => assertFails(updateDoc(doc(ga, 'speltakken/s1'), { gid: 'g2' })));
 await t('groep: laatste beheerder blijft', () => assertFails(updateDoc(doc(ga, 'groepen/g1'), { adminIds: [], 'admins.ga': deleteField() })));
+await t('groep: groep hernoemen, groepsnaam van de speltak mee', async () => {
+  const b = writeBatch(ga); b.update(doc(ga, 'groepen/g1'), { name: 'G1 nieuw' }); b.update(doc(ga, 'speltakken/s1'), { groupName: 'G1 nieuw' });
+  await assertSucceeds(b.commit());
+});
 await t('groep: iemand beheerder maken', () => assertSucceeds(updateDoc(doc(ga, 'groepen/g1'), { adminIds: arrayUnion('tl'), 'admins.tl': { name: 'TL', email: 'tl@t.nl', since: 1 } })));
 
 await seed();
@@ -190,6 +194,9 @@ await t('alleen banken: activiteit bewaren', () => assertSucceeds(setDoc(doc(ld,
 await asPerms({ bank: true, plan: true });
 await t('banken + jaarplanning: kopie uit de bank inplannen', () => assertSucceeds(setDoc(opk('oK'), { title: 'Kopie', state: 'planned' })));
 await t('banken + jaarplanning: ingeplande opkomst ontkoppelen', () => assertSucceeds(setDoc(opk('oP'), { title: 'oP', state: 'draft' })));
+await t('banken + jaarplanning: nieuwe opkomst in de bank', () => assertSucceeds(setDoc(opk('oN5'), { title: 'Nieuw', state: 'bank' })));
+await t('banken + jaarplanning: nieuw concept aanmaken niet (vraagt Opkomsten)', () => assertFails(setDoc(opk('oN6'), { title: 'Leeg', state: 'draft' })));
+await t('banken + jaarplanning: nieuwe opkomst zonder status niet', () => assertFails(setDoc(opk('oN7'), { title: 'Leeg' })));
 await asPerms({ build: true });
 await t('alleen opkomsten: ingeplande opkomst wijzigen', () => assertSucceeds(setDoc(opk('oK'), { title: 'Kopie 2', state: 'planned' })));
 await t('alleen opkomsten: concept verwijderen', () => assertSucceeds(deleteDoc(opk('oD2'))));

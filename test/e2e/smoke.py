@@ -157,7 +157,17 @@ with sync_playwright() as p:
     # hele groep verwijderen (Beheer totaal)
     pg.click('text=Nieuwe Scouting-groep'); w(); pg.fill('#ng-name', 'Weggroep'); pg.click('text=Groep aanmaken'); w(800)
     wg = pg.locator('.groupcard:has-text("Weggroep")')
-    wg.locator('input[placeholder^="Naam nieuwe speltak"]').fill('Bevers'); wg.locator('text=Speltak aanmaken').click(); w(800)
+    # dubbelklik op een trage verbinding: het veld is meteen leeg, de knop wacht, en er komt één speltak
+    pg.evaluate("localStorage.setItem('fake.holdWrite', '900')")
+    wg.locator('input[placeholder^="Naam nieuwe speltak"]').fill('Bevers'); wg.locator('button:has-text("Speltak aanmaken")').dblclick(); w(150)
+    check(wg.locator('input[placeholder^="Naam nieuwe speltak"]').input_value() == '' and wg.locator('button:has-text("Aanmaken…")').is_disabled(),
+          'speltak aanmaken: veld meteen leeg, knop wacht tot het klaar is')
+    w(1300); pg.evaluate("localStorage.removeItem('fake.holdWrite')")
+    check(wg.locator('.spcard:has-text("Bevers")').count() == 1, f'speltak aanmaken: dubbelklik maakt één speltak ({wg.locator(".spcard").count()})')
+    wg.locator('input[placeholder^="Naam nieuwe speltak"]').fill('bevers'); wg.locator('button:has-text("Speltak aanmaken")').click(); w(500)
+    check(wg.locator('.spcard').count() == 1 and 'Er is al een speltak Bevers in Weggroep' in pg.locator('.toast').inner_text()
+          and wg.locator('input[placeholder^="Naam nieuwe speltak"]').input_value() == 'bevers', 'speltak aanmaken: dezelfde naam in de groep niet nog eens')
+    wg.locator('input[placeholder^="Naam nieuwe speltak"]').fill('')
     wg.locator('button:has-text("Groep verwijderen")').click(); w(400)
     gbtn = wg.locator('text=Groep definitief verwijderen')
     check(gbtn.is_disabled() and wg.locator('.dangerzone:has-text("1 speltak")').count() == 1, 'groep verwijderen vraagt de naam en toont wat er weggaat')
@@ -224,6 +234,9 @@ with sync_playwright() as p:
     pg.fill('.invite input[type=email]', 'anna@test.nl'); pg.click('text=Uitnodigingslink maken'); w(600)
     link = pg.locator('.mono-code').inner_text()
     check('/uitnodiging/' in link, 'uitnodigingslink gemaakt')
+    bn_txt = pg.locator('.invite .banknote').inner_text()
+    check(re.search(r'geldig t/m \d\d-\d\d-\d{4}', bn_txt) is not None and 'dagen geldig' not in bn_txt and pg.locator('.invite .banknote button:has-text("Mail versturen")').count() == 1,
+          'eigen uitnodiging: geldig t/m een datum, met Mail versturen')
     check(pg.locator('.invrow:has-text("anna@test.nl")').count() == 1, 'teamleider ziet openstaande uitnodiging')
     # uitnodiging mailen: zonder mailserver valt de knop terug op de eigen mail; met server meldt hij "Gemaild"
     seen = {}
@@ -801,10 +814,24 @@ with sync_playwright() as p:
     # --- groepsbank: tweede speltak in dezelfde groep kopieert een gedeelde opkomst
     def sid_of(name):
         return pg.evaluate("n => { const s = JSON.parse(localStorage.getItem('fake.firestore')); return Object.keys(s).find(k => k.split('/').length === 2 && k.startsWith('speltakken/') && s[k].name === n).split('/')[1]; }", name)
+    # speltak zonder teamleider: in Team nodigt de beheerder eerst de teamleider uit (geen keuze Leiding, geen rechten), zoals in Beheer
+    pg.goto(f"{BASE}/s/{sid_of('Welpen')}/instellingen"); w(1000)
+    tinv = pg.locator('.teamcard .invite')
+    check(tinv.locator('.chip').count() == 0 and tinv.locator('.hint:has-text("Er is nog geen teamleider: wie je nu uitnodigt, wordt teamleider.")').count() == 1
+          and tinv.locator('.perm-grid').count() == 0 and tinv.locator('input[placeholder="e-mailadres teamleider"]').count() == 1, 'Team zonder teamleider: beheerder nodigt de teamleider uit')
+    tinv.locator('input[type=email]').fill('wim@test.nl'); tinv.locator('button:has-text("Uitnodigingslink maken")').click(); w(800)
+    team_wim = tinv.locator('.mono-code').inner_text()
+    check('Teamleider' in tinv.locator('.invrow:has-text("wim@test.nl")').inner_text() and 'als Teamleider' in tinv.locator('.banknote').inner_text(),
+          'Team zonder teamleider: de uitnodiging is als teamleider')
+    tinv.scroll_into_view_if_needed(); shot('09b-team-zonder-teamleider', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); tinv.scroll_into_view_if_needed(); shot('09c-team-zonder-teamleider-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'Team zonder teamleider mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     pg.goto(BASE + '/beheer'); w(900); open_group()
     open_sp('Welpen')
     pg.fill('input[placeholder="e-mailadres teamleider"]', 'wim@test.nl'); pg.click('text=Teamleider uitnodigen'); w(800)
     wim_link = invite_link()
+    check(wim_link == team_wim and 'dezelfde link' in pg.locator('.toast').inner_text(), 'teamleider-uitnodiging uit Team en uit Beheer: dezelfde link')
     logout_to(wim_link); register('Wim Welp', 'wim@test.nl')
     # lege banken: geen zoekveld, filters of zijpaneel, alleen uitleg met één knop
     pg.click('nav >> text=Activiteitenbank'); w(700)
@@ -916,6 +943,10 @@ with sync_playwright() as p:
         if 'open' not in (loc.get_attribute('class') or ''): loc.locator(head).first.click(); w(300)
     login('vluiten2907@gmail.com', 'demo123')
     rs = pg.locator('section:has(h2:text-is("Beheer (totaal)"))')
+    n_open = pg.locator('.invrow').count()
+    rs.locator('input[type=email]').fill('Vluiten2907@gmail.com '); rs.locator('button:has-text("Uitnodigingslink maken")').click(); w(500)
+    check('Deze persoon is al Beheer (totaal).' in pg.locator('.toast').inner_text() and rs.locator('.mono-code').count() == 0 and pg.locator('.invrow').count() == n_open,
+          'Beheer (totaal) nodigt zichzelf niet uit (geen open uitnodiging)')
     rs.locator('input[type=email]').fill('mede@test.nl'); rs.locator('button:has-text("Uitnodigingslink maken")').click(); w(700)
     mede_link = rs.locator('.mono-code').inner_text()
     pg.click('text=Nieuwe Scouting-groep'); w(); pg.fill('#ng-name', 'Zeegroep'); pg.click('text=Groep aanmaken'); w(800)
@@ -930,6 +961,18 @@ with sync_playwright() as p:
     check('e-mailadres bevestigen' in pg.locator('.toast').inner_text(), 'iemand toevoegen zonder (bevestigd) account: uitleg noemt e-mailadres bevestigen')
     sc.locator('input[placeholder="e-mailadres nieuw lid"]').fill('greet2@test.nl'); sc.locator('button:text-is("Uitnodigen")').click(); w(800)
     greet2_scouts = sc.locator('.mono-code').inner_text()
+    # hetzelfde adres dat Greet (beheerder van de groep) al uitnodigde: dezelfde link, maar mailen via de server kan alleen Greet
+    sc.locator('input[placeholder="e-mailadres nieuw lid"]').fill('lid@test.nl'); sc.locator('button:text-is("Uitnodigen")').click(); w(800)
+    bn = sc.locator('.banknote').last
+    href = bn.locator('a:has-text("Eigen mail")').get_attribute('href') or ''
+    check('dezelfde link' in pg.locator('.toast').inner_text() and bn.locator('button:has-text("Mail versturen")').count() == 0
+          and 'Gemaakt door Greet Beheer' in bn.inner_text() and re.search(r'geldig t/m \d\d-\d\d-\d{4}', bn.inner_text()) is not None
+          and 'Greet%20Beheer%20nodigt%20je%20uit' in href and 'geldig%20t%2Fm' in href,
+          'uitnodiging van iemand anders hergebruikt: geen Mail versturen, wel wie hem maakte en tot wanneer hij geldig is')
+    bn.scroll_into_view_if_needed(); shot('25-uitnodiging-van-ander', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); bn.scroll_into_view_if_needed(); shot('25b-uitnodiging-van-ander-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'uitnodiging van iemand anders mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     check('/uitnodiging/' in mede_link and '/uitnodiging/' in greet2_link and '/uitnodiging/' in greet2_scouts, 'uitnodigingen voor Beheer (totaal), Zeegroep en Scouts gemaakt')
     # Beheer (totaal): na accepteren meteen beheerder (de eerdere leespoging werd geweigerd)
     logout_to(mede_link); register('Mede Beheer', 'mede@test.nl')
@@ -938,6 +981,19 @@ with sync_playwright() as p:
     # dezelfde naam in een andere groep mag
     logout_to(greet2_link); register('Greet Beheer', 'greet2@test.nl')
     check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'naam uit de ene groep is vrij in een andere groep (Zeegroep)')
+    # bestaand account op een uitnodiging: registreren gaat over naar inloggen (wachtwoord blijft staan), Wachtwoord vergeten mailt meteen
+    logout_to(greet2_scouts)
+    pg.fill('#i-first', 'Greet'); pg.fill('#i-last', 'Twee'); pg.fill('#i-name', 'Greet Nieuw'); pg.fill('#i-pw', 'geheim123'); pg.click('.btn.primary'); w(800)
+    check(pg.locator('button.btn.primary:has-text("Inloggen en toetreden")').count() == 1 and pg.locator('#i-err:has-text("Je hebt al een account met dit adres. Log in met je wachtwoord.")').count() == 1
+          and pg.input_value('#i-pw') == 'geheim123' and pg.get_attribute('#i-pw', 'aria-invalid') == 'true' and pg.locator('#i-name').count() == 0,
+          'uitnodiging met een bestaand account: registreren gaat over naar inloggen, wachtwoord blijft staan')
+    pg.click('.auth-card button:has-text("Wachtwoord vergeten")'); w(500)
+    check('/uitnodiging/' in pg.url and pg.locator('.auth-card p[role=status]:has-text("We hebben een mail gestuurd naar greet2@test.nl")').count() == 1 and pg.locator('#i-err').count() == 0,
+          'uitnodiging: Wachtwoord vergeten mailt meteen naar het adres van de uitnodiging, je blijft op de uitnodiging')
+    shot('22c-uitnodiging-bestaand-account', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('22d-uitnodiging-bestaand-account-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'uitnodiging bestaand account mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     # oud account: nooit een bevestigingsmail gehad (van vóór de bevestiging)
     pg.evaluate("""() => { const k = 'fake.auth.users', u = JSON.parse(localStorage.getItem(k)); const x = Object.values(u).find(v => v.email === 'greet2@test.nl');
       x.verified = false; delete x.mailed; localStorage.setItem(k, JSON.stringify(u)); localStorage.setItem('fake.noverify', '1'); sessionStorage.clear(); }""")
@@ -965,6 +1021,23 @@ with sync_playwright() as p:
     check(soon(lambda: re.search(r'/s/[^/]+/dashboard', pg.url) is not None), 'met een eigen naam voor de groep toegetreden')
     pg.click('nav >> text=Instellingen'); w(600)
     check(pg.locator('text=Greet Zee (jij)').count() == 1, 'gekozen naam staat in het team')
+    # nog een uitnodiging in dezelfde groep (Welpen): je naam in de groep (Greet Zee) wordt hergebruikt, geen "naam al in gebruik"
+    welp = sid_of('Welpen')
+    pg.evaluate("""sid => { const sp = JSON.parse(localStorage.getItem('fake.firestore'))['speltakken/' + sid];
+      window.__fakeRemote('invites/greetwelp', { kind: 'leiding', role: 'leiding', email: 'greet2@test.nl', gid: sp.gid, groupName: sp.groupName, sid, speltakName: sp.name,
+        perms: { plan: true, build: true, bank: true, settings: false }, invitedBy: 'uroot', invitedByName: 'Beheer (demo)', createdAt: Date.now(), expiresAt: Date.now() + 864e5, usedBy: null, transfer: false }); }""", welp)
+    pg.goto(BASE + '/uitnodiging/greetwelp'); w(900)
+    pg.click('button:text-is("Toetreden")')
+    welp_name = lambda: pg.evaluate("sid => { const s = JSON.parse(localStorage.getItem('fake.firestore')), u = JSON.parse(localStorage.getItem('fake.auth.current')).uid, m = s['speltakken/' + sid].members[u]; return m ? m.name : null; }", welp)
+    check(soon(lambda: f'/s/{welp}/' in pg.url) and pg.locator('#i-pick').count() == 0 and welp_name() == 'Greet Zee',
+          f'tweede uitnodiging in dezelfde groep: je bestaande naam in de groep wordt hergebruikt ({welp_name()})')
+    # en weer uit de Welpen (het team van de Welpen blijft zoals het was); de naam blijft, want Greet zit nog bij de Scouts
+    pg.goto(f'{BASE}/s/{welp}/instellingen'); w(1000)
+    lv = pg.locator('.dangerzone:has-text("Speltak verlaten")')
+    lv.locator('button:has-text("Speltak verlaten")').click(); w(150); lv.locator('button:has-text("Klik nogmaals")').click()
+    check(soon(lambda: '/speltakken' in pg.url) and welp_name() is None
+          and pg.evaluate("Object.entries(JSON.parse(localStorage.getItem('fake.firestore'))).some(([k, v]) => /^groepen\\/[^/]+\\/namen\\/greet zee$/.test(k))"),
+          'Welpen weer verlaten: naam Greet Zee blijft (nog lid van de Scouts)')
     # Beheer: iemand toevoegen wiens naam in de groep al bezet is
     login('vluiten2907@gmail.com', 'demo123')
     zg = pg.locator('.groupcard:has-text("Zeegroep")'); opened(zg, '.gc-head')
@@ -982,6 +1055,20 @@ with sync_playwright() as p:
     check(zs.locator('.subrow:has-text("Greet Test")').count() == 1 and zs.locator('input[id^="pp-name-"]').count() == 0, 'beheer: toegevoegd met de gekozen naam')
     check(soon(lambda: pg.evaluate("t => !JSON.parse(localStorage.getItem('fake.firestore'))['invites/' + t]", ga_zee)) and pg.locator('.invrow:has-text("ga@test.nl")').count() == 0,
           'direct toegevoegd: openstaande uitnodiging voor die persoon en speltak ingetrokken')
+    # direct toevoegen op e-mailadres: de naam die iemand in de groep al heeft (Greet Zee), niet de accountnaam (Greet Beheer, al van een ander)
+    tg = pg.locator('.groupcard:has-text("Testgroep")'); opened(tg, '.gc-head')
+    ws = tg.locator('.spcard:has-text("Welpen")'); opened(ws, '.sp-head')
+    ws.locator('input[aria-label="E-mailadres van een account"]').fill('greet2@test.nl'); ws.locator('button:text-is("Toevoegen")').click(); w(800)
+    check(ws.locator('.leiding .subrow:has-text("Greet Zee")').count() == 1 and ws.locator('input[id^="pp-name-"]').count() == 0,
+          'beheer: direct toevoegen op e-mailadres gebruikt de naam die iemand in de groep al heeft')
+    gz = ws.locator('.leiding .subrow:has-text("Greet Zee")')
+    gz.locator('text=Verwijderen').click(); w(150); gz.locator('text=Zeker?').click(); w(800)
+    check(ws.locator('.leiding .subrow:has-text("Greet Zee")').count() == 0, 'beheer: weer uit de Welpen gehaald')
+    # al Beheer (totaal): geen uitnodiging
+    rs = pg.locator('section:has(h2:text-is("Beheer (totaal)"))')
+    rs.locator('input[type=email]').fill('mede@test.nl'); rs.locator('button:has-text("Uitnodigingslink maken")').click(); w(500)
+    check('Deze persoon is al Beheer (totaal).' in pg.locator('.toast').inner_text() and rs.locator('.mono-code').count() == 0, 'Beheer (totaal): wie het al is, krijgt geen uitnodiging')
+    rs.locator('input[type=email]').fill('')
     # namen: wie nergens meer in de groep zit (bijv. via Team uit het team gehaald), krijgt zijn naam terug vrij; leden en beheerders niet
     gid_of = lambda n: pg.evaluate("n => Object.entries(JSON.parse(localStorage.getItem('fake.firestore'))).find(([k, v]) => k.split('/').length === 2 && k.startsWith('groepen/') && v.name === n)[0].split('/')[1]", n)
     has_name = lambda g, k: pg.evaluate("([g, k]) => !!JSON.parse(localStorage.getItem('fake.firestore'))['groepen/' + g + '/namen/' + k]", [g, k])
@@ -1194,9 +1281,19 @@ with sync_playwright() as p:
     kopie = lambda: oefen_get("Object.values(s).filter(o => o && o.state === 'planned' && o.srcId === 'opk-bank-wereld').map(o => [o.title, o.blocks.every(b => !b.names.length)])")
     check(pg.locator('.modal').count() == 0 and 'zonder namen' in pg.locator('.toast').inner_text() and kopie() == [['Rond de wereld', True]],
           f'Banken + Jaarplanning zonder Opkomsten: Hier inplannen plant een kopie zonder namen in, zonder venster Opkomst overnemen ({kopie()})')
+    check(pg.locator('.toast button:has-text("Bekijken")').count() == 1 and 'recht Opkomsten' in pg.locator('.toast').inner_text(),
+          'Banken + Jaarplanning zonder Opkomsten: melding met Bekijken en wie de leiding indeelt')
     shot('43-inplannen-zonder-opkomsten', False)
     pg.goto(BASE + '/s/oefen/jaarplanning'); w(1000); pg.click('.presets >> text=Komende 3 maanden'); w(300)
     pg.locator('.prow .btn:has-text("Koppelen")').first.click(); w(400)
+    lm = pg.locator('.modal')
+    check(lm.locator('button:has-text("Nieuwe opkomst")').count() == 0 and lm.locator('button:has-text("Weekendkamp")').count() == 0
+          and lm.locator('.hint:has-text("Een nieuwe opkomst maken kan met het recht Opkomsten.")').count() == 1 and lm.locator('h3:has-text("Concepten")').count() == 1,
+          'Banken + Jaarplanning zonder Opkomsten: Koppelen zonder Nieuwe opkomst of Weekendkamp, wel bank en concepten')
+    shot('43b-koppelen-zonder-opkomsten', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('43c-koppelen-zonder-opkomsten-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'Koppelen zonder Opkomsten mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     pg.locator('.modal .pick:has-text("Knopen en pionieren")').first.locator('button:has-text("Kiezen")').click(); w(900)
     check(pg.locator('.modal').count() == 0 and 'zonder namen' in pg.locator('.toast').inner_text()
           and oefen_get("Object.values(s).some(o => o && o.state === 'planned' && o.srcId === 'opk-bank-knopen' && o.title === 'Knopen en pionieren')"),

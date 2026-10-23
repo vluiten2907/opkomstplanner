@@ -315,7 +315,8 @@ service cloud.firestore {
         allow read: if isMember() || isAdmin();
         // Opkomsten: alles. Banken + Jaarplanning: ook koppelen en inplannen (dat schrijft de opkomst mee).
         // Alleen Banken: alleen de opkomstenbank (ook een concept in de bank zetten), niets wat ingepland is.
-        allow create: if can('build') || (can('bank') && can('plan')) || (can('bank') && newState() == 'bank');
+        // Nieuw aanmaken zonder Opkomsten: alleen in de bank, of een kopie uit de bank die meteen wordt ingepland (geen concept).
+        allow create: if can('build') || (can('bank') && (newState() == 'bank' || (can('plan') && newState() == 'planned')));
         allow update: if can('build') || (can('bank') && can('plan'))
           || (can('bank') && newState() == 'bank' && oldState() != 'planned');
         allow delete: if can('build') || (can('bank') && oldState() == 'bank') || isAdmin();

@@ -187,14 +187,18 @@ export function LinkModal({ keyId, onClose, onTakeover }: { keyId: string; onClo
     }
     o.title = en.topic; saveOpk(o); linkOpk(o, en, false, true); onClose(); nav(`/s/${sid}/bouwer/${o.id}`);
   };
+  // een nieuwe (lege) opkomst maken en die in de bouwer uitwerken hoort bij Opkomsten; uit de bank of een concept koppelen kan ook zonder
+  const build = can('build');
+  const openOpk = (id: string) => () => nav(`/s/${sid}/bouwer/${id}`);
   return <Modal title="Opkomst koppelen" sub={fmtRange(d, e && e.endDate, true) + (topic.trim() ? ' · ' + topic.trim() : '')} onClose={onClose}>
-    <div className="row"><button className={'btn' + (isKampRow ? '' : ' primary')} onClick={() => newOne(false)}><Plus size={16} />Nieuwe opkomst</button><button className={'btn' + (isKampRow ? ' primary' : '')} onClick={() => newOne(true)}><Tent size={16} />Weekendkamp</button></div>
+    {build ? <div className="row"><button className={'btn' + (isKampRow ? '' : ' primary')} onClick={() => newOne(false)}><Plus size={16} />Nieuwe opkomst</button><button className={'btn' + (isKampRow ? ' primary' : '')} onClick={() => newOne(true)}><Tent size={16} />Weekendkamp</button></div>
+      : <p className="hint">Kies een opkomst uit de bank of een concept. Een nieuwe opkomst maken kan met het recht Opkomsten.</p>}
     {allBank.length + allDrafts.length > 0 && <input className="inp" type="search" value={q} onChange={ev => setQ(ev.target.value)} placeholder="Zoek op titel, beschrijving of onderdeel" aria-label="Zoek opkomst" />}
     <h3 className="gap-lg">Uit de opkomstenbank</h3>
-    {bank.length ? <div className="picklist">{bank.map(o => <PickOpk key={o.id} o={o} label="Kiezen" kicker={fitTag(o)} onPick={() => { const en = { ...entryFor(keyId) }; const linked = linkOpk(o, en, true, false); onClose(); afterBankCopy(linked, en, onTakeover, offerPlanTimes, can('build')); }} />)}</div>
+    {bank.length ? <div className="picklist">{bank.map(o => <PickOpk key={o.id} o={o} label="Kiezen" kicker={fitTag(o)} onPick={() => { const en = { ...entryFor(keyId) }; const linked = linkOpk(o, en, true, false); onClose(); afterBankCopy(linked, en, onTakeover, offerPlanTimes, build, openOpk(linked.id)); }} />)}</div>
       : <div className="empty">{allBank.length ? 'Niets gevonden in de opkomstenbank.' : 'De opkomstenbank is nog leeg.'}</div>}
     {(drafts.length > 0 || (ql && allDrafts.length > 0)) && <><h3 className="gap-lg">Concepten</h3>{drafts.length ? <div className="picklist">{drafts.map(o => <PickOpk key={o.id} o={o} label="Kiezen" kicker={fitTag(o)} onPick={() => { const en = { ...entryFor(keyId) }; linkOpk(o, en, false, true); onClose(); const note = kampMismatchNote(o, en.date, en.endDate);
-        if (!offerPlanTimes(o, en, 'Gekoppeld.')) toast(note ? 'Gekoppeld. ' + note : 'Gekoppeld', { label: 'Opkomst openen', fn: () => nav(`/s/${sid}/bouwer/${o.id}`) }, note ? 9000 : undefined); }} />)}</div>
+        if (!offerPlanTimes(o, en, 'Gekoppeld.')) toast(note ? 'Gekoppeld. ' + note : 'Gekoppeld', { label: 'Opkomst openen', fn: openOpk(o.id) }, note ? 9000 : undefined); }} />)}</div>
       : <p className="hint">Geen concepten gevonden.</p>}</>}
   </Modal>;
 }
@@ -203,10 +207,10 @@ export function LinkModal({ keyId, onClose, onTakeover }: { keyId: string; onClo
  * Kopie uit de bank net ingepland (zonder namen): met het recht Opkomsten meteen "Opkomst overnemen" (leiding indelen),
  * anders alleen een melding. Overnemen schrijft de opkomst, en dat hoort bij Opkomsten (zoals in de bouwer en op het dashboard).
  */
-function afterBankCopy(linked: Opk, en: Plan, onTakeover: (oid: string, fresh: boolean) => void, offerPlanTimes: (o: Opk, e: Plan, prefix?: string) => boolean, build: boolean) {
+function afterBankCopy(linked: Opk, en: Plan, onTakeover: (oid: string, fresh: boolean) => void, offerPlanTimes: (o: Opk, e: Plan, prefix?: string) => boolean, build: boolean, open: () => void) {
   if (build) { onTakeover(linked.id, true); offerPlanTimes(linked, en); return; }
   const note = kampMismatchNote(linked, en.date, en.endDate);
-  toast(`Ingepland op ${fmtRange(en.date, en.endDate, true)} (zonder namen).${note ? ' ' + note : ''}`, undefined, note ? 8000 : undefined);
+  toast(`Ingepland op ${fmtRange(en.date, en.endDate, true)} (zonder namen). Leiding indelen doet iemand met het recht Opkomsten.${note ? ' ' + note : ''}`, { label: 'Bekijken', fn: open }, note ? 10000 : 7000);
 }
 
 /* ---------- Opkomst inplannen op een datum ---------- */
@@ -233,7 +237,7 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
     const en = { ...e };
     const linked = linkOpk(o, en, o.state !== 'draft', keep);
     onClose();
-    if (fromBank) { afterBankCopy(linked, en, onTakeover, offerPlanTimes, can('build')); return; }
+    if (fromBank) { afterBankCopy(linked, en, onTakeover, offerPlanTimes, can('build'), () => nav(`/s/${sid}/bouwer/${linked.id}`)); return; }
     const msg = 'Ingepland op ' + fmtRange(en.date, en.endDate, true), note = kampMismatchNote(linked, en.date, en.endDate);
     if (offerPlanTimes(linked, en, msg + '.')) return;
     if (linked !== o) toast(msg + '. Er is een kopie gemaakt.' + (note ? ' ' + note : ''), { label: 'Kopie openen', fn: () => nav(`/s/${sid}/bouwer/${linked.id}`) }, note ? 9000 : undefined);
