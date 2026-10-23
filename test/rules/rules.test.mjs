@@ -107,6 +107,13 @@ await t('teamleider: uitnodigingen speltak lijsten', () => assertSucceeds(getDoc
 await t('teamleider: geen groep-uitnodiging', () => assertFails(setDoc(doc(tl, 'invites/n10'), inv({ kind: 'groep', role: null, sid: null }))));
 await t('teamleider: rechten leiding aanpassen', () => assertSucceeds(updateDoc(doc(tl, 'speltakken/s1'), { 'members.ld.perms': ALL })));
 await t('teamleider: losse instelling opslaan (punt-pad)', () => assertSucceeds(updateDoc(doc(tl, 'speltakken/s1'), { 'settings.accent': 'blauw', name: 'Scouts nieuw' })));
+await t('teamleider: lege speltaknaam niet', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { name: '' })));
+await t('teamleider: speltaknaam van alleen spaties niet', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { name: '   ' })));
+await t('teamleider: speltaknaam langer dan 60 tekens niet', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { name: 'x'.repeat(61) })));
+await t('teamleider: speltaknaam geen tekst niet', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { name: 5 })));
+await env.withSecurityRulesDisabled(c => updateDoc(doc(c.firestore(), 'speltakken/s1'), { name: '' }));
+await t('teamleider: instelling opslaan bij een oude speltak met een lege naam mag nog', () => assertSucceeds(updateDoc(doc(tl, 'speltakken/s1'), { 'settings.accent': 'groen' })));
+await t('teamleider: lege naam weer invullen', () => assertSucceeds(updateDoc(doc(tl, 'speltakken/s1'), { name: 'Scouts nieuw' })));
 // onder een groep hoort de groepsnaam bij de groep (kop, pdf, uitnodigingen): die past de beheerder aan
 await t('teamleider: groepsnaam van speltak onder een groep: nee', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { 'settings.accent': 'blauw', groupName: 'Nep groep' })));
 await t('teamleider: extra teamleider aanstellen niet', () => assertFails(updateDoc(doc(tl, 'speltakken/s1'), { 'members.ld.role': 'teamleider', tlIds: ['tl', 'ld'] })));

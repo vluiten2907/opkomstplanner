@@ -34,7 +34,7 @@ export default function ModalHost() {
     case 'extra': body = <ExtraModal onClose={close} onCreated={e => nav(`/s/${sid}/jaarplanning?focus=${e.id}`)} />; break;
     case 'people': body = <PeopleModal keyId={modal.keyId} field={modal.field} onClose={close} />; break;
     case 'letter': body = <LetterModal keyId={modal.keyId} onClose={close} />; break;
-    case 'link': body = <LinkModal keyId={modal.keyId} onClose={close} onTakeover={takeover} />; break;
+    case 'link': body = <LinkModal keyId={modal.keyId} q0={modal.q} back={modal.back} onClose={close} onTakeover={takeover} />; break;
     case 'toplan': body = <ToPlanModal oid={modal.oid} onClose={close} onTakeover={takeover} />; break;
     case 'name': body = <NameModal spec={modal} onClose={close} />; break;
     case 'takeover': body = <Takeover oid={modal.oid} fresh={modal.fresh} onClose={close} />; break;

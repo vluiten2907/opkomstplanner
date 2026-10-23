@@ -8,7 +8,7 @@ import { PickOpk, copySharedToBank } from './shared';
 import { addDays, clone, fmtLong, fmtNL, fmtRange, fmtShort, parseNL, parseRange, tidyNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, plural, todayISO } from '../lib/time';
 import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, defaultTimes, entryTimes, ownTimes, firstFree, fitsTopic, isBlankPlan, isKamp, kampMismatch, kampMismatchNote, kampStart, lanesLayout, minNeed, newEntry, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from './timeline';
-import type { NameSpec } from '../store/modal';
+import { openModal, type NameSpec } from '../store/modal';
 import type { Gedeeld } from '../store/groepsbank';
 
 const NO_UNLINK = 'Hier hangt een opkomst aan. Ontkoppelen kan alleen met het recht Opkomsten of Banken.';
@@ -197,26 +197,30 @@ export function LetterModal({ keyId, onClose }: { keyId: string; onClose: () => 
 }
 
 /* ---------- Opkomst koppelen aan een datum ---------- */
-export function LinkModal({ keyId, onClose, onTakeover }: { keyId: string; onClose: () => void; onTakeover: (oid: string, fresh: boolean) => void }) {
+export function LinkModal({ keyId, q0, back, onClose, onTakeover }: { keyId: string; q0?: string; back?: string; onClose: () => void; onTakeover: (oid: string, fresh: boolean) => void }) {
   const S = useSpeltak();
   const { opks, peekEntry, entryFor, newForEntry, sid, sp, can, canLink, shared, latest } = S;
   const nav = useNavigate();
   const e = peekEntry(keyId); const d = e ? e.date : keyId.slice(2);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(q0 || '');
+  // terug uit Andere naam kiezen: de focus op Kiezen bij de groepsopkomst waar je vandaan kwam (staat hij er niet meer, dan het zoekveld)
+  useEffect(() => { if (back) focusSoon(`.modal .pick[data-pick="${CSS.escape('g:' + back)}"] button`, '.modal input[type=search]'); }, [back]);
   // zoeken in titel, beschrijving, locatie en onderdelen; wat bij het onderwerp van de datum past staat bovenaan in een eigen groep
   const topic = (e && e.topic) || '', ql = q.trim().toLowerCase();
   const fit = (o: Opk) => fitsTopic(o, topic), hit = (o: Opk) => !ql || opkSearchText(o).includes(ql);
-  const top = <T,>(list: T[], f: (x: T) => Opk) => [...list.filter(x => fit(f(x))), ...list.filter(x => !fit(f(x)))];
   const allBank = opks.filter(o => o.state === 'bank'), allDrafts = opks.filter(o => o.state === 'draft');
   const bankHits = allBank.filter(hit).sort(byTitle), draftHits = allDrafts.filter(hit).sort((a, b) => b.updatedAt - a.updatedAt);
   const bank = bankHits.filter(o => !fit(o)), drafts = draftHits.filter(o => !fit(o));
-  // past bij het onderwerp: eerst de concepten (vaak al voor deze datum gemaakt), dan uit de bank; elk zegt waar het vandaan komt
-  const fits = [...draftHits.filter(fit).map(o => ({ o, draft: true })), ...bankHits.filter(fit).map(o => ({ o, draft: false }))];
   // groepsbank: wat andere speltakken delen (kopiëren naar de eigen bank hoort bij Banken). Al gekopieerd? Dan staat hij hierboven bij de eigen bank.
   const copied = new Set(allBank.map(o => o.fromShared).filter(Boolean));
   const allGroup = sp?.gid && canLink && can('bank') ? (shared || []).filter(g => g.sid !== sid && !copied.has(g.id)) : [];
-  const group = top(allGroup.filter(g => !ql || (opkSearchText(g.opk) + ' ' + g.speltakName.toLowerCase()).includes(ql)).sort((a, b) => byTitle(a.opk, b.opk)), g => g.opk);
-  const fitTag = (o: Opk) => fit(o) ? <span className="pill good">Past bij onderwerp</span> : undefined;
+  const groupHits = allGroup.filter(g => !ql || (opkSearchText(g.opk) + ' ' + g.speltakName.toLowerCase()).includes(ql)).sort((a, b) => byTitle(a.opk, b.opk));
+  const group = groupHits.filter(g => !fit(g.opk));
+  // past bij het onderwerp: eerst de concepten (vaak al voor deze datum gemaakt), dan uit de eigen bank, dan uit de groep; elk zegt waar het vandaan komt
+  type Fit = { o: Opk; from: 'draft' | 'bank' } | { o: Opk; from: 'group'; g: Gedeeld };
+  const fits: Fit[] = [...draftHits.filter(fit).map(o => ({ o, from: 'draft' as const })), ...bankHits.filter(fit).map(o => ({ o, from: 'bank' as const })),
+    ...groupHits.filter(g => fit(g.opk)).map(g => ({ o: g.opk, from: 'group' as const, g }))];
+  const fitsGroup = fits.some(f => f.from === 'group');
   const isKampRow = e && e.type === 'kamp';
   const newOne = (kamp: boolean) => { const o = newForEntry({ ...entryFor(keyId) }, kamp); onClose(); nav(`/s/${sid}/bouwer/${o.id}`); };
   // een nieuwe (lege) opkomst maken en die in de bouwer uitwerken hoort bij Opkomsten; uit de bank of een concept koppelen kan ook zonder
@@ -227,23 +231,38 @@ export function LinkModal({ keyId, onClose, onTakeover }: { keyId: string; onClo
   const pickDraft = (o: Opk) => { onClose(); linkDraft(S, o, keyId, openOpk(o.id)); };
   // uit de groep: eerst een kopie in de eigen bank (met een vrije naam), dan een kopie daarvan inplannen, zonder namen (zoals uit de eigen bank)
   // (het venster voor een andere naam kan ertussen hebben gestaan: L is de nieuwste stand). Ongedaan maken haalt alleen de ingeplande kopie weg.
-  const pickShared = (g: Gedeeld) => copySharedToBank(g, allBank, 'Kopiëren en inplannen', latest, (copy, note, L) => {
-    onClose();
-    linkBankCopy(L, copy, keyId, onTakeover, id => openOpk(id)(), `"${copy.title || 'Opkomst'}" staat nu ook in jullie opkomstenbank.` + (note ? ' ' + note : ''));
-  });
-  const groupBlock = group.length > 0 || (ql && allGroup.length > 0) ? <><h3 className="gap-lg">Uit de groep</h3>
-    {group.length ? <div className="picklist">{group.map(g => <PickOpk key={g.id} o={g.opk} cats={g.catDefs} label="Kiezen" primary={false}
-      kicker={<><span className="pk-from"><Users size={13} aria-hidden="true" />{g.speltakName || 'Speltak'}</span>{fitTag(g.opk)}</>} onPick={() => pickShared(g)} />)}</div>
+  // Alleen de kopie in de bank krijgt zo nodig een andere naam (uniek in de bank); de ingeplande opkomst (en dus het onderwerp van de rij) houdt de eigen titel.
+  // Annuleren in Andere naam kiezen: terug naar dit venster, met dezelfde zoekterm en de focus op deze Kiezen.
+  const pickShared = (g: Gedeeld) => {
+    const t = g.opk.title.trim();
+    copySharedToBank(g, allBank, 'Kopiëren en inplannen', latest, (copy, note, L) => {
+      onClose();
+      linkBankCopy(L, { ...copy, title: t || copy.title }, keyId, onTakeover, id => openOpk(id)(), `"${copy.title || 'Opkomst'}" staat nu ook in jullie opkomstenbank.` + (note ? ' ' + note : ''));
+    }, {
+      label: 'Naam in jullie opkomstenbank', sub: t ? `"${t}" staat al in jullie opkomstenbank. De ingeplande opkomst houdt de naam ${t}.` : undefined,
+      back: () => openModal({ kind: 'link', keyId, q, back: g.id }),
+    });
+  };
+  const fromGroup = (g: Gedeeld) => <span className="pk-from"><Users size={13} aria-hidden="true" />Uit de groep · {g.speltakName || 'Speltak'}</span>;
+  const copyHint = <p className="hint">Kiezen bij een opkomst uit de groep zet ook een kopie in jullie opkomstenbank.</p>;
+  // alles uit de groep staat al bij Past bij: geen eigen kop (en geen "Niets gevonden in de groep")
+  const groupBlock = group.length > 0 || (ql && allGroup.length > 0 && !groupHits.length) ? <><h3 className="gap-lg">Uit de groep</h3>
+    {group.length ? <div className="picklist">{group.map(g => <PickOpk key={g.id} pickId={'g:' + g.id} o={g.opk} cats={g.catDefs} label="Kiezen" primary={false}
+      kicker={<span className="pk-from"><Users size={13} aria-hidden="true" />{g.speltakName || 'Speltak'}</span>} onPick={() => pickShared(g)} />)}</div>
       : <p className="hint">Niets gevonden in de groep.</p>}
-    <p className="hint">Kiezen zet ook een kopie in jullie opkomstenbank.</p></> : null;
+    {/* staat er al bij Past bij */}
+    {!fitsGroup && copyHint}</> : null;
   return <Modal title="Opkomst koppelen" sub={fmtRange(d, e && e.endDate, true) + (topic.trim() ? ' · ' + topic.trim() : '')} onClose={onClose}>
     {/* past er iets bij het onderwerp, dan is dat de hoofdknop (Kiezen bij het eerste); anders Nieuwe opkomst of Weekendkamp */}
     {build ? <div className="row"><button className={'btn' + (!fits.length && !isKampRow ? ' primary' : '')} onClick={() => newOne(false)}><Plus size={16} />Nieuwe opkomst</button><button className={'btn' + (!fits.length && isKampRow ? ' primary' : '')} onClick={() => newOne(true)}><Tent size={16} />Weekendkamp</button></div>
       : <p className="hint">Kies een opkomst uit de bank of een concept. Een nieuwe opkomst maken kan met het recht Opkomsten.</p>}
     {allBank.length + allDrafts.length + allGroup.length > 0 && <input className="inp" type="search" value={q} onChange={ev => setQ(ev.target.value)} placeholder="Zoek op titel, beschrijving of onderdeel" aria-label="Zoek opkomst" />}
     {fits.length > 0 && <><h3 className="gap-lg">Past bij {topic.trim()}</h3>
-      <div className="picklist">{fits.map((f, i) => <PickOpk key={f.o.id} o={f.o} label="Kiezen" primary={i === 0} kicker={<span className="pk-from">{f.draft ? 'Concept' : 'Uit de opkomstenbank'}</span>}
-        onPick={() => f.draft ? pickDraft(f.o) : pickBank(f.o)} />)}</div></>}
+      <div className="picklist">{fits.map((f, i) => f.from === 'group'
+        ? <PickOpk key={'g:' + f.g.id} pickId={'g:' + f.g.id} o={f.o} cats={f.g.catDefs} label="Kiezen" primary={i === 0} kicker={fromGroup(f.g)} onPick={() => pickShared(f.g)} />
+        : <PickOpk key={f.o.id} o={f.o} label="Kiezen" primary={i === 0} kicker={<span className="pk-from">{f.from === 'draft' ? 'Concept' : 'Uit de opkomstenbank'}</span>}
+          onPick={() => f.from === 'draft' ? pickDraft(f.o) : pickBank(f.o)} />)}</div>
+      {fitsGroup && copyHint}</>}
     {/* eigen bank nog leeg, de groep niet: de groep eerst */}
     {!allBank.length && groupBlock}
     {/* alles uit de bank staat al bij Past bij: geen lege kop */}
@@ -508,10 +527,12 @@ export function NameModal({ spec, onClose }: { spec: NameSpec; onClose: () => vo
   const [name, setName] = useState(spec.initial);
   const err = !name.trim() ? 'Geef een titel op.' : spec.taken(name) ? 'Deze naam bestaat al in de bank. Kies een andere naam.' : '';
   const ok = () => { if (err) return; onClose(); spec.ok(name.trim()); };
-  return <Modal title={spec.title} sub={spec.sub} onClose={onClose}>
+  // niet doorgaan (Annuleren, Esc, de X, naast het venster): terug naar het venster ervoor als dat er is (bijv. Koppelen)
+  const cancel = spec.back || onClose;
+  return <Modal title={spec.title} sub={spec.sub} onClose={cancel}>
     <Field label={spec.label} htmlFor="nm-name"><input id="nm-name" value={name} autoFocus aria-invalid={!!err} aria-describedby="nm-err" onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') ok(); }} /></Field>
     {/* altijd aanwezig, alleen de tekst verandert: zo leest een schermlezer de fout voor tijdens het typen */}
     <span className="sb-err" id="nm-err" aria-live="polite">{err}</span>
-    <div className="row"><button className="btn primary" disabled={!!err} onClick={ok}>{spec.okLabel}</button><button className="btn ghost" onClick={onClose}>Annuleren</button></div>
+    <div className="row"><button className="btn primary" disabled={!!err} onClick={ok}>{spec.okLabel}</button><button className="btn ghost" onClick={cancel}>{spec.back ? 'Terug' : 'Annuleren'}</button></div>
   </Modal>;
 }

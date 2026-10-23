@@ -25,9 +25,10 @@ export const droppedNote = (dropped: string[]) => !dropped.length ? '' : (droppe
  * Kopieert met de nieuwste stand (`latest`), want het venster voor een andere naam kan ertussen hebben gestaan.
  * `then` krijgt de kopie, de zin over weggevallen categorieën (droppedNote, of '') en die nieuwste stand.
  */
-export function copySharedToBank(g: Gedeeld, bank: Opk[], okLabel: string, latest: () => Speltak, then: (copy: Opk, note: string, L: Speltak) => void) {
+export function copySharedToBank(g: Gedeeld, bank: Opk[], okLabel: string, latest: () => Speltak, then: (copy: Opk, note: string, L: Speltak) => void,
+  opt: { sub?: string; label?: string; back?: () => void } = {}) {
   withFreeName(g.opk.title, {
-    title: 'Andere naam kiezen', sub: `"${g.opk.title || 'Naamloos'}" staat al in jullie opkomstenbank. Geef de kopie een andere naam.`, label: 'Opkomst titel', okLabel,
+    title: 'Andere naam kiezen', sub: opt.sub ?? `"${g.opk.title || 'Naamloos'}" staat al in jullie opkomstenbank. Geef de kopie een andere naam.`, label: opt.label ?? 'Opkomst titel', okLabel, back: opt.back,
     suggest: freeName(bank, g.opk.title), taken: n => nameTaken(bank, n),
     ok: name => { const L = latest(), { opk, dropped } = L.importShared(g, name); then(opk, droppedNote(dropped), L); },
   });
@@ -92,10 +93,10 @@ export function OpkMeta({ o }: { o: Opk }) {
 }
 
 /** Opkomst in een keuzelijst. `kicker`: regel boven de titel, bijv. de datum en de status van een ingeplande opkomst. `cats`: categorieën van een andere speltak (groepsbank). */
-export function PickOpk({ o, label, onPick, primary = true, extra, kicker, cats }: { o: Opk; label: string; onPick: () => void; primary?: boolean; extra?: ReactNode; kicker?: ReactNode; cats?: Cat[] }) {
+export function PickOpk({ o, label, onPick, primary = true, extra, kicker, cats, pickId }: { o: Opk; label: string; onPick: () => void; primary?: boolean; extra?: ReactNode; kicker?: ReactNode; cats?: Cat[]; pickId?: string }) {
   // naam met de titel erbij: in een lijst van schermlezers zijn de knoppen anders allemaal "Openen"
   const btn = <button className={'btn sm' + (primary ? ' primary' : '')} onClick={onPick} aria-label={`${label}: ${o.title || 'Naamloze opkomst'}`}>{label}</button>;
-  return <div className="pick"><div className="info">{kicker && <span className="pick-kicker">{kicker}</span>}<b>{o.title || 'Naamloze opkomst'}</b><OpkMeta o={o} /><CatTags o={o} cats={cats} /><Strip o={o} cats={cats} /></div>
+  return <div className="pick" data-pick={pickId}><div className="info">{kicker && <span className="pick-kicker">{kicker}</span>}<b>{o.title || 'Naamloze opkomst'}</b><OpkMeta o={o} /><CatTags o={o} cats={cats} /><Strip o={o} cats={cats} /></div>
     {extra ? <div className="row">{btn}{extra}</div> : btn}</div>;
 }
 

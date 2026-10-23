@@ -83,7 +83,7 @@ export default function BeheerPage() {
     <h1 className="display text-5xl md:text-7xl font-black tracking-tighter">Beheer</h1>
     <p className="hint" style={{ marginTop: -8 }}><ShieldCheck size={15} style={{ verticalAlign: -3, marginRight: 4 }} />{R.isRoot ? 'Je bent Beheer (totaal): je ziet alle groepen en speltakken.' : `Je beheert ${R.ownGroups.map(g => g.name).join(', ')}.`}</p>
     {R.isRoot && <RootCard me={me} invites={invites} />}
-    {R.isRoot && <NewGroup me={me} />}
+    {R.isRoot && <NewGroup me={me} groups={R.groups} />}
     {R.isRoot && unlinked.length > 0 && <Unlinked list={unlinked} groups={R.groups} me={me} />}
     {gone && <GoneCard gone={gone} onClose={() => setGone(null)} />}
     {R.groups.map(g => <GroupCard key={g.id} g={g} sps={sps.filter(s => s.gid === g.id)} loaded={loaded(g.id)} invites={invites} me={me} canAll={R.isRoot} allSps={sps} groups={R.groups} onGone={setGone} />)}
@@ -145,12 +145,18 @@ function PeopleList({ people, me, canRemove, onRemove }: { people: [string, Admi
   })}{!people.length && <p className="hint">Nog geen beheerder.</p>}</div>;
 }
 
+/** Een andere groep met dezelfde naam (hoofdletters tellen niet). Een beheerder van een groep ziet alleen zijn eigen groepen. */
+const sameGroupName = (groups: Groep[], name: string, except?: string) =>
+  groups.find(g => g.id !== except && g.name.trim().toLowerCase() === name.trim().toLowerCase());
+
 /* ---------- nieuwe groep ---------- */
-function NewGroup({ me }: { me: Me }) {
+function NewGroup({ me, groups }: { me: Me; groups: Groep[] }) {
   const err = useErr();
   const [open, setOpen] = useState(false); const [name, setName] = useState(''); const [busy, setBusy] = useState(false);
   const make = async () => {
     if (!name.trim()) { toast('Vul de naam van de groep in.'); return; }
+    const dup = sameGroupName(groups, name);
+    if (dup) { toast(`Er is al een groep ${dup.name}.`); return; }
     setBusy(true);
     try {
       const gid = newGroepId();
@@ -244,7 +250,15 @@ function GroupCard({ g, sps, loaded, invites, me, canAll, allSps, groups, onGone
     syncNames(g.id, people, g.adminIds).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [g.id, namesKey, adminKey, loaded]);
-  const saveName = () => { if (name.trim() && name.trim() !== g.name) renameGroep(g, name, sps.map(s => s.id)).then(() => toast('Naam opgeslagen')).catch(e => err(e, 'Opslaan mislukt.')); };
+  // leeg of dezelfde naam als een andere groep: de opgeslagen naam terug, met uitleg (niet stil een leeg veld laten staan)
+  const saveName = () => {
+    const nm = name.trim();
+    if (!nm) { setName(g.name); if (g.name.trim()) toast('Vul de naam van de groep in.'); return; }
+    if (nm === g.name) return;
+    const dup = sameGroupName(groups, nm, g.id);
+    if (dup) { setName(g.name); toast(`Er is al een groep ${dup.name}.`); return; }
+    renameGroep(g, name, sps.map(s => s.id)).then(() => toast('Naam opgeslagen')).catch(e => err(e, 'Opslaan mislukt.'));
+  };
   const addSp = async () => {
     if (addingRef.current) return;
     const nm = newSp.trim();

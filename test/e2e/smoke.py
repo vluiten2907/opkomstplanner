@@ -470,6 +470,18 @@ with sync_playwright() as p:
     cat_in.fill(cat0); pg.fill('#gs-speltak', 'Scouts'); pg.locator('#gs-speltak').blur()
     seen_old = lambda: (lambda g: g and g['speltakName'] == 'Scouts' and any(c['label'] == cat0 for c in g['catDefs']))(shared_sluip())
     check(soon(seen_old, 6000), 'groepsbank: en weer terug (geen oude stand blijven hangen)')
+    # speltaknaam leegmaken: na de pauze niet opgeslagen (wie leegmaakt om een nieuwe naam te typen, krijgt de oude niet terug);
+    # het veld leeg achterlaten: de opgeslagen naam terug, met uitleg
+    sp_name = lambda: pg.evaluate("sid => JSON.parse(localStorage.getItem('fake.firestore'))['speltakken/' + sid].name", scouts)
+    pg.fill('#gs-speltak', ''); w(900)
+    check(sp_name() == 'Scouts' and pg.input_value('#gs-speltak') == '', 'speltaknaam leegmaken: na de pauze niet opgeslagen, het veld blijft leeg om verder te typen')
+    pg.locator('#gs-speltak').press_sequentially('Scouts 2'); w(900)
+    check(soon(lambda: sp_name() == 'Scouts 2') and pg.input_value('#gs-speltak') == 'Scouts 2', 'speltaknaam leegmaken en een nieuwe typen: de nieuwe naam wordt opgeslagen')
+    pg.fill('#gs-speltak', ''); pg.locator('#gs-speltak').blur(); w(400)
+    check(pg.input_value('#gs-speltak') == 'Scouts 2' and sp_name() == 'Scouts 2' and 'Vul de naam van de speltak in.' in pg.locator('.toast').inner_text(),
+          'speltaknaam leeg gelaten: de opgeslagen naam terug, met melding')
+    pg.fill('#gs-speltak', 'Scouts'); pg.locator('#gs-speltak').blur()
+    check(soon(lambda: sp_name() == 'Scouts' and seen_old(), 6000), 'speltaknaam weer Scouts')
 
     # --- speltak openen zonder verbinding: Firestore meldt eerst "bestaat niet" uit een lege cache → Geen verbinding, niet Geen toegang.
     # De lijsten (opkomsten, planning, …) komen eerst leeg uit de cache en na de verbinding pas 2,5 s ná de speltak zelf (trage verbinding):
@@ -972,6 +984,11 @@ with sync_playwright() as p:
     open_group()
     check(pg.locator('.groupcard .member:has-text("Scouts") >> text=Teamleider: Anna de Vries').count() == 1, 'beheerder ziet speltak en teamleider')
     check(pg.locator('h2:has-text("Beheer (totaal)")').count() == 0, 'beheerder groep ziet geen Beheer (totaal)')
+    gname = pg.locator('.groupcard input[id^="g-"]').first
+    g_before = gname.input_value()
+    gname.fill(''); gname.press('Enter'); w(400)
+    check(g_before and gname.input_value() == g_before and 'Vul de naam van de groep in.' in pg.locator('.toast').inner_text()
+          and pg.locator('.groupcard .gc-head b').first.inner_text() == g_before, f'groepsnaam leegmaken: de opgeslagen naam terug, met melding ({g_before})')
     open_sp('Scouts')
     pg.fill('input[placeholder="e-mailadres nieuw lid"]', 'lid@test.nl'); pg.click('.groupcard .member >> button:text-is("Uitnodigen")'); w(800)
     check('/uitnodiging/' in invite_link() and pg.locator('.banknote:has-text("Leiding")').count() >= 1, 'beheerder groep nodigt leiding uit voor speltak')
@@ -1078,6 +1095,13 @@ with sync_playwright() as p:
       window.__fakeRemote('speltakken/' + sid, { ...sp, tlIds: [], members: { ...sp.members, [u]: { ...sp.members[u], role: 'leiding', perms: { plan: false, build: false, bank: true, settings: false } } } });
       window.__fakeRemote(gk, { ...g, catDefs: [...g.catDefs, { id: 'cat-sluipen', label: 'Sluipen', color: '#7A4F2D' }],
         opk: { ...g.opk, blocks: g.opk.blocks.map(b => b.title === 'Sluipen' ? { ...b, cat: 'cat-sluipen' } : b) } }); }""", [welpen, gk, sp0, g0]); w(600)
+    # alleen Banken in een groep, eigen bank leeg: de uitleg wijst naar het tabblad Groep (bouwen kan niet)
+    pg.click('.tabs.page >> text=Onze bank'); w(400)
+    be = pg.locator('.bank-empty')
+    check(be.count() == 1 and 'Kopieer er een uit de groep (tabblad Groep); een nieuwe opkomst bouwen kan met het recht Opkomsten.' in be.inner_text()
+          and 'kies "In bank"' not in be.inner_text() and be.locator('button:has-text("Nieuwe opkomst")').count() == 0,
+          f'lege opkomstenbank met alleen Banken (in een groep): kopieer er een uit de groep ({be.all_inner_texts()})')
+    pg.click('.tabs.page >> text=Groep'); w(400); pg.click('.bcard:has-text("Sluipspel")'); w(300)
     pg.click('.side >> text=Kopieer naar onze bank'); w(900)
     copy_of = "sid => { const s = " + fsjs + "; return Object.keys(s).find(k => k.startsWith('speltakken/' + sid + '/opkomsten/') && s[k].state === 'bank' && s[k].title === 'Sluipspel'); }"
     ck = pg.evaluate(copy_of, welpen)
@@ -1134,6 +1158,62 @@ with sync_playwright() as p:
       return [bank.length, bank[0] ? Object.values(s).filter(v => v && v.state === 'planned' && v.srcId === bank[0].id).length : -1]; }""", welpen)
     check(gl2 == [1, 0] and pg.locator('.modal').count() == 0 and 'Niet meer ingepland' in pg.locator('.toast').inner_text(),
           f'koppelen uit de groep, Ongedaan maken: ingeplande kopie weg en venster dicht, de kopie in de eigen bank blijft ({gl2})')
+    # naambotsing: de eigen bank heeft al een (eigen) Sluipspel, de rij heeft onderwerp Sluipspel. De groepsopkomst staat bij Past bij (niet onderaan),
+    # Annuleren/Esc in Andere naam kiezen gaat terug naar Koppelen (zoekterm en focus blijven), en alleen de kopie in de bank krijgt de nieuwe naam
+    own_k = pg.evaluate(copy_of, welpen)
+    n_rows = pg.evaluate("""([sid, k]) => { const s = JSON.parse(localStorage.getItem('fake.firestore'));
+      window.__fakeRemote(k, { ...s[k], fromShared: null });
+      const ks = Object.keys(s).filter(k => k.startsWith('speltakken/' + sid + '/planning/') && s[k] && !s[k].opkId);
+      ks.forEach(k => window.__fakeRemote(k, { ...s[k], topic: 'Sluipspel' })); return ks.length; }""", [welpen, own_k])
+    pg.reload(); w(1200)
+    pg.click('.hero >> text=Opkomst koppelen'); w(400)
+    heads = pg.locator('.modal h3').all_inner_texts()
+    past = pg.locator('.modal h3:text-is("Past bij Sluipspel") + .picklist')
+    gfit = past.locator('.pick[data-pick^="g:"]')
+    check(n_rows >= 1 and heads[:1] == ['Past bij Sluipspel'] and past.locator('.pick').count() == 2 and gfit.count() == 1
+          and gfit.locator('.pick-kicker').inner_text().strip() == 'Uit de groep · Scouts' and past.locator('.pick').first.locator('.pick-kicker').inner_text().strip() == 'Uit de opkomstenbank'
+          and pg.locator('.modal h3:text-is("Uit de groep") + .picklist .pick:has-text("Sluipspel")').count() == 0 and pg.locator('.modal .pick:has-text("Sluipspel")').count() == 2
+          and 'primary' not in (pg.locator('.modal button:has-text("Nieuwe opkomst")').get_attribute('class') or '')
+          and pg.locator('.modal h3:text-is("Past bij Sluipspel") ~ .hint:has-text("Kiezen bij een opkomst uit de groep zet ook een kopie in jullie opkomstenbank.")').count() == 1,
+          f'koppelen: een passende groepsopkomst staat bij Past bij (na de eigen bank), met waar hij vandaan komt; Nieuwe opkomst is niet de hoofdknop ({heads})')
+    shot('48-koppelen-past-bij-groep', False)
+    # zoeken waarbij alles uit de groep al bij Past bij staat: geen lege kop "Uit de groep" of "Niets gevonden in de groep"
+    pg.fill('.modal input[type=search]', 'sluipspel'); w(200)
+    heads = pg.locator('.modal h3').all_inner_texts()
+    check('Uit de groep' not in heads and pg.locator('.modal >> text=Niets gevonden in de groep').count() == 0 and gfit.count() == 1,
+          f'koppelen, zoeken: alles uit de groep staat bij Past bij → geen kop Uit de groep ({heads})')
+    gbtn = lambda: pg.locator('.modal .pick[data-pick^="g:"]:has-text("Sluipspel") button:has-text("Kiezen")')
+    gbtn().click(); w(400)
+    nm_sub = pg.locator('.modal .hint').first.inner_text()
+    check(pg.locator('.modal h2:text-is("Andere naam kiezen")').count() == 1 and pg.input_value('#nm-name') == 'Sluipspel (kopie)'
+          and pg.locator('.modal label[for=nm-name]').inner_text().strip() == 'Naam in jullie opkomstenbank' and 'De ingeplande opkomst houdt de naam Sluipspel.' in nm_sub,
+          f'koppelen uit de groep, naam bestaat al: vraagt de naam in de bank, de ingeplande opkomst houdt zijn naam ({nm_sub})')
+    shot('48b-koppelen-andere-naam', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('48c-koppelen-andere-naam-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'andere naam kiezen mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    on_gbtn = "(() => { const a = document.activeElement; return !!a && a.tagName === 'BUTTON' && (a.getAttribute('aria-label') || '') === 'Kiezen: Sluipspel' && (a.closest('.pick')?.dataset.pick || '').startsWith('g:'); })()"
+    pg.keyboard.press('Escape'); w(400)
+    check(pg.locator('.modal h2:text-is("Opkomst koppelen")').count() == 1 and pg.input_value('.modal input[type=search]') == 'sluipspel' and pg.evaluate(on_gbtn),
+          'Andere naam kiezen, Esc: terug in Koppelen, zoekterm blijft, focus op Kiezen bij de groepsopkomst')
+    gbtn().click(); w(400)
+    pg.click('.modal button:text-is("Terug")'); w(400)
+    check(pg.locator('.modal h2:text-is("Opkomst koppelen")').count() == 1 and pg.input_value('.modal input[type=search]') == 'sluipspel' and pg.evaluate(on_gbtn),
+          'Andere naam kiezen, Terug: terug in Koppelen, met zoekterm en focus')
+    pg.keyboard.press('Escape'); w(400)
+    check(pg.locator('.modal').count() == 0 and pg.evaluate("document.activeElement !== document.body && (document.activeElement.textContent || '').includes('Opkomst koppelen')"),
+          'Koppelen (na terug uit Andere naam kiezen) sluiten: focus terug op Opkomst koppelen, niet kwijt')
+    pg.click('.hero >> text=Opkomst koppelen'); w(400)
+    gbtn().click(); w(400)
+    pg.click('.modal button:has-text("Kopiëren en inplannen")'); w(900)
+    nl = pg.evaluate("""sid => { const s = JSON.parse(localStorage.getItem('fake.firestore')), P = 'speltakken/' + sid + '/opkomsten/';
+      const bank = Object.keys(s).filter(k => k.startsWith(P) && s[k] && s[k].state === 'bank').map(k => s[k]);
+      const kopie = bank.find(o => o.title === 'Sluipspel (kopie)'), row = Object.values(s).find(v => v && v.opkId && s[P + v.opkId] && s[P + v.opkId].srcId === (kopie && kopie.id));
+      const o = row && s[P + row.opkId];
+      return [bank.filter(o => o.title === 'Sluipspel').length, !!kopie && !!kopie.fromShared, row ? row.topic : null, o ? o.title : null, o ? o.state : null]; }""", welpen)
+    check(nl == [1, True, 'Sluipspel', 'Sluipspel', 'planned'] and pg.locator('.modal h2:has-text("Opkomst overnemen")').count() == 1 and pg.input_value('.modal .tk-head input') == 'Sluipspel',
+          f'koppelen uit de groep met een naambotsing: alleen de kopie in de bank heet Sluipspel (kopie); de ingeplande opkomst en het onderwerp van de rij blijven Sluipspel ({nl})')
+    pg.click('.modal >> text=Klaar'); w(300)
 
     # --- rol overdragen: de opvolger komt binnen als leiding met alle rechten, daarna draagt de teamleider zelf over
     no_hscroll = lambda: pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')
@@ -1144,8 +1224,35 @@ with sync_playwright() as p:
     olga_link = pg.locator('.invite .mono-code').inner_text()
     orow = pg.locator('.invrow:has-text("olga@test.nl")')
     check(orow.count() == 1 and 'Leiding · overdracht' in orow.inner_text() and 'Teamleider' not in orow.inner_text(), 'rol overdragen: uitnodiging als leiding (overdracht), niet als teamleider')
+    # met een ander account ingelogd: uitleg welke kant je op moet (uitloggen als het adres ook van jou is, anders een nieuwe uitnodiging vragen)
+    pg.goto(olga_link); w(900)
+    oth = pg.locator('.auth-card .inv-other')
+    check(oth.count() == 1 and 'Deze uitnodiging werkt alleen voor olga@test.nl. Is dat ook jouw adres? Log dan uit en ga verder met olga@test.nl.' in oth.inner_text()
+          and 'Wil je je account wim@test.nl gebruiken? Vraag Wim Welp om een nieuwe uitnodiging voor wim@test.nl.' in oth.inner_text()
+          and pg.locator('.auth-card button.primary:text-is("Uitloggen en verder met olga@test.nl")').count() == 1 and pg.locator('text=Uitloggen en opnieuw').count() == 0,
+          f'uitnodiging met een ander account: uitleg en knop Uitloggen en verder met het adres van de uitnodiging ({oth.all_inner_texts()})')
+    shot('21c-uitnodiging-ander-account', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('21d-uitnodiging-ander-account-mobiel', False)
+    check(no_hscroll(), 'uitnodiging met een ander account mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    pg.click('.auth-card button:has-text("Uitloggen en verder met olga@test.nl")'); w(900)
+    check('/uitnodiging/' in pg.url and pg.locator('#i-first').count() == 1, 'uitloggen en verder: het formulier van de uitnodiging, voor het adres van de uitnodiging')
     logout_to(olga_link)
     check(pg.locator('text=wil de rol van teamleider aan je overdragen').count() == 1, 'uitnodiging overdracht: genodigde ziet dat de teamleider daarna overdraagt')
+    # Wachtwoord vergeten alleen bij inloggen; Firebase zegt meestal niet of er een account is, dus voorzichtig ("Als er een account is …").
+    # Zegt Firebase het wel (geen account): dan naar Nieuw account met uitleg.
+    check(pg.locator('.auth-card button:has-text("Wachtwoord vergeten")').count() == 0, 'uitnodiging, nieuw account: geen Wachtwoord vergeten')
+    pg.click('text=Ik heb al een account'); w(200)
+    pg.click('.auth-card button:has-text("Wachtwoord vergeten")'); w(500)
+    rs_txt = pg.locator('.auth-card p[role=status]').all_inner_texts()
+    check(rs_txt == ['Als er een account is met olga@test.nl, staat er nu een mail klaar om een nieuw wachtwoord te kiezen. Niets ontvangen? Kijk in je spammap, of maak hieronder een nieuw account aan.']
+          and 'We hebben een mail gestuurd' not in pg.locator('.auth-card').inner_text(), f'uitnodiging, Wachtwoord vergeten: voorzichtige tekst, geen "we hebben gemaild" ({rs_txt})')
+    pg.evaluate("localStorage.setItem('fake.noenum', '1')")
+    pg.click('.auth-card button:has-text("Wachtwoord vergeten")'); w(500)
+    check(pg.locator('#i-first').count() == 1 and pg.locator('#i-err').inner_text() == 'Er is nog geen account met dit adres. Maak er een aan.'
+          and pg.locator('.auth-card p[role=status]').count() == 0 and pg.locator('button.btn.primary:has-text("Account aanmaken en toetreden")').count() == 1,
+          'uitnodiging, Wachtwoord vergeten zonder account (Firebase zegt het): naar Nieuw account, met uitleg')
+    pg.evaluate("localStorage.removeItem('fake.noenum')")
     register('Olga Opvolger', 'olga@test.nl')
     check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'opvolger treedt toe')
     pg.click('nav >> text=Instellingen'); w(500)
@@ -1188,7 +1295,17 @@ with sync_playwright() as p:
     rs.locator('input[type=email]').fill('mede@test.nl'); rs.locator('button:has-text("Uitnodigingslink maken")').click(); w(700)
     mede_link = rs.locator('.mono-code').inner_text()
     pg.click('text=Nieuwe Scouting-groep'); w(); pg.fill('#ng-name', 'Zeegroep'); pg.click('text=Groep aanmaken'); w(800)
+    # een naam die al bij een andere groep hoort (hoofdletters tellen niet): niet aanmaken en niet hernoemen
+    n_groups = pg.locator('.groupcard').count()
+    pg.click('button:has-text("Nieuwe Scouting-groep")'); w(); pg.fill('#ng-name', ' zeegroep '); pg.click('text=Groep aanmaken'); w(600)
+    check(pg.locator('.groupcard').count() == n_groups and 'Er is al een groep Zeegroep.' in pg.locator('.toast').inner_text(), 'nieuwe groep met een naam die al bestaat: niet aangemaakt, met melding')
+    pg.locator('section:has(h2:text-is("Nieuwe Scouting-groep")) button:text-is("Annuleren")').click(); w(200)
     zg = pg.locator('.groupcard:has-text("Zeegroep")'); opened(zg, '.gc-head')
+    zname = zg.locator('input[id^="g-"]')
+    zname.fill('TESTGROEP'); zname.press('Enter'); w(500)
+    check(zname.input_value() == 'Zeegroep' and 'Er is al een groep Testgroep.' in pg.locator('.toast').inner_text()
+          and pg.evaluate("() => Object.entries(JSON.parse(localStorage.getItem('fake.firestore'))).filter(([k, v]) => /^groepen\/[^/]+$/.test(k) && v.name.toLowerCase() === 'testgroep').length") == 1,
+          'groep hernoemen naar de naam van een andere groep: niet opgeslagen, met melding')
     zg.locator('input[placeholder^="Naam nieuwe speltak"]').fill('Zeeverkenners'); zg.locator('button:has-text("Speltak aanmaken")').click(); w(800)
     zs = zg.locator('.spcard:has-text("Zeeverkenners")'); opened(zs, '.sp-head')
     zs.locator('input[placeholder="e-mailadres teamleider"]').fill('greet2@test.nl'); zs.locator('button:has-text("Teamleider uitnodigen")').click(); w(800)
@@ -1227,7 +1344,7 @@ with sync_playwright() as p:
           and pg.input_value('#i-pw') == 'geheim123' and pg.get_attribute('#i-pw', 'aria-invalid') == 'true' and pg.locator('#i-name').count() == 0,
           'uitnodiging met een bestaand account: registreren gaat over naar inloggen, wachtwoord blijft staan')
     pg.click('.auth-card button:has-text("Wachtwoord vergeten")'); w(500)
-    check('/uitnodiging/' in pg.url and pg.locator('.auth-card p[role=status]:has-text("We hebben een mail gestuurd naar greet2@test.nl")').count() == 1 and pg.locator('#i-err').count() == 0,
+    check('/uitnodiging/' in pg.url and pg.locator('.auth-card p[role=status]:has-text("Als er een account is met greet2@test.nl, staat er nu een mail klaar")').count() == 1 and pg.locator('#i-err').count() == 0,
           'uitnodiging: Wachtwoord vergeten mailt meteen naar het adres van de uitnodiging, je blijft op de uitnodiging')
     shot('22c-uitnodiging-bestaand-account', False)
     pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('22d-uitnodiging-bestaand-account-mobiel', False)
@@ -1446,6 +1563,9 @@ with sync_playwright() as p:
     pg.goto(BASE + '/s/oefen/instellingen'); w(1000)
     pg.fill('#gs-name', 'Voorbeeldgroep'); pg.click('.accents .acc:has-text("Blauw")'); w(1200)
     check(pg.input_value('#gs-name') == 'Voorbeeldgroep' and pg.locator('.accents .acc:has-text("Blauw")').get_attribute('aria-pressed') == 'true', 'instellingen: naam typen en direct een kleur kiezen, allebei bewaard')
+    pg.fill('#gs-name', ''); pg.locator('#gs-name').blur(); w(400)
+    check(pg.input_value('#gs-name') == 'Voorbeeldgroep' and 'Vul de naam van de groep in.' in pg.locator('.toast').inner_text()
+          and oefen_get("s['speltakken/oefen'].groupName") == 'Voorbeeldgroep', 'speltak zonder groep: groepsnaam leeg gelaten → de opgeslagen naam terug, met melding')
     cats = pg.locator('.catrow input[aria-label="Naam categorie"]')
     cats.nth(0).fill('Spel buiten'); cats.nth(1).fill('Pionieren'); w(1200)
     check(cats.nth(0).input_value() == 'Spel buiten' and cats.nth(1).input_value() == 'Pionieren', 'instellingen: twee categorieën snel na elkaar hernoemd, geen van beide springt terug')
@@ -1618,6 +1738,16 @@ with sync_playwright() as p:
     check(pg.locator('.bank-empty:has-text("In de bank zetten kan met het recht Banken.")').count() == 1 and pg.locator('.bank-empty:has-text("kies")').count() == 0,
           'lege opkomstenbank zonder recht Banken: uitleg zonder "kies In bank"')
     shot('44d-lege-bank-zonder-recht', False)
+    # alleen Banken (geen Opkomsten): niet "bouw een opkomst en kies In bank" zonder knop, maar zeggen hoe het wel gaat
+    oefen_set("s['speltakken/oefen'].members['oefen-jij'].perms = { plan: false, build: false, bank: true, settings: false }")
+    pg.goto(BASE + '/s/oefen/opkomsten'); w(1000)
+    be = pg.locator('.bank-empty')
+    check(be.count() == 1 and 'Een opkomst bouwen kan met het recht Opkomsten; daarna zet je hem hier in de bank.' in be.inner_text() and 'kies "In bank"' not in be.inner_text()
+          and be.locator('button:has-text("Nieuwe opkomst")').count() == 0, f'lege opkomstenbank met alleen Banken (zonder groep): uitleg zonder "bouw een opkomst" ({be.all_inner_texts()})')
+    shot('44e-lege-bank-alleen-banken', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('44f-lege-bank-alleen-banken-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'lege opkomstenbank alleen Banken mobiel: geen horizontale scroll')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     pg.evaluate("v => localStorage.setItem('opk.oefen.v1', JSON.stringify(v))", oefen_bak2)
     pg.goto(BASE + '/s/oefen/instellingen'); w(1000)
     backup = json.dumps({'version': 4, 'opks': [], 'plans': [], 'lib': [{'id': 'lib-backup', 'title': 'Uit de back-up'}], 'settings': {}}).encode()

@@ -15,10 +15,18 @@ import { ensureTlIds, inviteOnce, isEmail, releaseOwnName, removeGroupAdmin, ren
 import { useRoles } from '../store/roles';
 import { InviteLink, InviteList, useOpenInvites } from '../components/Invites';
 
-/** Tekstveld dat pas na een korte pauze opslaat (voorkomt een schrijfactie per toetsaanslag). */
-function DebText({ value, onCommit, onBlur, ...rest }: { value: string; onCommit: (v: string) => void } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
-  const [v, setV, flush] = useDebouncedInput(value, onCommit, 600);
-  return <input {...rest} value={v} onChange={e => setV(e.target.value)} onBlur={e => { flush(); onBlur?.(e); }} />;
+/**
+ * Tekstveld dat pas na een korte pauze opslaat (voorkomt een schrijfactie per toetsaanslag).
+ * `required`: een leeg veld wordt niet opgeslagen (wie het leegmaakt om een nieuwe naam te typen, krijgt niet na de pauze de oude terug);
+ * laat je het leeg achter, dan komt de opgeslagen waarde terug met deze melding.
+ */
+function DebText({ value, onCommit, onBlur, required, ...rest }: { value: string; onCommit: (v: string) => void; required?: string } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'required'>) {
+  const [v, setV, flush, reset] = useDebouncedInput(value, x => { if (!required || x.trim()) onCommit(x); }, 600);
+  return <input {...rest} value={v} onChange={e => setV(e.target.value)} onBlur={e => {
+    flush();
+    if (required && !e.currentTarget.value.trim() && value.trim()) { reset(value); toast(required); }
+    onBlur?.(e);
+  }} />;
 }
 type Patch = Partial<Settings> | ((s: Settings) => Partial<Settings>);
 
@@ -41,8 +49,8 @@ export default function Instellingen() {
         <h2>Je groep</h2>
         {/* Onder een groep hoort de naam bij de groep (ook in uitnodigingen en pdf's): die past de beheerder aan in Beheer. */}
         {S.sp?.gid ? <Field label="Naam van de groep" htmlFor="gs-name" hint="Wijzigen kan de beheerder van de groep in Beheer."><input id="gs-name" value={settings.groupName} readOnly aria-readonly="true" /></Field>
-          : <Field label="Naam van de groep" htmlFor="gs-name"><DebText id="gs-name" value={settings.groupName} onCommit={v => set({ groupName: v.trim() })} placeholder="bijv. Scoutinggroep De Verkenners" /></Field>}
-        <Field label="Speltak" htmlFor="gs-speltak"><DebText id="gs-speltak" list="speltaklist" value={settings.speltak} onCommit={v => set({ speltak: v.trim() })} placeholder="bijv. Scouts" /><datalist id="speltaklist">{SPELTAKKEN.map(x => <option key={x} value={x} />)}</datalist></Field>
+          : <Field label="Naam van de groep" htmlFor="gs-name"><DebText id="gs-name" value={settings.groupName} onCommit={v => set({ groupName: v.trim() })} required="Vul de naam van de groep in." maxLength={60} placeholder="bijv. Scoutinggroep De Verkenners" /></Field>}
+        <Field label="Speltak" htmlFor="gs-speltak"><DebText id="gs-speltak" list="speltaklist" value={settings.speltak} onCommit={v => set({ speltak: v.trim() })} required="Vul de naam van de speltak in." maxLength={60} placeholder="bijv. Scouts" /><datalist id="speltaklist">{SPELTAKKEN.map(x => <option key={x} value={x} />)}</datalist></Field>
         <Logo />
         <Field label="Kleur"><div className="accents">{Object.entries(ACCENTS).map(([k, a]) => <button key={k} className="acc" aria-pressed={settings.accent === k} style={{ ['--c' as any]: a.l }} onClick={() => set({ accent: k })}><i />{a.label}</button>)}</div></Field>
       </fieldset>

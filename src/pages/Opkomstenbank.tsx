@@ -73,8 +73,11 @@ export default function Opkomstenbank() {
       <button role="tab" aria-selected={g} onClick={() => switchTab('group')}>Groep <span className="count">{others.length}</span></button>
     </div>}
     {bare ? <div className="empty bank-empty">{g ? <span>Andere speltakken van {sp?.groupName || 'de groep'} hebben nog niets gedeeld. Wat zij in hun opkomstenbank zetten, verschijnt hier.</span>
-      : <><span>{can('bank') ? 'Bewaar hier opkomsten die je vaker gebruikt: bouw een opkomst en kies "In bank". Namen van leiding gaan niet mee.'
-        : 'Hier komen opkomsten die jullie vaker gebruiken, zonder namen van leiding. In de bank zetten kan met het recht Banken.'}</span>
+      : <><span>{!can('bank') ? 'Hier komen opkomsten die jullie vaker gebruiken, zonder namen van leiding. In de bank zetten kan met het recht Banken.'
+        : can('build') ? 'Bewaar hier opkomsten die je vaker gebruikt: bouw een opkomst en kies "In bank". Namen van leiding gaan niet mee.'
+        // alleen Banken: bouwen kan niet, dus niet "bouw een opkomst" zonder knop
+        : groupOn ? 'Bewaar hier opkomsten die je vaker gebruikt, zonder namen van leiding. Kopieer er een uit de groep (tabblad Groep); een nieuwe opkomst bouwen kan met het recht Opkomsten.'
+        : 'Bewaar hier opkomsten die je vaker gebruikt, zonder namen van leiding. Een opkomst bouwen kan met het recht Opkomsten; daarna zet je hem hier in de bank.'}</span>
         {can('build') && <button className="btn primary" onClick={newOpkomst}><Plus size={16} />Nieuwe opkomst</button>}</>}</div> : <>
     <div className="toolbar"><input className="inp" type="search" placeholder={g ? 'Zoek in de groep' : 'Zoek opkomst'} aria-label={g ? 'Zoek in de groep' : 'Zoek opkomst'} value={q} onChange={e => setQ(e.target.value)} />
       {g && speltakken.length > 1 && <div className="catfilter" role="group" aria-label="Speltak"><Chip on={!from} onClick={() => setFrom('')}>Alle speltakken</Chip>{speltakken.map(([id, name]) => <Chip key={id} on={from === id} onClick={() => setFrom(id)}>{name}</Chip>)}</div>}

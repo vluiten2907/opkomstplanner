@@ -1024,6 +1024,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 /* Inloggen: geen loze ruimte onder de pagina, knoptekst in het midden, belofte met drie kaartjes */
 body:has(.auth-wrap) { padding-bottom: 0; }
 .auth-card > .btn.primary, .auth-card > form > .btn.primary { justify-content: center; min-height: 44px; }
+/* uitnodiging met een ander account: lange e-mailadressen breken af in plaats van naast de kaart te lopen */
+.inv-other p { overflow-wrap: anywhere; }
+.btn.btn-wrap { white-space: normal; overflow-wrap: anywhere; text-align: left; }
 .auth-split { width: min(1000px, 100%); display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; justify-items: center; align-items: center; }
 .auth-pitch { width: min(440px, 100%); display: grid; gap: 18px; align-content: start; }
 .pitch-h { font-family: var(--f-display); font-weight: 800; font-size: clamp(26px, 3.6vw, 46px); line-height: 1.02; letter-spacing: -.035em; text-wrap: balance; }

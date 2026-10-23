@@ -5,13 +5,17 @@ export type ModalSpec =
   | { kind: 'extra' }
   | { kind: 'people'; keyId: string; field: 'planners' | 'absent' }
   | { kind: 'letter'; keyId: string }
-  | { kind: 'link'; keyId: string }
+  // q: zoekterm om mee te beginnen, back: de groepsopkomst waar je vandaan kwam (terug uit Andere naam kiezen: de focus op zijn Kiezen)
+  | { kind: 'link'; keyId: string; q?: string; back?: string }
   | { kind: 'toplan'; oid: string }
   | { kind: 'takeover'; oid: string; fresh: boolean }
   | NameSpec;
 
-/** Om een (unieke) naam vragen, bijv. bij in de bank zetten. */
-export type NameSpec = { kind: 'name'; title: string; sub?: string; label: string; initial: string; okLabel: string; taken: (name: string) => boolean; ok: (name: string) => void };
+/**
+ * Om een (unieke) naam vragen, bijv. bij in de bank zetten. `back`: Annuleren, Esc, de X of naast het venster klikken
+ * gaat terug naar het venster waar je vandaan kwam (bijv. Koppelen) in plaats van alles te sluiten.
+ */
+export type NameSpec = { kind: 'name'; title: string; sub?: string; label: string; initial: string; okLabel: string; taken: (name: string) => boolean; ok: (name: string) => void; back?: () => void };
 
 /** `seq` telt elk geopend venster (een fout in het ene venster blokkeert het volgende niet). */
 type S = { modal: ModalSpec | null; seq: number; open: (m: ModalSpec) => void; close: () => void };

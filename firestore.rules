@@ -232,6 +232,11 @@ service cloud.firestore {
       function can(p) { return isMember() && (isTL() || member().perms[p] == true); }
       function isAdmin() { return spExists() && isAdminOf(spGid(sp())); }
       function tlSame() { return request.resource.data.get('tlIds', null) == resource.data.get('tlIds', null); }
+      // speltaknaam niet leeg of te lang; alleen als hij verandert (een oude speltak met een lege naam kan zijn instellingen gewoon opslaan)
+      function spNameOk() {
+        return !('name' in changed())
+          || (request.resource.data.name is string && request.resource.data.name.trim().size() > 0 && request.resource.data.name.size() <= 60);
+      }
       // Team en ledenlijst lopen niet uiteen: wie in memberIds bijkomt, heeft een members-regel, en wie zijn
       // members-regel kwijtraakt, staat ook niet meer in memberIds. Alleen de wijziging telt, oude data blokkeert niet.
       function teamConsistent() {
@@ -254,7 +259,7 @@ service cloud.firestore {
       allow update: if signedIn() && (
         // instellingen en speltaknaam: teamleider of leiding met recht 'settings'. De groepsnaam alleen bij een oude
         // speltak zonder groep; onder een groep hoort hij bij de groep (kop, pdf, uitnodigingen) en past de beheerder hem aan.
-        (can('settings') && (changed().hasOnly(['settings', 'name'])
+        (can('settings') && spNameOk() && (changed().hasOnly(['settings', 'name'])
           || (spGid(resource.data) == null && changed().hasOnly(['settings', 'groupName', 'name']))))
         // beheerder van de groep: team, teamleiders, naam; alleen Beheer (totaal) verhuist een speltak naar een andere groep
         || (isAdmin()

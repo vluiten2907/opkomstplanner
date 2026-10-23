@@ -38,7 +38,10 @@ export async function createUserWithEmailAndPassword(_a: any, email: string, pw:
   const u: U = { uid: 'u' + Math.random().toString(36).slice(2, 10), email, displayName: '', pw, verified: false }; users[u.uid] = u; current = u; saveAuth(); return { user: pub(u) };
 }
 export async function updateProfile(user: any, p: { displayName?: string }) { const u = users[user.uid]; if (u && p.displayName != null) { u.displayName = p.displayName; if (current?.uid === u.uid) current = u; saveAuth(); } }
-export async function sendPasswordResetEmail() { /* niets */ }
+// Standaard zegt Firebase niet of er een account is (e-mail-enumeratiebescherming). Test: 'fake.noenum' = '1' → user-not-found voor een onbekend adres.
+export async function sendPasswordResetEmail(_a: any, email: string) {
+  if (localStorage.getItem('fake.noenum') === '1' && !Object.values(users).some(x => x.email === String(email || '').trim().toLowerCase())) throw err('auth/user-not-found');
+}
 // Bevestigingsmail: in de demo telt de link als aangeklikt zodra de mail is 'verstuurd'.
 export async function sendEmailVerification(user: any) { const u = users[user.uid]; if (u) { u.mailed = true; saveAuth(); } }
 // Test: zet localStorage 'fake.noverify' = '1' om de link pas als aangeklikt te zien na 'fake.clicked' = e-mailadres.

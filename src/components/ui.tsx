@@ -146,6 +146,20 @@ export function useSheetDialog(open: boolean, label: string, opener?: () => HTML
   return [ref, props] as const;
 }
 
+/** Per venster (de .modal) waar de focus vandaan kwam: zo vindt een venster dat een ander verving de weg terug (zie focusBack). */
+const cameFrom = new WeakMap<Element, HTMLElement | null>();
+/**
+ * Focus terug naar `el`. Is dat weg (het zat in een venster dat intussen is vervangen, bijv. Kiezen in Koppelen → Andere naam kiezen
+ * → terug naar Koppelen), dan naar waar dát venster vandaan kwam, enzovoort: zo komt hij terug bij bijv. de knop Koppelen van de rij.
+ */
+function focusBack(el: HTMLElement | null) {
+  for (let i = 0; el && i < 8; i++) {
+    if (el.isConnected) { if (el !== document.body) el.focus({ preventScroll: true }); return; }
+    const host = el.closest('.modal');
+    el = host && cameFrom.has(host) ? cameFrom.get(host)! : null;
+  }
+}
+
 export function Modal({ title, sub, onClose, wide, children }: { title: string; sub?: string; onClose: () => void; wide?: boolean; children: ReactNode }) {
   const root = useRef<HTMLDivElement>(null), card = useRef<HTMLDivElement>(null);
   const id = useId();
@@ -156,10 +170,11 @@ export function Modal({ title, sub, onClose, wide, children }: { title: string; 
   useEffect(() => {
     // de rest van de app is zolang onbereikbaar (ook voor schermlezers); de melding onderin blijft werken
     const undo = root.current ? inertOutside(root.current) : () => {};
+    if (root.current) cameFrom.set(root.current, prev);
     // focus in het venster; op de kaart zelf, zodat op een telefoon niet meteen het toetsenbord opent (een veld met autoFocus houdt hem)
     const c = card.current;
     if (c && !c.contains(document.activeElement)) c.focus({ preventScroll: true });
-    return () => { undo(); if (prev && prev !== document.body && prev.isConnected) prev.focus({ preventScroll: true }); };
+    return () => { undo(); focusBack(prev); };
   }, [prev]);
   return <div ref={root} className="modal" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
     <div ref={card} className={'modal-card' + (wide ? ' wide' : '')} role="dialog" aria-modal="true" aria-labelledby={id + 't'} aria-describedby={sub ? id + 's' : undefined} tabIndex={-1} onKeyDown={e => trapTab(card.current, e)}>
@@ -238,5 +253,7 @@ export function useDebouncedInput(value: string, onCommit: (v: string) => void, 
     window.addEventListener('beforeunload', before); window.addEventListener('pagehide', flush); document.addEventListener('visibilitychange', hide);
     return () => { window.removeEventListener('beforeunload', before); window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', hide); flush(); };
   }, [flush]);
-  return [v, set, flush] as const;
+  /** Terug naar `x` zonder op te slaan (bijv. een verplicht veld dat leeg is gelaten). */
+  const reset = useCallback((x: string) => { clearTimeout(timer.current); last.current = x; cur.current = x; setV(x); }, []);
+  return [v, set, flush, reset] as const;
 }

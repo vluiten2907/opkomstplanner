@@ -14,6 +14,8 @@ import { inviteExpired, inviteWhere, KIND_LABELS, PERM_LABELS, type Invite } fro
 
 /** Registreren met een adres dat al een account heeft: dan inloggen (hoort bij het wachtwoordveld). */
 const HAVE_ACCOUNT = 'Je hebt al een account met dit adres. Log in met je wachtwoord.';
+/** Wachtwoord vergeten voor een adres zonder account (alleen als Firebase dat zegt; meestal blijft het stil). */
+const NO_ACCOUNT = 'Er is nog geen account met dit adres. Maak er een aan.';
 
 /** Uitnodiging openen. Een account aanmaken kan alleen hier, met het e-mailadres van de uitnodiging. */
 export default function InvitePage() {
@@ -147,11 +149,16 @@ export default function InvitePage() {
         setBusy(false);
       }
     };
-    // Wachtwoord vergeten: meteen de mail naar het adres van de uitnodiging, en dit tabblad blijft op de uitnodiging
+    // Wachtwoord vergeten: meteen de mail naar het adres van de uitnodiging, en dit tabblad blijft op de uitnodiging.
+    // Firebase zegt meestal niet of er een account is (dan komt er stil geen mail): dus voorzichtig, zoals op de inlogpagina.
     const forgot = async () => {
-      setErr(''); setBusy(true);
-      try { await reset(inv.email); setMode('login'); setResetSent(`We hebben een mail gestuurd naar ${inv.email}. Kies daar een nieuw wachtwoord en log hier in. Niets ontvangen? Kijk ook in je spammap.`); }
-      catch (e) { setErr(authError(e)); }
+      setErr(''); setResetSent(''); setBusy(true);
+      try { await reset(inv.email); setResetSent(`Als er een account is met ${inv.email}, staat er nu een mail klaar om een nieuw wachtwoord te kiezen. Niets ontvangen? Kijk in je spammap, of maak hieronder een nieuw account aan.`); }
+      catch (e: any) {
+        // zegt Firebase het wel: dan een account aanmaken
+        if (String(e?.code || '').includes('user-not-found')) { setMode('register'); setErr(NO_ACCOUNT); }
+        else setErr(authError(e));
+      }
       setBusy(false);
     };
     return box(<form className="stack" onSubmit={submit}>{intro}
@@ -170,7 +177,8 @@ export default function InvitePage() {
       <div className="row between" style={{ fontSize: 14 }}>
         {mode === 'register' ? <button type="button" className="linkbtn" onClick={() => { setMode('login'); setErr(''); }}>Ik heb al een account</button>
           : <button type="button" className="linkbtn" onClick={() => { setMode('register'); setErr(''); setResetSent(''); }}>Nieuw account aanmaken</button>}
-        <button type="button" className="linkbtn" disabled={busy} onClick={forgot}>Wachtwoord vergeten</button>
+        {/* alleen bij inloggen: wie nog geen account heeft, heeft ook geen wachtwoord om te vergeten */}
+        {mode === 'login' && <button type="button" className="linkbtn" disabled={busy} onClick={forgot}>Wachtwoord vergeten</button>}
       </div>
     </form>);
   }
@@ -191,11 +199,17 @@ export default function InvitePage() {
     {errLine}
     <div className="row"><button className="btn ghost sm" onClick={() => safeLogout(logout)}>Uitloggen</button></div>
   </>);
+  // Ingelogd met een ander account: de uitnodiging werkt alleen voor het adres erin. Is dat ook van jou, dan uitloggen;
+  // wil je dit account gebruiken, dan een nieuwe uitnodiging vragen (anders ontstaat er een tweede account met een tweede naam).
+  const by = inv.invitedByName || 'degene die je uitnodigde';
   return box(<>{intro}
-    {!mine && <p className="hint err">Je bent ingelogd als {user.email}, maar de uitnodiging is voor {inv.email}.</p>}
+    {!mine && <div className="stack inv-other" style={{ gap: 6 }}>
+      <p className="hint err">Deze uitnodiging werkt alleen voor <b>{inv.email}</b>. Is dat ook jouw adres? Log dan uit en ga verder met {inv.email}.</p>
+      <p className="hint">Wil je je account <b>{user.email}</b> gebruiken? Vraag {by} om een nieuwe uitnodiging voor {user.email}.</p>
+    </div>}
     {mine && pickField}
     {errLine}
     <div className="row">{mine ? <button className="btn primary" disabled={busy} onClick={join}>Toetreden</button>
-      : <button className="btn primary" onClick={() => safeLogout(logout)}>Uitloggen en opnieuw</button>}<Link className="btn ghost" to="/">Niet nu</Link></div>
+      : <button className="btn primary btn-wrap" onClick={() => safeLogout(logout)}>Uitloggen en verder met {inv.email}</button>}<Link className="btn ghost" to="/">Niet nu</Link></div>
   </>);
 }
