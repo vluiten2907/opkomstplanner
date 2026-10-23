@@ -373,7 +373,6 @@ h2.h-sm { font-size: 16.5px; }
   text-align: left; border: 0; padding: 14px 16px;
   display: grid; gap: 7px; cursor: pointer; align-content: start;
 }
-.bcard.sel { box-shadow: 0 0 0 2px var(--accent), var(--shadow-up); }
 .bcard .bt { font-weight: 700; font-size: 15px; line-height: 1.25; overflow-wrap: anywhere; display: flex; gap: 8px; align-items: baseline; }
 .bcard .bt .dot { transform: translateY(-1px); }
 .bcard .bm { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; color: var(--muted); }
@@ -638,6 +637,8 @@ body { background: var(--grain), radial-gradient(90% 70% at 100% 0%, color-mix(i
 .card.side { box-shadow: var(--shadow); }
 .lift:hover { box-shadow: 0 0 0 2px var(--edge), 7px 7px 0 2px var(--hard); }
 .lift:active { box-shadow: 0 0 0 2px var(--edge), 2px 2px 0 2px var(--hard); }
+/* gekozen kaart in een bank (het paneel rechts hoort erbij): zacht accentvlak met een koperen rand, ook bij hover (die staat hierboven) */
+.bcard.sel, .bcard.sel:hover, .bcard.sel:active { background: var(--accent-soft); box-shadow: 0 0 0 2px var(--edge), 0 0 0 5px var(--pop), 6px 6px 0 5px var(--hard); }
 .nextitem { background: var(--paper); box-shadow: 0 0 0 1.5px var(--edge), 3px 3px 0 1.5px var(--hard); }
 .nextitem:hover { background: var(--paper); box-shadow: 0 0 0 1.5px var(--edge), 6px 6px 0 1.5px var(--hard); }
 .lib { background: var(--paper); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--edge) 40%, var(--line)); }
@@ -694,6 +695,8 @@ aside .notice .ntext { flex: none; }
 
 /* Login en app-schil */
 .auth-wrap { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; }
+/* telefoon: de body geeft al 16 px aan de zijkant (zoals binnen een speltak), dus hier geen tweede marge */
+@media (max-width: 600px) { .auth-wrap { padding-inline: 0; } }
 .auth-card { width: min(440px, 100%); }
 .avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-weight: 800; font-size: 13px; }
 .perm-grid { display: grid; gap: 6px 14px; font-size: 14px; }
@@ -808,10 +811,18 @@ body { padding-top: env(safe-area-inset-top, 0px); }
 .adminnote { margin-top: 12px; }
 .page-head > * { flex: 0 0 auto; }
 .page-head > .row { flex: 0 1 auto; min-width: 0; flex-wrap: wrap; }
+/* telefoon: een kortere knoptekst (Speltakken) en iets smallere knoppen, zodat de knoppen in de kop samen op één regel passen
+   (ook op 360 px en met de reserveletter als de webfonts niet laden) */
+.page-head .lbl-short { display: none; }
+@media (max-width: 600px) {
+  .page-head .lbl-long { display: none; }
+  .page-head .lbl-short { display: inline; }
+  .page-head .btn.ghost.sm { padding-inline: 8px; }
+}
 
 /* ---- opkomstenbank: eigen bank / groepsbank ---- */
 .tabs.page { margin: 0; position: static; max-width: 360px; width: 100%; }
-.tabs .count { font-family: var(--mono, ui-monospace, monospace); font-size: 12px; opacity: .7; margin-left: 4px; }
+.tabs .count { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 12px; opacity: .7; margin-left: 4px; }
 .bcard .from { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 700; color: var(--accent); }
 .bcard .shared-ico { margin-left: auto; color: var(--muted); display: inline-flex; flex: none; }
 .shared-title { font-size: 22px; line-height: 1.2; margin: 0; overflow-wrap: anywhere; }
@@ -923,6 +934,14 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
   .prow .f-abs.none .addtxt { display: inline; }
   .prow .brief.none { padding: 6px 8px; }
   .prow .brief.none .btxt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+/* laptop: de opkomst in elke rij dezelfde vorm. Regel 1 de titel, met eronder het aantal onderdelen en de stippen naast elkaar;
+   regel 2 de status en de knoppen (anders staat de status bij de ene rij naast en bij de andere onder de titel) */
+@media (min-width: 1101px) {
+  .prow .f-opk > .pcell { display: grid; grid-template-columns: auto auto auto minmax(0, 1fr); justify-items: start; align-items: center; gap: 4px; }
+  .prow .f-opk .plink { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; column-gap: 6px; align-items: center; width: 100%; }
+  .prow .f-opk .plink b { grid-column: 1 / -1; }
+  .prow .f-opk .plink .cdots { margin-top: 0; }
 }
 /* tablet: de opkomst past nog naast datum en onderwerp, wie plant en afwezig op de regel eronder */
 @media (min-width: 601px) and (max-width: 1100px) {

@@ -148,6 +148,15 @@ with sync_playwright() as p:
     pg.fill('input[type=email]', 'vluiten2907@gmail.com'); pg.fill('input[type=password]', 'demo123'); pg.click('.btn.primary'); w(1200)
     check('/beheer' in pg.url and pg.locator('h2:has-text("Beheer (totaal)")').count() == 1, 'hoofdaccount → Beheer (totaal)')
     check(pg.locator('main').count() == 1 and pg.locator('main h1:text-is("Beheer")').count() == 1, 'beheer: inhoud in main (landmark), kop Beheer')
+    # telefoon (390 en 360 px): geen dubbele zijmarge (alleen de 16 px van de pagina, zoals in een speltak) en de knoppen in de kop op één regel
+    for wd in (390, 360):
+        pg.set_viewport_size({'width': wd, 'height': 844}); w(200)
+        hd = pg.evaluate("""(() => { const b = [...document.querySelectorAll('.page-head .btn')], c = document.querySelector('main .card').getBoundingClientRect();
+          return [new Set(b.map(x => Math.round(x.getBoundingClientRect().top))).size, Math.round(c.left), Math.round(innerWidth - c.right), document.documentElement.scrollWidth <= innerWidth + 1, b.map(x => x.innerText.trim())]; })()""")
+        check(hd[0] == 1 and hd[1] == 16 and hd[2] == 16 and hd[3] and hd[4] == ['Speltakken', 'Account', 'Uitloggen'], f'beheer {wd} px: knoppen in de kop op één regel (Speltakken), kaarten met 16 px zijmarge ({hd})')
+    shot('02a-beheer-mobiel', False)
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    check(pg.locator('.page-head .btn:has-text("Mijn speltakken")').is_visible(), 'beheer laptop: de knop heet voluit Mijn speltakken')
     pg.click('text=Nieuwe Scouting-groep'); w(); pg.fill('#ng-name', 'Testgroep'); pg.click('text=Groep aanmaken'); w(800)
     check(pg.locator('.groupcard.open').count() == 1, 'nieuwe groep aangemaakt en opengeklapt')
     check(pg.locator('.groupcard select[aria-label="Bestaande persoon kiezen"]').count() == 0, 'beheerder kiezen kan pas als er leiding is')
@@ -253,6 +262,11 @@ with sync_playwright() as p:
     wc = pg.locator('.welcome')
     check(wc.count() == 1 and 'Opkomstdag: zaterdag 14:00–16:30' in wc.locator('.setup-day').inner_text() and (wc.locator('.setup-day a:text-is("Aanpassen")').get_attribute('href') or '').endswith('/instellingen')
           and pg.locator('.hero').count() == 0 and pg.locator('text=Nog geen onderwerp').count() == 0, 'nieuwe speltak: welkomstkaart met opkomstdag en Aanpassen, geen lege opkomstkaart')
+    # naast elkaar: de rechterkolom begint gelijk met de kaart links (hier de welkomstkaart, geen ruimte voor het insigne van de komende opkomst)
+    col_tops = lambda: pg.evaluate("""(() => { const a = document.querySelector('.dash2 > aside'), f = document.querySelector('.dash2 > :first-child'), l = f.querySelector('.hero, .empty-hero') || f;
+      return [Math.round(l.getBoundingClientRect().top), Math.round(a.getBoundingClientRect().top), getComputedStyle(a).marginTop]; })()""")
+    ct = col_tops()
+    check(ct[0] == ct[1], f'nieuwe speltak: welkomstkaart en kalender beginnen even hoog ({ct})')
     deco = pg.evaluate("[...document.querySelectorAll('.welcome a.btn, header nav a')].map(a => getComputedStyle(a).textDecorationLine + '|' + getComputedStyle(a).fontWeight)")
     check(deco and all(d.split('|')[0] == 'none' for d in deco) and all(d.split('|')[1] == '700' for d in deco), f'knop-links en menulinks zonder onderstreping ({sorted(set(deco))})')
     pg.set_viewport_size({'width': 390, 'height': 844}); w(200)
@@ -742,6 +756,13 @@ with sync_playwright() as p:
     kt = pg.locator('.toast').inner_text()
     check('Ingepland op vrijdag 4 t/m zondag 6 juni 2027' in kt and 'vrijdag 4 t/m zondag 6 juni 2027' in pg.locator('.ctx').inner_text(), f'kamp op een zaterdag: vrijdag t/m zondag ingepland, ook in de melding ({kt})')
     check([t.split('\n')[0] for t in pg.locator('.daytab:not(.add) b').all_inner_texts()] == ['Vrijdag 4 jun', 'Zaterdag 5 jun', 'Zondag 6 jun'], 'kamp op een zaterdag: dagtabs vr 4, za 5, zo 6 juni')
+    # telefoon: "Ingepland op" en de datum vallen niet uit elkaar (één stuk tekst, de datum begint op dezelfde regel)
+    pg.set_viewport_size({'width': 390, 'height': 844}); w(200)
+    io = pg.evaluate("""(() => { const s = [...document.querySelectorAll('.ctx > span')].find(x => x.textContent.startsWith('Ingepland op ')); if (!s) return null;
+      return [s.textContent, Math.abs(s.querySelector('b').getClientRects()[0].top - s.getBoundingClientRect().top) <= 4]; })()""")
+    check(io is not None and io[0] == 'Ingepland op vrijdag 4 t/m zondag 6 juni 2027' and io[1], f'bouwer mobiel: Ingepland op en de datum samen op een regel ({io})')
+    pg.locator('.ctx').screenshot(path=f'{OUT}/16d-ingepland-op-mobiel.png')
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     pg.click('.plan-head >> button:has-text("Jaarplanning")'); w(900)
     kr = pg.locator('.prow:has(.plink:has-text("Herfstkamp")) .pdate').inner_text()
     check('vr 4 – zo 6 jun' in kr and 'verzet van' not in kr, f'jaarplanning: kamp vr 4 – zo 6 juni, niet "verzet van" (de vaste zaterdag valt in het kamp) ({kr})')
@@ -839,6 +860,11 @@ with sync_playwright() as p:
     check(pg.locator('#ac-first').input_value() == 'Greet' and pg.locator('#ac-last').input_value() == 'Beheer', 'mijn account toont voor- en achternaam')
     pg.fill('#ac-last', 'de Beheerder'); pg.click('text=Opslaan'); w(600)
     shot('06-account')
+    pg.set_viewport_size({'width': 390, 'height': 844}); w(200)
+    ac = pg.evaluate("(() => { const c = document.querySelector('main .card').getBoundingClientRect(), b = [...document.querySelectorAll('.page-head .btn')].map(x => Math.round(x.getBoundingClientRect().top)); return [Math.round(c.left), Math.round(innerWidth - c.right), new Set(b).size]; })()")
+    check(ac == [16, 16, 1], f'mijn account mobiel: kaarten met 16 px zijmarge (zoals in een speltak), Terug en Uitloggen op één regel ({ac})')
+    shot('06b-account-mobiel', False)
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     pg.click('button:has-text("Wachtwoord wijzigen")'); w(500)
     check(pg.url.rstrip('/').endswith('/account') and 'We hebben een mail gestuurd naar ga@test.nl' in pg.locator('.toast').inner_text(),
           'mijn account: wachtwoord wijzigen stuurt meteen de mail, zonder je adres te typen')
@@ -935,6 +961,14 @@ with sync_playwright() as p:
     pg.fill('.toolbar input[type=search]', ''); w(200)
     card.click(); w(300)
     check('Vincent' not in pg.locator('.side').inner_text(), 'groepsbank toont geen namen van leiding')
+    # gekozen kaart: koperen rand en een zacht accentvlak (welke kaart bij het paneel hoort), ook bij hover; tellers in de tabbladen in de letter van de app
+    sel_st = lambda: card.evaluate("e => [e.classList.contains('sel'), getComputedStyle(e).boxShadow, getComputedStyle(e).backgroundColor]")
+    pop = pg.evaluate("(() => { const d = document.createElement('i'); d.style.color = 'var(--pop)'; document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove(); return c; })()")
+    pg.mouse.move(5, 5); w(250); s0 = sel_st(); card.hover(); w(250); s1 = sel_st(); pg.mouse.move(5, 5); w(250)
+    check(all(x[0] and pop in x[1] and x[2] not in ('rgba(0, 0, 0, 0)', 'transparent') for x in (s0, s1)), f'bank: gekozen kaart met koperen rand en accentvlak, ook bij hover ({pop}, {s1})')
+    shot('10b-groepsbank-gekozen', False)
+    tf = pg.evaluate("[getComputedStyle(document.querySelector('.tabs.page .count')).fontFamily, getComputedStyle(document.body).fontFamily]")
+    check(tf[0] == tf[1], f'opkomstenbank: tellers in de tabbladen in de letter van de app, geen systeem-monospace ({tf[0]})')
     tb = pg.locator('.side .tblocks')
     check('Openen' in tb.inner_text() and 'min.' not in tb.locator('li:has-text("Openen")').inner_text() and 'min. 0' not in tb.inner_text(), 'groepsbank: onderdelen zonder "min. 0 leiding" bij de vaste blokken')
     pg.click('.side >> text=Kopieer naar onze bank'); w(900)
@@ -1220,6 +1254,8 @@ with sync_playwright() as p:
     pg.click('a:has-text("Oefenen")'); w(1200)
     check('/s/oefen/dashboard' in pg.url and pg.locator('.watermark.on').count() == 1 and pg.locator('.oefenbar').count() == 1, 'oefenomgeving: watermerk en melding')
     check(pg.locator('text=Junglejacht en stratego').count() >= 1, 'oefenomgeving: voorbeelddata op het dashboard')
+    ct = col_tops(); pg.set_viewport_size({'width': 1060, 'height': 900}); w(200); ct1 = col_tops(); pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    check(pg.locator('.dash2 .hero').count() == 1 and ct[0] == ct[1] and ct1[2] == '0px', f'dashboard: rechterkolom even hoog als de kaart van de komende opkomst, onder elkaar geen extra ruimte ({ct}, {ct1})')
     # pagina die niet te laden is (bijv. een tabblad dat openstond tijdens een update van de site): eerst één keer
     # vanzelf opnieuw laden (haalt de nieuwe versie op); lukt het dan nog niet: melding, geen wit scherm
     pg.goto(BASE + '/s/oefen/dashboard'); w(1000)
@@ -1858,20 +1894,44 @@ with sync_playwright() as p:
         check(len(hs) > 20 and max(hs) <= 150 and sum(hs) / len(hs) <= 125 and lines and all(lines) and pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'),
               f'jaarplanning {wd} px: compacte rijen, opkomst naast de datum (max {max(hs):.0f} px, gemiddeld {sum(hs) / len(hs):.0f} px)')
     pg.locator('.prow:has(.plink:has-text("Vuur en kompas"))').scroll_into_view_if_needed(); shot('26b-jaarplanning-tablet', False)
-    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    # laptop (ook 1920 px): de opkomst in elke gekoppelde rij dezelfde vorm. Titel over de hele kolom, status en knoppen samen op de regel eronder
+    for wd in (1920, 1360):
+        pg.set_viewport_size({'width': wd, 'height': 900}); w(300)
+        shape = pg.evaluate("""[...document.querySelectorAll('.prow:not(.head):not(.geen)')].filter(r => r.querySelector('.plink')).map(r => {
+          const c = r.querySelector('.f-opk > .pcell'), C = c.getBoundingClientRect(), L = c.querySelector('.plink').getBoundingClientRect(), P = c.querySelector('.pill').getBoundingClientRect();
+          const mid = x => (x.top + x.bottom) / 2, btns = [...c.querySelectorAll(':scope > .iconbtn')].map(b => b.getBoundingClientRect());
+          return [Math.round(r.getBoundingClientRect().height), P.top >= L.bottom - 1 && Math.abs(P.left - C.left) < 2, btns.every(b => Math.abs(mid(b) - mid(P)) <= 3), Math.abs(L.width - C.width) < 2]; })""")
+        hts = [x[0] for x in shape]
+        check(len(shape) >= 4 and max(hts) - min(hts) <= 2 and all(x[1] and x[2] and x[3] for x in shape),
+              f'jaarplanning {wd} px: elke gekoppelde rij even hoog, status en knoppen samen onder de titel ({shape[:3]})')
+    shot('26c-jaarplanning-laptop', False)
+    gtop = pg.locator('.prow.geen .ptopic').evaluate_all('es => es.map(e => e.value)')
+    check('Trainingsweekend leiding' in gtop and 'Geen opkomst' not in gtop, f'oefenomgeving: bij Geen opkomst staat de reden, niet nog eens "Geen opkomst" ({gtop})')
     # --- koppelen: zoeken, en wat bij het onderwerp past staat bovenaan met een label
     pg.click('.presets >> text=Dit seizoen'); w(400)
     ridx = lambda t: pg.evaluate("t => [...document.querySelectorAll('.prow:not(.head)')].findIndex(r => r.querySelector('.ptopic')?.value === t)", t)
     check(pg.locator('h1:text-is("Jaarplanning")').count() == 1 and pg.locator('.subline:has-text("Seizoen ")').count() == 1, 'jaarplanning: kop zoals in het menu, het seizoen eronder')
     pg.click('.presets >> text=Komende 3 maanden'); w(400)
     prow(ridx('Sinterklaas')).locator('.btn:has-text("Koppelen")').click(); w(300)
-    check(pg.locator('.modal .pick:has-text("Sinterklaasopkomst") .pill:has-text("Past bij onderwerp")').count() == 1 and pg.locator('.modal .pill:has-text("Past bij onderwerp")').count() == 1,
-          'koppelen: het concept dat bij het onderwerp past, heeft het label Past bij onderwerp')
+    heads = pg.locator('.modal h3').all_inner_texts(); past = pg.locator('.modal h3:text-is("Past bij Sinterklaas") + .picklist')
+    check(heads[:2] == ['Past bij Sinterklaas', 'Uit de opkomstenbank'] and past.locator('.pick .info > b').all_inner_texts() == ['Sinterklaasopkomst']
+          and past.locator('.pick-kicker').inner_text().strip() == 'Concept' and 'Concepten' not in heads and pg.locator('.modal .pill:has-text("Past bij onderwerp")').count() == 0,
+          f'koppelen: wat bij het onderwerp past bovenaan in een eigen groep, met waar het vandaan komt ({heads})')
+    prim = pg.locator('.modal .btn.primary')
+    check(prim.count() == 1 and prim.get_attribute('aria-label') == 'Kiezen: Sinterklaasopkomst' and pg.locator('.modal .pick .btn:not(.primary):has-text("Kiezen")').count() == 3,
+          'koppelen: alleen Kiezen bij de beste suggestie is de hoofdknop (Nieuwe opkomst en de bank gewoon)')
+    pg.set_viewport_size({'width': 390, 'height': 844}); w(300)
+    pb = prim.bounding_box()
+    check(pb is not None and pb['y'] + pb['height'] <= 844 and pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), f'koppelen mobiel: de beste suggestie meteen in beeld ({pb})')
+    shot('28a-koppelen-past-bij-mobiel', False)
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     pg.click('.modal .closex'); w(200)
     prow(ridx('Rond de wereld')).locator('.btn:has-text("Koppelen")').click(); w(300)
     bank_titles = lambda: pg.locator('.modal .picklist').first.locator('.pick .info > b').all_inner_texts()
-    t0 = bank_titles()
-    check(len(t0) == 3 and t0[0] == 'Rond de wereld' and t0[1:] == sorted(t0[1:]), f'koppelen: wat bij het onderwerp past bovenaan, de rest op naam ({t0})')
+    t0 = bank_titles(); tb = pg.locator('.modal h3:text-is("Uit de opkomstenbank") + .picklist .pick .info > b').all_inner_texts()
+    check(t0 == ['Rond de wereld'] and pg.locator('.modal .picklist').first.locator('.pick-kicker').inner_text().strip() == 'Uit de opkomstenbank' and len(tb) == 2 and tb == sorted(tb),
+          f'koppelen: wat bij het onderwerp past bovenaan (uit de bank), de rest op naam ({t0}, {tb})')
+    shot('28b-koppelen-past-bij', False)
     pg.fill('.modal input[aria-label="Zoek opkomst"]', 'toren'); w(200); t1 = bank_titles()
     shot('28-koppelen-zoeken', False)
     pg.fill('.modal input[aria-label="Zoek opkomst"]', 'qqq'); w(200)

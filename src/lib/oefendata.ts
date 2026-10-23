@@ -86,7 +86,7 @@ export function oefenData(): Record<string, any> {
     plan('pl-0', { slot: wk(0), date: wk(0), topic: 'Junglejacht en stratego', opkId: 'opk-jungle', planners: ['Akela', 'Baloe'], absent: ['Chil'] }),
     plan('pl-1', { slot: wk(1), date: wk(1), topic: 'Vuur en kompas', opkId: 'opk-vuur', planners: ['Kaa'], absent: ['Baloe', 'Raksha', 'Chil'] }),
     plan('pl-2', { slot: wk(2), date: wk(2), topic: 'Sinterklaas', planners: ['Bagheera', 'Raksha'] }),
-    plan('pl-3', { slot: wk(3), date: wk(3), type: 'geen', topic: 'Geen opkomst', note: 'Leiding heeft een trainingsweekend.' }),
+    plan('pl-3', { slot: wk(3), date: wk(3), type: 'geen', topic: 'Trainingsweekend leiding', note: 'Leiding heeft een trainingsweekend.' }),
     plan('pl-kamp', { slot: wk(4), date: kampFri, endDate: addDays(kampFri, 2), type: 'kamp', topic: 'Winterweekend', opkId: 'opk-kamp', planners: ['Akela', 'Raksha'], letter: { needed: true, due: '', sent: false } }),
     plan('pl-5', { slot: wk(5), date: wk(5), topic: 'Rond de wereld', planners: ['Chil'] }),
     plan('pl-6', { slot: wk(6), date: wk(6), topic: 'Pannenkoekenopkomst' }),

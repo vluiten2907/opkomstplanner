@@ -46,7 +46,8 @@ export default function Dashboard() {
             : after.length ? <ul className="nextlist">{after.map(r => <NextItem key={r.key} r={r} />)}</ul> : <p className="hint">Nog niets verder gepland.</p>}
         </section>
       </div>}
-      <aside className="stack lg:mt-16" style={{ gap: 20 }}>
+      {/* naast elkaar (vanaf 1081 px, zie .dash2) gelijk met de bovenkant van de kaart links: de komende opkomst heeft mt-10 (voor het insigne), de welkomstkaart en "nog niets gepland" niet */}
+      <aside className={'stack' + (!empty && next ? ' min-[1081px]:mt-10' : '')} style={{ gap: 20 }}>
         {letters.length > 0 && <div className="notices">{letters.map(x => <Notice key={x.e.id} e={x.e} due={x.due} today={today} />)}</div>}
         <section id="dash-cal" className="card pad" aria-label="Kalender" tabIndex={-1}><MiniCal today={today} /></section>
         <section className="card pad stack"><SeasonCounts today={today} /></section>

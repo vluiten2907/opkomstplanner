@@ -63,7 +63,7 @@ export default function BeheerPage() {
   const [renewed, setRenewed] = useState<Invite | null>(null);
   const me = { uid: user!.uid, name: user?.displayName || user?.email || '', email: user?.email || '' };
 
-  const head = <PageHead title="Opkomstplanner · Beheer"><Link className="btn ghost sm" to="/speltakken"><Users size={14} />Mijn speltakken</Link><Link className="btn ghost sm" to="/account"><UserRound size={14} />Account</Link></PageHead>;
+  const head = <PageHead title="Opkomstplanner · Beheer"><Link className="btn ghost sm" to="/speltakken"><Users size={14} /><span className="lbl-long">Mijn speltakken</span><span className="lbl-short">Speltakken</span></Link><Link className="btn ghost sm" to="/account"><UserRound size={14} />Account</Link></PageHead>;
   const wrap = (body: React.ReactNode) => <main className="auth-wrap" style={{ alignItems: 'start' }}><div className="stack beheer" style={{ width: 'min(960px, 100%)', gap: 18 }}>{head}{body}</div></main>;
   if (!R.ready) return wrap(<p className="hint">Laden…</p>);
   if (!R.isAdmin) return wrap(<div className="empty"><span>Je bent geen beheerder. Deze pagina is voor Beheer (totaal) en beheerders van een groep.</span><Link className="btn" to="/speltakken">Mijn speltakken</Link></div>);
