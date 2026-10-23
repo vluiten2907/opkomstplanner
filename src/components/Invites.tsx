@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { Check, Copy, Mail, RotateCw, Send, X } from 'lucide-react';
 import { db } from '../lib/firebase';
+import { useAuth } from '../store/auth';
 import { inviteUrl, revokeInvite, sendInviteMail } from '../store/beheer';
 import { toast } from '../store/toast';
 import { ConfirmBtn } from './ui';
 import { inviteExpired, inviteWhere, INVITE_DAYS, KIND_LABELS, normInvite, type Invite } from '../lib/types';
-import { fmtNL } from '../lib/time';
+import { fmtNL, toISO } from '../lib/time';
 
 /** Welke uitnodigingen: alle (Beheer totaal), van een groep, van een speltak (teamleider), of van een speltak binnen een groep
  *  (beheerder van de groep: firestore.rules laat de lijst alleen toe als gid in de zoekvraag staat). */
@@ -36,6 +37,8 @@ export function useOpenInvites(scopes: InviteScope[]) {
 }
 
 const where_ = (i: Invite) => inviteWhere(i, 'hele planner');
+/** Laatste dag dat de link werkt (dd-mm-jjjj). */
+const validUntil = (i: Invite) => fmtNL(toISO(new Date(i.expiresAt)));
 
 async function copyText(t: string) {
   try { await navigator.clipboard.writeText(t); toast('Link gekopieerd'); return true; }
@@ -61,7 +64,7 @@ export function InviteList({ invites, showWhere = true, renew }: { invites: Invi
     return <div key={i.id} className="invrow">
       <div style={{ minWidth: 0 }}>
         <b className="ell">{i.email}</b>
-        <div className="hint ell">{KIND_LABELS[i.kind]}{showWhere ? ` · ${where_(i)}` : ''}{i.transfer ? ' · overdracht' : ''} · {exp ? <span className="err">verlopen</span> : `geldig t/m ${fmtNL(new Date(i.expiresAt).toISOString().slice(0, 10))}`}</div>
+        <div className="hint ell">{KIND_LABELS[i.kind]}{showWhere ? ` · ${where_(i)}` : ''}{i.transfer ? ' · overdracht' : ''} · {exp ? <span className="err">verlopen</span> : `geldig t/m ${validUntil(i)}`}</div>
       </div>
       <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
         {!exp && <button className="btn sm ghost" onClick={() => copyText(inviteUrl(i.id))} title="Link kopiëren"><Copy size={14} />Link</button>}
@@ -72,16 +75,21 @@ export function InviteList({ invites, showWhere = true, renew }: { invites: Invi
   })}</div>;
 }
 
-/** Net gemaakte uitnodiging: link tonen met kopiëren en mailen. */
+/** Net gemaakte (of hergebruikte) uitnodiging: link tonen met kopiëren en mailen.
+ *  Een hergebruikte uitnodiging kan van iemand anders zijn en al even lopen: afzender en geldigheid komen uit de uitnodiging zelf.
+ *  Laten mailen door de server kan alleen wie de uitnodiging maakte (public/api/uitnodiging-mail.php). */
 export function InviteLink({ inv, fromName, onClose }: { inv: Invite; fromName: string; onClose?: () => void }) {
+  const { user } = useAuth();
   const [copied, setCopied] = useState(false);
   const [mail, setMail] = useState<'' | 'bezig' | 'verstuurd' | 'uit'>('');
   const url = inviteUrl(inv.id);
   const what = `${KIND_LABELS[inv.kind]} voor ${where_(inv)}`;
-  const mailto = `mailto:${inv.email}?subject=${encodeURIComponent('Uitnodiging Opkomstplanner: ' + what)}&body=${encodeURIComponent(`Hoi,\n\n${fromName || 'Ik'} nodigt je uit voor de Opkomstplanner als ${what}.\n\nOpen deze link en maak een account aan met dit e-mailadres (${inv.email}):\n${url}\n\nDe link is ${INVITE_DAYS} dagen geldig.\n\nGroet,\n${fromName}`)}`;
-  return <div className="banknote"><span>Uitnodiging als <b>{KIND_LABELS[inv.kind]}</b>{inv.transfer ? ' (rol overdragen)' : ''} voor <b>{inv.email}</b>. Verstuur de mail of stuur de link zelf door; hij werkt alleen voor dat e-mailadres en is {INVITE_DAYS} dagen geldig.</span>
+  const mine = !!user && inv.invitedBy === user.uid, by = inv.invitedByName || fromName, until = validUntil(inv);
+  const mailto = `mailto:${inv.email}?subject=${encodeURIComponent('Uitnodiging Opkomstplanner: ' + what)}&body=${encodeURIComponent(`Hoi,\n\n${by || 'Ik'} nodigt je uit voor de Opkomstplanner als ${what}.\n\nOpen deze link en maak een account aan met dit e-mailadres (${inv.email}):\n${url}\n\nDe link is geldig t/m ${until}.\n\nGroet,\n${fromName}`)}`;
+  return <div className="banknote"><span>Uitnodiging als <b>{KIND_LABELS[inv.kind]}</b>{inv.transfer ? ' (rol overdragen)' : ''} voor <b>{inv.email}</b>. {mine ? 'Verstuur de mail of stuur de link zelf door' : 'Stuur de link zelf door'}; hij werkt alleen voor dat e-mailadres en is geldig t/m {until}.</span>
+    {!mine && <span className="hint">Gemaakt door {by || 'iemand anders'}. Kopieer de link of vraag {by || 'die persoon'} om hem te mailen.</span>}
     <code className="mono-code">{url}</code>
-    <div className="row"><button className="btn sm" onClick={async () => setCopied(await copyText(url))}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? 'Gekopieerd' : 'Kopiëren'}</button>{mail !== 'uit' && <button className="btn sm primary" disabled={mail === 'bezig' || mail === 'verstuurd'} onClick={async () => {
+    <div className="row"><button className="btn sm" onClick={async () => setCopied(await copyText(url))}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? 'Gekopieerd' : 'Kopiëren'}</button>{mine && mail !== 'uit' && <button className="btn sm primary" disabled={mail === 'bezig' || mail === 'verstuurd'} onClick={async () => {
       setMail('bezig');
       const r = await sendInviteMail(inv.id);
       if (r === 'ok') { setMail('verstuurd'); toast(`Uitnodiging gemaild naar ${inv.email}`); }

@@ -264,6 +264,9 @@ function Team() {
   const tl = (u: string) => isTeamleider(sp, u);
   const members = Object.entries(sp.members).sort((a, b) => Number(tl(b[0])) - Number(tl(a[0])) || a[1].name.localeCompare(b[1].name, 'nl'));
   const tlCount = members.filter(([u]) => tl(u)).length;
+  // Nog geen teamleider: de beheerder nodigt dan eerst de teamleider uit (zoals in Beheer). Afgeleid, want het team kan nog binnenkomen.
+  const needTl = isAdmin && tlCount === 0;
+  const eff = needTl ? 'teamleider' : kind;
   const fail = (e: any) => toast(e?.message === 'last' ? 'Er moet minstens één teamleider blijven.' : 'Aanpassen mislukt.');
   const invite = async () => {
     const em = email.trim().toLowerCase();
@@ -271,9 +274,9 @@ function Team() {
     if (members.some(([, m]) => m.email === em)) { toast('Dit e-mailadres zit al in het team.'); return; }
     setBusy(true);
     try {
-      if (kind === 'teamleider') await ensureTlIds(sp).catch(() => {});
+      if (eff === 'teamleider') await ensureTlIds(sp).catch(() => {});
       // Rol overdragen: de ander komt binnen als leiding met alle rechten; daarna draag je zelf je rol over (knop bij die persoon).
-      const k = kind === 'teamleider' ? 'teamleider' : 'leiding', p = kind === 'leiding' ? perms : ALL_PERMS, transfer = kind === 'transfer';
+      const k = eff === 'teamleider' ? 'teamleider' : 'leiding', p = eff === 'leiding' ? perms : ALL_PERMS, transfer = eff === 'transfer';
       // Staat er al een geldige uitnodiging met dezelfde rol en rechten voor dit adres? Dan die link, geen tweede.
       const r = await inviteOnce({ kind: k, email: em, gid: sp.gid, sid: sp.id, perms: p, transfer }, user!.uid, open, () => createInvite(em, k, p, transfer));
       setInv(r.inv); setEmail('');
@@ -298,12 +301,13 @@ function Team() {
     {manage && practice && <p className="hint">In de oefenomgeving kun je niemand uitnodigen. In je echte speltak maak je hier een uitnodigingslink voor nieuwe leiding.</p>}
     {manage && !practice && <div className="invite stack">
       <h3><UserPlus size={16} style={{ verticalAlign: -3, marginRight: 6 }} />Uitnodigen</h3>
-      <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); invite(); } }} placeholder="e-mailadres" aria-label="E-mailadres" style={{ flex: '1 1 220px' }} />
-        <div className="seg" role="group" aria-label="Uitnodigen als"><Chip on={kind === 'leiding'} onClick={() => setKind('leiding')}>Leiding</Chip>
+      <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); invite(); } }} placeholder={needTl ? 'e-mailadres teamleider' : 'e-mailadres'} aria-label="E-mailadres" style={{ flex: '1 1 220px' }} />
+        {!needTl && <div className="seg" role="group" aria-label="Uitnodigen als"><Chip on={kind === 'leiding'} onClick={() => setKind('leiding')}>Leiding</Chip>
           {isAdmin && <Chip on={kind === 'teamleider'} onClick={() => setKind('teamleider')}>Teamleider</Chip>}
-          {isTL && <Chip on={kind === 'transfer'} onClick={() => setKind('transfer')}>Mijn rol overdragen</Chip>}</div></div>
-      {kind === 'leiding' && <PermGrid perms={perms} onChange={(k, v) => setPerms({ ...perms, [k]: v })} />}
-      {kind === 'transfer' && <p className="hint">De ander komt eerst in het team als leiding met alle rechten. Daarna staat bij die persoon de knop Rol overdragen: hij wordt teamleider, jij blijft leiding. Zit je opvolger al in het team? Draag dan direct over via Rechten bij die persoon.</p>}
+          {isTL && <Chip on={kind === 'transfer'} onClick={() => setKind('transfer')}>Mijn rol overdragen</Chip>}</div>}</div>
+      {needTl && <p className="hint">Er is nog geen teamleider: wie je nu uitnodigt, wordt teamleider.</p>}
+      {eff === 'leiding' && <PermGrid perms={perms} onChange={(k, v) => setPerms({ ...perms, [k]: v })} />}
+      {eff === 'transfer' && <p className="hint">De ander komt eerst in het team als leiding met alle rechten. Daarna staat bij die persoon de knop Rol overdragen: hij wordt teamleider, jij blijft leiding. Zit je opvolger al in het team? Draag dan direct over via Rechten bij die persoon.</p>}
       <div className="row"><button className="btn primary" disabled={busy} onClick={invite}><Link2 size={16} />Uitnodigingslink maken</button></div>
       {inv && <InviteLink key={inv.id} inv={inv} fromName={myName} onClose={() => setInv(null)} />}
       <h3>Openstaande uitnodigingen</h3>

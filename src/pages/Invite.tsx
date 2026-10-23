@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { TentTree } from 'lucide-react';
 import { useAuth, authError, AUTH_BAD_LOGIN, AUTH_WEAK_PW } from '../store/auth';
 import { useRoles } from '../store/roles';
-import { acceptInvite, alreadyJoined, claimName, forgetInvite, markInviteUsed, nameOwner, readInvite, rememberInvite, saveProfile } from '../store/beheer';
+import { acceptInvite, alreadyJoined, claimName, forgetInvite, markInviteUsed, myNameInGroup, nameOwner, readInvite, rememberInvite, saveProfile } from '../store/beheer';
 import { Field } from '../components/ui';
 import VerifyNote from '../components/VerifyNote';
 import { applyAccent } from '../components/Layout';
@@ -12,10 +12,13 @@ import { auth } from '../lib/firebase';
 import { lastSpeltak } from '../lib/lastSpeltak';
 import { inviteExpired, inviteWhere, KIND_LABELS, PERM_LABELS, type Invite } from '../lib/types';
 
+/** Registreren met een adres dat al een account heeft: dan inloggen (hoort bij het wachtwoordveld). */
+const HAVE_ACCOUNT = 'Je hebt al een account met dit adres. Log in met je wachtwoord.';
+
 /** Uitnodiging openen. Een account aanmaken kan alleen hier, met het e-mailadres van de uitnodiging. */
 export default function InvitePage() {
   const { token } = useParams();
-  const { user, ready, verified, login, register, logout, sendVerify } = useAuth();
+  const { user, ready, verified, login, register, logout, sendVerify, reset } = useAuth();
   const { recheck } = useRoles();
   const nav = useNavigate();
   const [inv, setInv] = useState<Invite | null | undefined>(undefined);
@@ -23,6 +26,8 @@ export default function InvitePage() {
   const [name, setName] = useState(''); const [pw, setPw] = useState('');
   const [first, setFirst] = useState(''); const [last, setLast] = useState('');
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
+  // Wachtwoord vergeten: de mail is verstuurd (melding blijft hier staan, het tabblad met de uitnodiging blijft open)
+  const [resetSent, setResetSent] = useState('');
   // gebruikersnaam die bij het aanmaken is gekozen, voor het toetreden na het bevestigen van het e-mailadres
   const [chosen, setChosen] = useState('');
   // Naam al bezet in deze groep (bijv. een bestaand account uit een andere groep): dan kies je hier een naam voor deze groep.
@@ -84,9 +89,12 @@ export default function InvitePage() {
   const accept = async (u: { uid: string; email: string | null; displayName: string | null; emailVerified?: boolean }, nm?: string) => {
     // Al lid (bijv. intussen direct toegevoegd): niet toetreden (dat weigert Firestore), maar melden dat je er al in zit.
     if (await alreadyJoined(inv, u.uid)) { settleAlready(inv, u.uid, u.emailVerified !== false); return; }
+    // Al bekend in deze groep (bijv. als Akela Welpen in een andere speltak): dezelfde naam, geen tweede naam voor één persoon.
+    const known = !nm && inv.gid ? await myNameInGroup(inv.gid, u.uid) : null;
+    const name = nm || known || u.displayName || '';
     // Namen zijn uniek binnen een groep (zoals een gebruikersnaam).
-    if (inv.gid) await claimName(inv.gid, u.uid, nm || u.displayName || '', inv.id);
-    await acceptInvite(inv, { uid: u.uid, name: nm || u.displayName || u.email || 'Leiding', email: u.email || '' });
+    if (inv.gid) await claimName(inv.gid, u.uid, name, inv.id);
+    await acceptInvite(inv, { uid: u.uid, name: name || u.email || 'Leiding', email: u.email || '' });
     forgetInvite(inv.id);
     if (inv.sid) { lastSpeltak.set(inv.sid); nav(`/s/${inv.sid}`, { replace: true }); }
     else {
@@ -107,11 +115,11 @@ export default function InvitePage() {
   const errLine = err && <p className="hint err" id="i-err" role="alert">{err}</p>;
   const bad = (on: boolean) => on && err ? { 'aria-invalid': true, 'aria-describedby': 'i-err' } as const : {};
   const nameErr = err === taken || err === 'Vul je gebruikersnaam in.', fullErr = err === 'Vul je voor- en achternaam in.';
-  const pwErr = err === AUTH_BAD_LOGIN || err === AUTH_WEAK_PW;
+  const pwErr = err === AUTH_BAD_LOGIN || err === AUTH_WEAK_PW || err === HAVE_ACCOUNT;
 
   if (!user) {
     const submit = async (e: FormEvent) => {
-      e.preventDefault(); setErr(''); setBusy(true);
+      e.preventDefault(); setErr(''); setResetSent(''); setBusy(true);
       try {
         if (mode === 'register') {
           if (!name.trim()) throw { code: 'name' };
@@ -131,9 +139,18 @@ export default function InvitePage() {
       } catch (e: any) {
         if (e?.code === 'name') setErr('Vul je gebruikersnaam in.');
         else if (e?.code === 'fullname') setErr('Vul je voor- en achternaam in.');
+        // al een account met dit adres (bijv. leiding uit een andere groep): inloggen, het wachtwoord blijft staan
+        else if (mode === 'register' && String(e?.code || '').includes('email-already-in-use')) { setMode('login'); setChosen(''); setErr(HAVE_ACCOUNT); }
         else failJoin(e, auth.currentUser?.displayName || '');
         setBusy(false);
       }
+    };
+    // Wachtwoord vergeten: meteen de mail naar het adres van de uitnodiging, en dit tabblad blijft op de uitnodiging
+    const forgot = async () => {
+      setErr(''); setBusy(true);
+      try { await reset(inv.email); setMode('login'); setResetSent(`We hebben een mail gestuurd naar ${inv.email}. Kies daar een nieuw wachtwoord en log hier in. Niets ontvangen? Kijk ook in je spammap.`); }
+      catch (e) { setErr(authError(e)); }
+      setBusy(false);
     };
     return box(<form className="stack" onSubmit={submit}>{intro}
       <Field label="E-mailadres"><input type="email" value={inv.email} readOnly aria-readonly="true" /></Field>
@@ -144,11 +161,12 @@ export default function InvitePage() {
       {mode === 'register' && <Field label="Gebruikersnaam" htmlFor="i-name" hint={`Je naam is je gebruikersnaam binnen ${inv.groupName || 'de groep'}: hij mag er maar één keer voorkomen.`}><input id="i-name" value={name} maxLength={40} onChange={e => setName(e.target.value)} placeholder="Zoals de leiding je kent, bijv. Akela" autoComplete="name" {...bad(nameErr)} /></Field>}
       <Field label={mode === 'register' ? 'Kies een wachtwoord' : 'Wachtwoord'} htmlFor="i-pw"><input id="i-pw" type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete={mode === 'register' ? 'new-password' : 'current-password'} minLength={6} required {...bad(pwErr)} /></Field>
       {errLine}
+      {resetSent && <p className="hint" role="status">{resetSent}</p>}
       <button className="btn primary" disabled={busy}>{mode === 'register' ? 'Account aanmaken en toetreden' : 'Inloggen en toetreden'}</button>
       <div className="row between" style={{ fontSize: 14 }}>
         {mode === 'register' ? <button type="button" className="linkbtn" onClick={() => { setMode('login'); setErr(''); }}>Ik heb al een account</button>
-          : <button type="button" className="linkbtn" onClick={() => { setMode('register'); setErr(''); }}>Nieuw account aanmaken</button>}
-        <Link to="/wachtwoord">Wachtwoord vergeten</Link>
+          : <button type="button" className="linkbtn" onClick={() => { setMode('register'); setErr(''); setResetSent(''); }}>Nieuw account aanmaken</button>}
+        <button type="button" className="linkbtn" disabled={busy} onClick={forgot}>Wachtwoord vergeten</button>
       </div>
     </form>);
   }

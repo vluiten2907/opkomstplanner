@@ -328,6 +328,19 @@ export async function syncNames(gid: string, people: Map<string, string>, admins
   const gone = s.docs.filter(d => { const u = (d.data() as any).uid; return typeof u === 'string' && !keep.has(u); });
   await Promise.all(gone.map(d => deleteDoc(doc(db, 'groepen', gid, 'namen', d.id)).catch(() => {})));
 }
+/** Je naam in deze groep uit een speltak van de groep waar je al in zit (bijv. Akela Welpen), of null.
+ *  Geweigerd of alleen uit de cache (offline): null; de aanroeper gebruikt dan de accountnaam. */
+export async function myNameInGroup(gid: string, uid: string): Promise<string | null> {
+  try {
+    const s = await getDocs(query(collection(db, 'speltakken'), where('memberIds', 'array-contains', uid)));
+    if (s.metadata?.fromCache) return null;
+    for (const d of s.docs) {
+      const x = d.data() as any, n = x.gid === gid ? x.members?.[uid]?.name : null;
+      if (typeof n === 'string' && n.trim()) return n.trim();
+    }
+  } catch { /* geen antwoord: de accountnaam */ }
+  return null;
+}
 /** Na het verlaten van een speltak: je eigen naam in de groep vrijgeven, als je in geen andere speltak van de groep zit en geen beheerder bent. */
 export async function releaseOwnName(gid: string, uid: string, name: string, leftSid: string) {
   const s = await getDocs(query(collection(db, 'speltakken'), where('memberIds', 'array-contains', uid)));

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { Plus, ShieldCheck, Users, UserPlus, ExternalLink, Link2, ChevronRight, Trash2, UserRound } from 'lucide-react';
@@ -105,6 +105,11 @@ function RootCard({ me, invites }: { me: Me; invites: Invite[] }) {
   const people = Object.entries(root.people);
   const send = async () => {
     if (!isEmail(email)) { toast('Vul een geldig e-mailadres in.'); return; }
+    // al Beheer (totaal), jijzelf ook: geen uitnodiging die blijft openstaan
+    const em = email.trim().toLowerCase();
+    if (em === me.email.toLowerCase() || people.some(([, p]) => (p.email || '').toLowerCase() === em)) {
+      toast('Deze persoon is al Beheer (totaal).' + (transfer ? ' Wil je stoppen, tik dan bij jezelf op Aftreden.' : ''), undefined, transfer ? 7000 : undefined); return;
+    }
     setBusy(true);
     try {
       const inp = { kind: 'totaal' as const, email, transfer };
@@ -204,6 +209,8 @@ function GroupCard({ g, sps, loaded, invites, me, canAll, allSps, groups, onGone
   const err = useErr();
   const [name, setName] = useState(g.name); useEffect(() => setName(g.name), [g.name]);
   const [newSp, setNewSp] = useState(''); const [pick, setPick] = useState('');
+  // speltak aanmaken loopt: geen tweede (bijv. dubbelklik op een trage verbinding)
+  const [adding, setAdding] = useState(false); const addingRef = useRef(false);
   // Standaard ingeklapt; per groep onthouden in deze browser.
   const [open, toggle] = useStoredToggle('opk.groep.open.' + g.id);
   const mine = g.adminIds.includes(me.uid);
@@ -239,8 +246,16 @@ function GroupCard({ g, sps, loaded, invites, me, canAll, allSps, groups, onGone
   }, [g.id, namesKey, adminKey, loaded]);
   const saveName = () => { if (name.trim() && name.trim() !== g.name) renameGroep(g, name, sps.map(s => s.id)).then(() => toast('Naam opgeslagen')).catch(e => err(e, 'Opslaan mislukt.')); };
   const addSp = async () => {
-    if (!newSp.trim()) { toast('Vul de naam van de speltak in.'); return; }
-    try { await createSpeltakInGroep(g, newSp, me); setNewSp(''); toast('Speltak aangemaakt; nodig nu de teamleider uit.'); } catch (e) { err(e, 'Aanmaken mislukt.'); }
+    if (addingRef.current) return;
+    const nm = newSp.trim();
+    if (!nm) { toast('Vul de naam van de speltak in.'); return; }
+    const dup = sps.find(s => s.name.trim().toLowerCase() === nm.toLowerCase());
+    if (dup) { toast(`Er is al een speltak ${dup.name} in ${g.name || 'deze groep'}. Kies een andere naam.`); return; }
+    // veld meteen leeg; mislukt het, dan komt de naam terug
+    addingRef.current = true; setAdding(true); setNewSp('');
+    try { await createSpeltakInGroep(g, nm, me); toast('Speltak aangemaakt; nodig nu de teamleider uit.'); }
+    catch (e) { setNewSp(cur => cur || nm); err(e, 'Aanmaken mislukt.'); }
+    addingRef.current = false; setAdding(false);
   };
   return <section className={'card pad stack groupcard' + (open ? ' open' : '')}>
     <button type="button" className="gc-head" aria-expanded={open} onClick={toggle}>
@@ -264,7 +279,7 @@ function GroupCard({ g, sps, loaded, invites, me, canAll, allSps, groups, onGone
     <div className="team">{sps.map(sp => <SpeltakRow key={sp.id} sp={sp} g={g} me={me} pool={pool} all={sps} names={names} open={invites.filter(i => i.sid === sp.id)} />)}{!sps.length && <p className="hint">Nog geen speltakken.</p>}</div>
     <div className="row"><input className="inp" value={newSp} onChange={e => setNewSp(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addSp(); }} placeholder="Naam nieuwe speltak, bijv. Welpen" list="speltaklist-b" style={{ flex: '1 1 220px' }} />
       <datalist id="speltaklist-b">{SPELTAKKEN.map(x => <option key={x} value={x} />)}</datalist>
-      <button className="btn" onClick={addSp}><Plus size={16} />Speltak aanmaken</button></div>
+      <button className="btn" disabled={adding} onClick={addSp}><Plus size={16} />{adding ? 'Aanmaken…' : 'Speltak aanmaken'}</button></div>
     {canAll && <DeleteGroup g={g} sps={sps} me={me} allSps={allSps} groups={groups} onGone={onGone} />}
     </>}
   </section>;
@@ -339,6 +354,9 @@ function PersonPicker({ pool, exclude, label, button, groupName, onPick, childre
       setBusy(false);
       if (!p) { toast('Geen account gevonden met dit e-mailadres. Stuur een uitnodiging, of laat die persoon eerst inloggen en zijn e-mailadres bevestigen.'); return; }
       if (exclude.includes(p.uid)) { toast('Deze persoon zit al in het team.'); return; }
+      // al bekend in de groep (bijv. als Akela Welpen): die naam, niet de accountnaam
+      const known = pool.find(x => x.uid === p!.uid);
+      if (known?.name) p = { ...p, name: known.name };
     }
     // zelfde persoon als bij de bezette naam: met de nieuw gekozen naam
     const pickName = taken && taken.p.uid === p.uid;
