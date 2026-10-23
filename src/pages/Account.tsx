@@ -7,6 +7,7 @@ import { useRoles } from '../store/roles';
 import { saveProfile } from '../store/beheer';
 import { toast } from '../store/toast';
 import { Field } from '../components/ui';
+import { lastSpeltak } from '../lib/lastSpeltak';
 import PageHead from '../components/PageHead';
 
 /** Mijn account: gebruikersnaam en e-mailadres bekijken, voor- en achternaam invullen. */
@@ -17,7 +18,7 @@ export default function AccountPage() {
   const [first, setFirst] = useState(''); const [last, setLast] = useState(''); const [busy, setBusy] = useState(false);
   const [pwBusy, setPwBusy] = useState(false);
   useEffect(() => { if (profile) { setFirst(profile.firstName); setLast(profile.lastName); } }, [profile]);
-  const back = () => { const sid = localStorage.getItem('opk.sid'); nav(sid ? `/s/${sid}` : '/'); };
+  const back = () => { const sid = lastSpeltak.get(); nav(sid ? `/s/${sid}` : '/'); };
   const save = async () => {
     if (!first.trim() || !last.trim()) { toast('Vul je voor- en achternaam in.'); return; }
     setBusy(true);

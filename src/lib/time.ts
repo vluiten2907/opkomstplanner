@@ -46,6 +46,14 @@ export function parseNL(s: string, today = todayISO()): string | null {
 }
 /** Een getypte datum netjes als dd-mm-jjjj zetten (bij wegklikken); klopt hij niet, dan blijft hij staan zoals hij is. */
 export const tidyNL = (s: string) => { const iso = s.trim() ? parseNL(s) : null; return iso ? fmtNL(iso) : s; };
+/** Datum en "tot en met" (dd-mm-jjjj) als ISO, of de foutmelding. Leeg "tot en met" = één dag (endIso ''). */
+export function parseRange(date: string, end: string, today = todayISO()): { iso: string; endIso: string } | { error: string } {
+  const iso = parseNL(date, today), endIso = end.trim() ? parseNL(end, today) : '';
+  if (!iso) return { error: 'Typ de datum als dd-mm-jjjj.' };
+  if (endIso === null) return { error: 'Typ "tot en met" als dd-mm-jjjj, of laat het leeg.' };
+  if (endIso && endIso < iso) return { error: '"Tot en met" moet na de datum liggen.' };
+  return { iso, endIso };
+}
 export function isoWeek(iso: string) {
   const d = fromISO(iso);
   const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));

@@ -6,6 +6,7 @@ import { SpeltakProvider } from './store/speltak';
 import { Toast } from './components/ui';
 import SpeltakPages, { Loading } from './SpeltakPages';
 import { configured } from './lib/firebase';
+import { lastSpeltak } from './lib/lastSpeltak';
 import { LeaveGuard } from './store/unsaved';
 import ErrorBoundary from './components/ErrorBoundary';
 // Pagina's worden per stuk geladen, zodat de eerste bundel klein blijft.
@@ -31,7 +32,7 @@ function SpeltakRoutes() {
 }
 function Home() {
   const { ready, isAdmin } = useRoles();
-  const last = localStorage.getItem('opk.sid');
+  const last = lastSpeltak.get();
   if (last) return <Navigate to={`/s/${last}`} replace />;
   if (!ready) return <Loading />;
   return <Navigate to={isAdmin ? '/beheer' : '/speltakken'} replace />;

@@ -5,7 +5,7 @@ import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { Modal, TimePicker, Field, Chip, ConfirmBtn, useMedia } from './ui';
 import { PickOpk } from './shared';
-import { addDays, clone, fmtLong, fmtNL, fmtRange, parseNL, tidyNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, plural, todayISO } from '../lib/time';
+import { addDays, clone, fmtLong, fmtNL, fmtRange, parseNL, parseRange, tidyNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, plural, todayISO } from '../lib/time';
 import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, defaultTimes, entryTimes, firstFree, fitsTopic, fixedBlocks, isKamp, kampLength, kampMismatch, kampMismatchNote, kampStart, lanesLayout, minNeed, newEntry, newKamp, newOpk, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
 import { Ticks, PrepZones, blkGeom, blkLabel, lanesStyle } from './timeline';
 import type { NameSpec } from '../store/modal';
@@ -33,10 +33,9 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
   const quick: [string, string, string][] = [...([5, 6, 0].includes(settings.opkDay) ? [] : [[DAYS[settings.opkDay] + ' (standaard)', base, ''] as [string, string, string]]),
     ['Vrijdag', fri, ''], ['Zaterdag', sat, ''], ['Zondag', sun, ''], ['Weekend vr–zo', fri, sun], ['Weekend za–zo', sat, sun]];
   const save = () => {
-    const iso = parseNL(date), endIso = end.trim() ? parseNL(end) : '';
-    if (!iso) { toast('Typ de datum als dd-mm-jjjj.'); return; }
-    if (end.trim() && !endIso) { toast('Typ "tot en met" als dd-mm-jjjj, of laat het leeg.'); return; }
-    if (endIso && endIso < iso) { toast('"Tot en met" moet na de datum liggen.'); return; }
+    const r = parseRange(date, end);
+    if ('error' in r) { toast(r.error); return; }
+    const { iso, endIso } = r;
     if (!linked && type === 'opkomst' && !endIso && enV <= stV) { toast('De eindtijd moet na de begintijd liggen.'); return; }
     const en2 = { ...entryFor(keyId) };
     if (!linked) { en2.start = stV; en2.end = enV; }
@@ -71,9 +70,9 @@ export function ExtraModal({ onClose, onCreated }: { onClose: () => void; onCrea
   const [type, setType] = useState<Plan['type']>('opkomst'); const [date, setDate] = useState(''); const [end, setEnd] = useState(''); const [topic, setTopic] = useState('');
   const geen = type === 'geen', day = DAYS[settings.opkDay];
   const save = () => {
-    const iso = parseNL(date), endIso = end.trim() ? parseNL(end) : '';
-    if (!iso) { toast('Typ de datum als dd-mm-jjjj.'); return; }
-    if ((end.trim() && !endIso) || (endIso && endIso < iso)) { toast('Controleer "tot en met".'); return; }
+    const r = parseRange(date, end);
+    if ('error' in r) { toast(r.error); return; }
+    const { iso, endIso } = r;
     // Geen opkomst (bijv. een vakantie): de vaste opkomstdagen in die periode zelf op Geen opkomst, geen aparte rij ernaast.
     // Een dag met een opkomst of kamp blijft zoals hij is (nooit vanzelf ontkoppelen); een opkomst die naar een datum
     // buiten de periode is verzet, valt er niet onder.
@@ -152,7 +151,7 @@ export function LetterModal({ keyId, onClose }: { keyId: string; onClose: () => 
 
 /* ---------- Opkomst koppelen aan een datum ---------- */
 export function LinkModal({ keyId, onClose, onTakeover }: { keyId: string; onClose: () => void; onTakeover: (oid: string, fresh: boolean) => void }) {
-  const { settings, opks, peekEntry, entryFor, linkOpk, offerPlanTimes, saveOpk, sid } = useSpeltak();
+  const { settings, opks, peekEntry, entryFor, linkOpk, offerPlanTimes, saveOpk, sid, can } = useSpeltak();
   const nav = useNavigate();
   const e = peekEntry(keyId); const d = e ? e.date : keyId.slice(2);
   const [q, setQ] = useState('');
@@ -180,7 +179,7 @@ export function LinkModal({ keyId, onClose, onTakeover }: { keyId: string; onClo
     <div className="row"><button className={'btn' + (isKampRow ? '' : ' primary')} onClick={() => newOne(false)}><Plus size={16} />Nieuwe opkomst</button><button className={'btn' + (isKampRow ? ' primary' : '')} onClick={() => newOne(true)}><Tent size={16} />Weekendkamp</button></div>
     {allBank.length + allDrafts.length > 0 && <input className="inp" type="search" value={q} onChange={ev => setQ(ev.target.value)} placeholder="Zoek op titel, beschrijving of onderdeel" aria-label="Zoek opkomst" />}
     <h3 className="gap-lg">Uit de opkomstenbank</h3>
-    {bank.length ? <div className="picklist">{bank.map(o => <PickOpk key={o.id} o={o} label="Kiezen" kicker={fitTag(o)} onPick={() => { const en = { ...entryFor(keyId) }; const linked = linkOpk(o, en, true, false); onClose(); onTakeover(linked.id, true); offerPlanTimes(linked, en); }} />)}</div>
+    {bank.length ? <div className="picklist">{bank.map(o => <PickOpk key={o.id} o={o} label="Kiezen" kicker={fitTag(o)} onPick={() => { const en = { ...entryFor(keyId) }; const linked = linkOpk(o, en, true, false); onClose(); afterBankCopy(linked, en, onTakeover, offerPlanTimes, can('build')); }} />)}</div>
       : <div className="empty">{allBank.length ? 'Niets gevonden in de opkomstenbank.' : 'De opkomstenbank is nog leeg.'}</div>}
     {(drafts.length > 0 || (ql && allDrafts.length > 0)) && <><h3 className="gap-lg">Concepten</h3>{drafts.length ? <div className="picklist">{drafts.map(o => <PickOpk key={o.id} o={o} label="Kiezen" kicker={fitTag(o)} onPick={() => { const en = { ...entryFor(keyId) }; linkOpk(o, en, false, true); onClose(); const note = kampMismatchNote(o, en.date, en.endDate);
         if (!offerPlanTimes(o, en, 'Gekoppeld.')) toast(note ? 'Gekoppeld. ' + note : 'Gekoppeld', { label: 'Opkomst openen', fn: () => nav(`/s/${sid}/bouwer/${o.id}`) }, note ? 9000 : undefined); }} />)}</div>
@@ -188,13 +187,25 @@ export function LinkModal({ keyId, onClose, onTakeover }: { keyId: string; onClo
   </Modal>;
 }
 
+/**
+ * Kopie uit de bank net ingepland (zonder namen): met het recht Opkomsten meteen "Opkomst overnemen" (leiding indelen),
+ * anders alleen een melding. Overnemen schrijft de opkomst, en dat hoort bij Opkomsten (zoals in de bouwer en op het dashboard).
+ */
+function afterBankCopy(linked: Opk, en: Plan, onTakeover: (oid: string, fresh: boolean) => void, offerPlanTimes: (o: Opk, e: Plan, prefix?: string) => boolean, build: boolean) {
+  if (build) { onTakeover(linked.id, true); offerPlanTimes(linked, en); return; }
+  const note = kampMismatchNote(linked, en.date, en.endDate);
+  toast(`Ingepland op ${fmtRange(en.date, en.endDate, true)} (zonder namen).${note ? ' ' + note : ''}`, undefined, note ? 8000 : undefined);
+}
+
 /* ---------- Opkomst inplannen op een datum ---------- */
 export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose: () => void; onTakeover: (oid: string, fresh: boolean) => void }) {
-  const { settings, plans, getO, entryFor, entryForDate, linkOpk, offerPlanTimes, sid } = useSpeltak();
+  const { settings, plans, getO, entryFor, entryForDate, linkOpk, offerPlanTimes, sid, can } = useSpeltak();
   const nav = useNavigate();
-  const o = getO(oid)!; const today = todayISO();
-  const rows = rowsIn(settings, plans, today, addDays(today, 240)).filter(r => !r.e || (r.e.type !== 'geen' && !r.e.opkId)).slice(0, 24);
   const [custom, setCustom] = useState('');
+  // alle hooks vóór het stoppen hieronder: de opkomst kan elders verwijderd worden terwijl dit venster open staat
+  const o = getO(oid); if (!o) return null;
+  const today = todayISO();
+  const rows = rowsIn(settings, plans, today, addDays(today, 240)).filter(r => !r.e || (r.e.type !== 'geen' && !r.e.opkId)).slice(0, 24);
   // Vanuit de bouwer blijft de ingedeelde leiding staan; alleen uit de bank komt een kopie zonder namen.
   const keep = o.state !== 'bank';
   // een kamp loopt over meer dagen: toon het bereik zoals het wordt ingepland (vr–zo op de vaste zaterdag, zie linkOpk).
@@ -210,7 +221,7 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
     const en = { ...e };
     const linked = linkOpk(o, en, o.state !== 'draft', keep);
     onClose();
-    if (fromBank) { onTakeover(linked.id, true); offerPlanTimes(linked, en); return; }
+    if (fromBank) { afterBankCopy(linked, en, onTakeover, offerPlanTimes, can('build')); return; }
     const msg = 'Ingepland op ' + fmtRange(en.date, en.endDate, true), note = kampMismatchNote(linked, en.date, en.endDate);
     if (offerPlanTimes(linked, en, msg + '.')) return;
     if (linked !== o) toast(msg + '. Er is een kopie gemaakt.' + (note ? ' ' + note : ''), { label: 'Kopie openen', fn: () => nav(`/s/${sid}/bouwer/${linked.id}`) }, note ? 9000 : undefined);
@@ -226,9 +237,11 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
 
 /* ---------- Opkomst overnemen: planning door, leiding per activiteit, programma ---------- */
 export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean; onClose: () => void }) {
-  const { settings, leaders, lib, getO, latestO, saveOpk, entryOfOpk, presentForEntry, sid, savePlan } = useSpeltak();
+  const { settings, leaders, lib, getO, latestO, saveOpk, entryOfOpk, presentForEntry, sid, savePlan, can } = useSpeltak();
   const nav = useNavigate();
   const [, bump] = useState(0);
+  // indelen en het programma aanpassen hoort bij het recht Opkomsten (zoals in de bouwer); zonder dat recht alleen bekijken
+  const ro = !can('build');
   const [libId, setLibId] = useState(''); const [libDay, setLibDay] = useState(0);
   // alle hooks vóór het stoppen hieronder: de opkomst kan elders verwijderd worden terwijl dit venster open staat
   const [selId, setSelId] = useState<string | null>(null);
@@ -237,10 +250,11 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
   const o = getO(oid); if (!o) return null;
   const e = entryOfOpk(o), present = e ? presentForEntry(e, o) : [...leaders];
   const A = analyze(o, present, leaders), need = minNeed(o);
-  const upd = (fn: (o: Opk) => void) => { fn(o); if (isKamp(o)) syncKamp(o); saveOpk({ ...o }); bump(x => x + 1); };
+  const upd = (fn: (o: Opk) => void) => { if (ro) return; fn(o); if (isKamp(o)) syncKamp(o); saveOpk({ ...o }); bump(x => x + 1); };
   const containers = isKamp(o) ? o.days.map((d, i) => ({ d, label: dayTitle(o, i, e ? addDays(e.date, i) : null), lo: d.start, hi: d.end })) : [{ d: o as unknown as Day, label: '', lo: o.start - (o.prep || 0), hi: o.end + (o.post || 0) }];
   const toggle = (b: Block, n: string) => upd(() => { b.names = b.names.includes(n) ? b.names.filter(x => x !== n) : [...b.names, n]; });
   const delBlock = (C: typeof containers[0], b: Block) => {
+    if (ro) return;
     const at = C.d.blocks.indexOf(b), dayId = isKamp(o) ? C.d.id : null;
     upd(() => { C.d.blocks = C.d.blocks.filter(x => x !== b); }); setSelId(null);
     toast(`"${b.title || 'Naamloos onderdeel'}" verwijderd`, { label: 'Ongedaan maken', fn: () => {
@@ -264,7 +278,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
           const short = !!b.minLeaders && b.names.length < b.minLeaders, extra = b.names.filter(n => !leaders.includes(n));
           return <div key={b.id} className={g.cls.join(' ')} role="button" tabIndex={0} aria-label={blkLabel(b)}
             style={{ ['--c' as any]: c.color, ...g.style }}
-            onClick={() => setSelId(b.id === selId ? null : b.id)} onKeyDown={ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setSelId(b.id === selId ? null : b.id); } }}>
+            onClick={() => { if (!ro) setSelId(b.id === selId ? null : b.id); }} onKeyDown={ev => { if (!ro && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); setSelId(b.id === selId ? null : b.id); } }}>
             <div className="cols3">
               <div className="c1"><div className="t">{b.title || 'Naamloos onderdeel'}</div>
                 <div className="when">{fmtT(b.start)}–{fmtT(b.start + b.dur)} · {fmtDur(b.dur)}</div>
@@ -274,8 +288,8 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
               <div className="cl">{b.location || <span className="nobody">–</span>}</div>
               <div className="c2"><div className="names tk-names" onClick={ev => ev.stopPropagation()}>
                 {leaders.map(n => present.includes(n)
-                  ? <button key={n} type="button" className={'nm' + (b.names.includes(n) ? ' on' : ' off') + (A.clashes.has(b.id + '|' + n) ? ' clash' : '')} aria-pressed={b.names.includes(n)} onClick={() => toggle(b, n)}>{n}</button>
-                  : b.names.includes(n) ? <button key={n} type="button" className="nm clash" title="Afwezig" onClick={() => toggle(b, n)}>{n}</button> : null)}
+                  ? <button key={n} type="button" className={'nm' + (b.names.includes(n) ? ' on' : ' off') + (A.clashes.has(b.id + '|' + n) ? ' clash' : '')} aria-pressed={b.names.includes(n)} disabled={ro} onClick={() => toggle(b, n)}>{n}</button>
+                  : b.names.includes(n) ? <button key={n} type="button" className="nm clash" title="Afwezig" disabled={ro} onClick={() => toggle(b, n)}>{n}</button> : null)}
                 {extra.map(n => <span key={n} className="nm">{n}</span>)}
               </div></div>
             </div>
@@ -311,31 +325,31 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
     if (r.note) toast(r.note);
   };
   const togglePlanner = (n: string) => {
-    if (!e) return; const on = plannersOf(e, o).includes(n);
+    if (!e || ro) return; const on = plannersOf(e, o).includes(n);
     if (on && o.lead === n) upd(() => { o.lead = ''; });
     savePlan({ ...e, planners: on ? e.planners.filter(x => x !== n) : [...e.planners, n] });
   };
   const sub = e ? `${fmtRange(e.date, e.endDate, true)} · week ${isoWeek(e.date)}${e.absent.length ? ' · afwezig: ' + e.absent.join(', ') : ''}` : '';
   return <Modal title={fresh ? 'Opkomst overnemen' : 'Leiding indelen'} sub={sub} onClose={onClose} wide>
     <div className="tk-head">
-      <Field label="Opkomst titel"><input value={o.title} onChange={ev => upd(() => { o.title = ev.target.value; if (e) savePlan({ ...e, topic: ev.target.value }); })} /></Field>
+      <Field label="Opkomst titel"><input value={o.title} readOnly={ro} onChange={ev => upd(() => { o.title = ev.target.value; if (e) savePlan({ ...e, topic: ev.target.value }); })} /></Field>
       {!isKamp(o) && <>
-        <Field label="Begintijd"><TimePicker value={o.start} onChange={v => setTime('start', v)} from={360} to={1430} /></Field>
-        <Field label="Eindtijd"><TimePicker value={o.end} onChange={v => setTime('end', v)} from={365} to={1435} /></Field>
-        <Field label="Voorbereiding"><select value={o.prep} onChange={ev => upd(() => { o.prep = +ev.target.value; })}>{PREP_OPTS.map(m => <option key={m} value={m}>{prepLabel(m)}</option>)}</select></Field>
-        <Field label="Nabespreking"><select value={o.post} onChange={ev => upd(() => { o.post = +ev.target.value; })}>{PREP_OPTS.map(m => <option key={m} value={m}>{prepLabel(m)}</option>)}</select></Field>
+        <Field label="Begintijd"><TimePicker value={o.start} onChange={v => setTime('start', v)} from={360} to={1430} disabled={ro} /></Field>
+        <Field label="Eindtijd"><TimePicker value={o.end} onChange={v => setTime('end', v)} from={365} to={1435} disabled={ro} /></Field>
+        <Field label="Voorbereiding"><select value={o.prep} disabled={ro} onChange={ev => upd(() => { o.prep = +ev.target.value; })}>{PREP_OPTS.map(m => <option key={m} value={m}>{prepLabel(m)}</option>)}</select></Field>
+        <Field label="Nabespreking"><select value={o.post} disabled={ro} onChange={ev => upd(() => { o.post = +ev.target.value; })}>{PREP_OPTS.map(m => <option key={m} value={m}>{prepLabel(m)}</option>)}</select></Field>
       </>}
     </div>
-    {e && <div className="field"><span className="lbl">Planning door</span><div className="row" style={{ gap: 6 }}>{[...new Set([...present, ...plannersOf(e, o)])].map(n => <Chip key={n} on={plannersOf(e, o).includes(n)} onClick={() => togglePlanner(n)}>{n}</Chip>)}</div></div>}
+    {e && <div className="field"><span className="lbl">Planning door</span><div className="row" style={{ gap: 6 }}>{[...new Set([...present, ...plannersOf(e, o)])].map(n => <Chip key={n} on={plannersOf(e, o).includes(n)} disabled={ro} onClick={() => togglePlanner(n)}>{n}</Chip>)}</div></div>}
     <div className="row statrow"><span className="stat">Minimaal leiding<b>{need}</b></span><span className={'stat' + (need > present.length ? ' warnc' : '')}>Aanwezig<b>{present.length}</b></span><span className={'stat' + (A.warn ? ' warnc' : '')}>Aandachtspunten<b>{A.warn}</b></span></div>
     {A.warn > 0 && <ul className="issues">{A.issues.filter(i => i.lvl === 'warn').slice(0, 6).map((i, k) => <li key={k} className="warn"><i /><span>{i.text}</span></li>)}</ul>}
-    <p className="hint">Klik op een naam om die in te delen. Klik op een onderdeel om de tijd aan te passen of het weg te halen.</p>
+    <p className="hint">{ro ? 'Alleen bekijken: leiding indelen en het programma aanpassen kan met het recht Opkomsten.' : 'Klik op een naam om die in te delen. Klik op een onderdeel om de tijd aan te passen of het weg te halen.'}</p>
     <div className="tk-prog">{containers.map(C => <div key={C.d.id} className="stack" style={{ gap: 8 }}>
       {C.label && <h3 className="tk-day">{C.label} <span className="hint">{fmtT(C.d.start)}–{fmtT(C.d.end)}</span></h3>}
       {C.d.blocks.length ? timeline(C) : <p className="hint">Nog geen onderdelen.</p>}
     </div>)}</div>
     {selEdit()}
-    {lib.length > 0 && <div className="row"><select className="inp" aria-label="Activiteit om toe te voegen" value={libId || lib[0].id} onChange={e => setLibId(e.target.value)} style={{ flex: '1 1 220px' }}>{[...lib].sort(byTitle).map(l => <option key={l.id} value={l.id}>{l.title || 'Naamloos'} · {fmtDur(l.dur)}</option>)}</select>
+    {lib.length > 0 && !ro && <div className="row"><select className="inp" aria-label="Activiteit om toe te voegen" value={libId || lib[0].id} onChange={e => setLibId(e.target.value)} style={{ flex: '1 1 220px' }}>{[...lib].sort(byTitle).map(l => <option key={l.id} value={l.id}>{l.title || 'Naamloos'} · {fmtDur(l.dur)}</option>)}</select>
       {isKamp(o) && <select className="inp" aria-label="Dag" value={libDay} onChange={e => setLibDay(+e.target.value)} style={{ flex: '0 1 160px' }}>{o.days.map((d, i) => <option key={d.id} value={i}>{d.label}</option>)}</select>}
       <button className="btn" onClick={addLib}><Plus size={16} />Activiteit toevoegen</button></div>}
     <div className="row between"><button className="btn ghost" onClick={() => { onClose(); nav(`/s/${sid}/bouwer/${o.id}`); }}><SquarePen size={16} />Volledige bouwer</button><button className="btn primary" onClick={onClose}>Klaar</button></div>

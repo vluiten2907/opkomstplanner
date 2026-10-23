@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as M from '../../src/lib/model.ts';
-import { fmtT, isoWeek, parseNL, tidyNL } from '../../src/lib/time.ts';
+import { fmtT, isoWeek, parseNL, parseRange, tidyNL } from '../../src/lib/time.ts';
 import type { Block, Opk, Plan, Settings } from '../../src/lib/model.ts';
 
 const S = (extra: Partial<Settings> = {}): Settings => ({ ...M.defaultSettings(), ...extra });
@@ -44,6 +44,17 @@ test('toBank: ingepland → kopie met nieuwe ids; kamp ook zonder namen', () => 
   assert.equal(M.toBank(p, 'x', false).id, 'o1', 'copy=false: zelfde id');
   const k = M.toBank(M.normOpk({ id: 'k1', kind: 'kamp', state: 'planned', lead: 'Kaa', days: [{ id: 'd1', label: 'Zaterdag', start: 480, end: 1380, blocks: [blk('c', 600, 60)] }] }), 'Kamp');
   assert.notEqual(k.id, 'k1'); assert.notEqual(k.days[0].id, 'd1'); assert.equal(k.days[0].blocks[0].names.length, 0); assert.equal(k.lead, '');
+});
+test('normOpk: bank-opkomst zonder namen, ook uit een back-up of oude data; andere houden ze', () => {
+  const b = opk({ state: 'bank' });
+  assert.equal(b.lead, ''); assert.ok(M.allBlocks(b).every(x => x.names.length === 0), 'geen namen in de bank');
+  const k = M.normOpk({ id: 'k2', kind: 'kamp', state: 'bank', lead: 'Kaa', days: [{ id: 'd1', label: 'Zaterdag', start: 480, end: 1380, blocks: [blk('c', 600, 60)] }] });
+  assert.equal(k.lead, ''); assert.equal(k.days[0].blocks[0].names.length, 0, 'kamp in de bank ook niet');
+  const p = opk({ state: 'planned' }), d = opk();
+  assert.equal(p.lead, 'Baloe'); assert.deepEqual(p.blocks[0].names, ['Akela'], 'ingepland houdt namen');
+  assert.deepEqual(d.blocks[0].names, ['Akela'], 'concept houdt namen');
+  const c = M.copyOpk(b, S());
+  assert.ok(M.allBlocks(c).every(x => x.names.length === 0) && c.lead === '', 'kopie uit de bank ook zonder namen');
 });
 
 /* ---------- kopie met nieuwe ids ---------- */
@@ -303,6 +314,16 @@ test('parseNL', () => {
   assert.equal(parseNL('7-10', '2026-10-22'), '2027-10-07', 'al geweest: volgend jaar');
   assert.equal(parseNL('31-2', '2026-10-22'), null, 'bestaat niet');
   assert.equal(parseNL('7-11-'), null);
+});
+test('parseRange: datum en "tot en met", met duidelijke meldingen', () => {
+  const T = '2026-10-23';
+  assert.deepEqual(parseRange('07-11-2026', '', T), { iso: '2026-11-07', endIso: '' }, 'leeg = één dag');
+  assert.deepEqual(parseRange('07-11-2026', ' 08-11-2026 ', T), { iso: '2026-11-07', endIso: '2026-11-08' });
+  assert.deepEqual(parseRange('07-11-2026', '07-11-2026', T), { iso: '2026-11-07', endIso: '2026-11-07' }, 'zelfde dag mag');
+  assert.deepEqual(parseRange('07-11-202', '', T), { error: 'Typ de datum als dd-mm-jjjj.' });
+  assert.deepEqual(parseRange('', '08-11-2026', T), { error: 'Typ de datum als dd-mm-jjjj.' });
+  assert.deepEqual(parseRange('07-11-2026', '31-02-2026', T), { error: 'Typ "tot en met" als dd-mm-jjjj, of laat het leeg.' });
+  assert.deepEqual(parseRange('07-11-2026', '06-11-2026', T), { error: '"Tot en met" moet na de datum liggen.' });
 });
 test('tidyNL', () => {
   assert.equal(tidyNL('07112026'), '07-11-2026');

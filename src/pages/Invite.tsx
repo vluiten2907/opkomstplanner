@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { TentTree } from 'lucide-react';
-import { useAuth, authError } from '../store/auth';
+import { useAuth, authError, AUTH_BAD_LOGIN, AUTH_WEAK_PW } from '../store/auth';
 import { useRoles } from '../store/roles';
 import { acceptInvite, alreadyJoined, claimName, forgetInvite, markInviteUsed, nameOwner, readInvite, rememberInvite, saveProfile } from '../store/beheer';
 import { Field } from '../components/ui';
@@ -9,6 +9,7 @@ import VerifyNote from '../components/VerifyNote';
 import { applyAccent } from '../components/Layout';
 import { safeLogout } from '../store/saving';
 import { auth } from '../lib/firebase';
+import { lastSpeltak } from '../lib/lastSpeltak';
 import { inviteExpired, inviteWhere, KIND_LABELS, PERM_LABELS, type Invite } from '../lib/types';
 
 /** Uitnodiging openen. Een account aanmaken kan alleen hier, met het e-mailadres van de uitnodiging. */
@@ -67,7 +68,7 @@ export default function InvitePage() {
   // Al lid (zelf deze uitnodiging gebruikt, of er al in gezet): geen fout, maar de weg erheen.
   if (user && (already || inv.usedBy === user.uid)) {
     const open = () => {
-      if (inv.sid) { try { localStorage.setItem('opk.sid', inv.sid); } catch { /* geen opslag */ } nav(`/s/${inv.sid}`, { replace: true }); }
+      if (inv.sid) { lastSpeltak.set(inv.sid); nav(`/s/${inv.sid}`, { replace: true }); }
       else { if (inv.kind === 'totaal') recheck(); nav('/beheer', { replace: true }); }
     };
     const admin = inv.kind === 'totaal' || inv.kind === 'groep';
@@ -87,7 +88,7 @@ export default function InvitePage() {
     if (inv.gid) await claimName(inv.gid, u.uid, nm || u.displayName || '', inv.id);
     await acceptInvite(inv, { uid: u.uid, name: nm || u.displayName || u.email || 'Leiding', email: u.email || '' });
     forgetInvite(inv.id);
-    if (inv.sid) { localStorage.setItem('opk.sid', inv.sid); nav(`/s/${inv.sid}`, { replace: true }); }
+    if (inv.sid) { lastSpeltak.set(inv.sid); nav(`/s/${inv.sid}`, { replace: true }); }
     else {
       // Beheer (totaal) lezen werd vóór het toetreden geweigerd; opnieuw ophalen, anders zie je "geen beheerder" tot herladen
       if (inv.kind === 'totaal') recheck();
@@ -106,7 +107,7 @@ export default function InvitePage() {
   const errLine = err && <p className="hint err" id="i-err" role="alert">{err}</p>;
   const bad = (on: boolean) => on && err ? { 'aria-invalid': true, 'aria-describedby': 'i-err' } as const : {};
   const nameErr = err === taken || err === 'Vul je gebruikersnaam in.', fullErr = err === 'Vul je voor- en achternaam in.';
-  const pwErr = err === 'E-mailadres of wachtwoord klopt niet.' || err === 'Kies een wachtwoord van minstens 6 tekens.';
+  const pwErr = err === AUTH_BAD_LOGIN || err === AUTH_WEAK_PW;
 
   if (!user) {
     const submit = async (e: FormEvent) => {

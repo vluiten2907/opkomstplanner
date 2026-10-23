@@ -121,6 +121,8 @@ export function normOpk(o: any, s?: Settings): Opk {
     if (!n.days.length) n.days = [normDay({ label: 'Zaterdag', start: 480, end: 1380 }, 0)];
     syncKamp(n);
   }
+  // de opkomstenbank bevat geen namen, ook niet uit een back-up of oude data
+  if (n.state === 'bank') { n.lead = ''; allBlocks(n).forEach(b => { b.names = []; }); }
   return n;
 }
 export function normLib(l: any): Lib {

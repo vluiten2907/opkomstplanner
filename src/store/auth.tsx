@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, updateProfile, sendPasswordResetEmail, sendEmailVerification, reload, type User } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { lastSpeltak } from '../lib/lastSpeltak';
 
 type AuthCtx = {
   user: User | null; ready: boolean;
@@ -57,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     async logout() {
       // de laatste speltak hoort bij dit account: wie hierna inlogt, begint niet in een speltak waar hij geen lid van is
-      try { localStorage.removeItem('opk.sid'); } catch { /* geen opslag */ }
+      lastSpeltak.clear();
       await signOut(auth);
     },
   };
@@ -88,11 +89,14 @@ export function FixedAuth({ user, children }: { user: User; children: ReactNode 
   return <Ctx.Provider value={{ user, ready: true, verified: true, sendVerify: no, refresh: async () => true, login: no, register: no, reset: no, logout: async () => {} }}>{children}</Ctx.Provider>;
 }
 
+/** Meldingen die bij het wachtwoordveld horen (een pagina markeert dan dat veld). */
+export const AUTH_BAD_LOGIN = 'E-mailadres of wachtwoord klopt niet.';
+export const AUTH_WEAK_PW = 'Kies een wachtwoord van minstens 6 tekens.';
 export function authError(e: any): string {
   const c = e?.code || '';
-  if (c.includes('invalid-credential') || c.includes('wrong-password') || c.includes('user-not-found')) return 'E-mailadres of wachtwoord klopt niet.';
+  if (c.includes('invalid-credential') || c.includes('wrong-password') || c.includes('user-not-found')) return AUTH_BAD_LOGIN;
   if (c.includes('email-already-in-use')) return 'Er bestaat al een account met dit e-mailadres.';
-  if (c.includes('weak-password')) return 'Kies een wachtwoord van minstens 6 tekens.';
+  if (c.includes('weak-password')) return AUTH_WEAK_PW;
   if (c.includes('invalid-email')) return 'Dit is geen geldig e-mailadres.';
   if (c.includes('too-many-requests')) return 'Te veel pogingen. Probeer het straks opnieuw.';
   if (c.includes('network')) return 'Geen verbinding. Controleer je internet.';

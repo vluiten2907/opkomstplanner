@@ -6,6 +6,7 @@ import { useAuth } from '../store/auth';
 import { useSpeltak } from '../store/speltak';
 import { ACCENTS } from '../lib/model';
 import { fromISO, MONTHS } from '../lib/time';
+import { lastSpeltak } from '../lib/lastSpeltak';
 import ModalHost from './ModalHost';
 import { ConfirmBtn } from './ui';
 import VerifyNote from './VerifyNote';
@@ -48,11 +49,11 @@ export default function Layout({ children }: { children: ReactNode }) {
   const where = sp ? sp.name || sp.groupName || '' : '';
   useEffect(() => { applyAccent(settings.accent); }, [settings.accent]);
   useEffect(() => { document.title = sp ? [page, where, 'Opkomstplanner'].filter(Boolean).join(' · ') : 'Opkomstplanner'; }, [sp, page, where]);
-  useEffect(() => { if (sp && !practice) localStorage.setItem('opk.sid', sid); }, [sp, sid, practice]);
+  useEffect(() => { if (sp && !practice) lastSpeltak.set(sid); }, [sp, sid, practice]);
   useEffect(() => { if (!menu) return; const h = () => setMenu(false); document.addEventListener('click', h); return () => document.removeEventListener('click', h); }, [menu]);
   // menu open: focus op het eerste item (ook met de muis, zoals bij elk menu)
   useEffect(() => { if (menu) menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus(); }, [menu]);
-  if (denied) return <div className="auth-wrap"><div className="card pad stack auth-card"><h2>Geen toegang</h2><p className="hint">Je bent geen lid van deze speltak, of hij bestaat niet meer.</p><button className="btn primary" onClick={() => { localStorage.removeItem('opk.sid'); nav('/speltakken'); }}>Mijn speltakken</button></div></div>;
+  if (denied) return <div className="auth-wrap"><div className="card pad stack auth-card"><h2>Geen toegang</h2><p className="hint">Je bent geen lid van deze speltak, of hij bestaat niet meer.</p><button className="btn primary" onClick={() => { lastSpeltak.clearIf(sid); nav('/speltakken'); }}>Mijn speltakken</button></div></div>;
   const reload = <button className="btn primary" onClick={() => window.location.reload()}>Opnieuw laden</button>;
   // nog geen verbinding en de speltak staat niet in de cache: niet "Geen toegang" (en de laatste speltak niet vergeten); laadt vanzelf zodra er verbinding is
   if (noConn && !sp) return <div className="auth-wrap"><div className="card pad stack auth-card" role="status"><h2>Geen verbinding</h2><p className="hint">De speltak kan nu niet worden geladen. We proberen het opnieuw zodra er weer verbinding is.</p><div className="row"><button className="btn" onClick={() => nav('/speltakken')}>Mijn speltakken</button></div></div></div>;

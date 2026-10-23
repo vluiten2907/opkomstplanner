@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { ShieldCheck, UserRound, GraduationCap, Mail } from 'lucide-react';
 import { db } from '../lib/firebase';
+import { lastSpeltak } from '../lib/lastSpeltak';
 import VerifyNote from '../components/VerifyNote';
 import { useAuth } from '../store/auth';
 import { useRoles } from '../store/roles';
@@ -42,7 +43,7 @@ export default function SpeltakkenPage() {
       {isAdmin && <div className="banknote"><span><ShieldCheck size={16} style={{ verticalAlign: -3, marginRight: 6 }} />Je bent {isRoot ? 'Beheer (totaal)' : 'beheerder van een groep'}.</span><div className="row"><Link className="btn sm primary" to="/beheer">Naar beheer</Link></div></div>}
       {list === null ? <p className="hint">Laden…</p> : list.length ? <div className="picklist">{list.map(s => <div key={s.id} className="pick"><div className="info"><b>{[s.groupName, s.name].filter(Boolean).join(' · ')}</b>
         <span className="hint">{isTeamleider(s, user!.uid) ? 'Teamleider' : 'Leiding'} · {s.memberIds.length || 1} in het team</span></div>
-        <button className="btn sm primary" onClick={() => { localStorage.setItem('opk.sid', s.id); nav(`/s/${s.id}`); }}>Openen</button></div>)}</div>
+        <button className="btn sm primary" onClick={() => { lastSpeltak.set(s.id); nav(`/s/${s.id}`); }}>Openen</button></div>)}</div>
         : <div className="empty"><span>{isAdmin ? 'Je bent zelf geen lid van een speltak. Via Beheer zie je de speltakken van je groep.' : invite ? 'Je bent nog geen lid van een speltak.' : 'Je bent nog geen lid van een speltak. Heb je een uitnodiging gekregen? Open de link uit die mail nog een keer om toe te treden.'}</span></div>}
       <div className="pick"><div className="info"><b>Oefenomgeving</b><span className="hint">Een voorbeeldspeltak om alles uit te proberen. Je echte speltakken veranderen niet.</span></div>
         <Link className="btn sm" to="/s/oefen"><GraduationCap size={14} />Oefenen</Link></div>

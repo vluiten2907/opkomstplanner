@@ -12,6 +12,7 @@ import { InviteLink, InviteList, useOpenInvites, type InviteScope } from '../com
 import { addMember, setPerms, claimName, releaseName, syncNames, createGroep, newGroepId, createInvite, inviteOnce, renewInvite, revokeInvite, createSpeltakInGroep, deleteSpeltak, deleteGroep, countOpkomsten, ensureTlIds, findAccount, readAccounts, removeFromTeam, type AccountInfo, transferTeamleider, type Person, isEmail, linkSpeltak, removeGroupAdmin, removeRootPerson, renameGroep, setGroupAdmin, setTeamleider } from '../store/beheer';
 import { DEFAULT_LEIDING_PERMS, PERM_LABELS, normPerms, normSpeltak, isTeamleider, type Admin, type Member, type PermKey, type Groep, type Invite, type Speltak } from '../lib/types';
 import { plural } from '../lib/time';
+import { lastSpeltak } from '../lib/lastSpeltak';
 
 // Alleen Beheer (totaal) plakt de regels in Firebase: alleen die krijgt bij een weigering de tip dat ze er misschien nog niet staan.
 let rulesHint = false;
@@ -285,7 +286,7 @@ function DeleteGroup({ g, sps, me, allSps, groups, onGone }: { g: Groep; sps: Sp
     const left = [...people.values()].filter(p => !elsewhere(p.uid)).sort((a, b) => a.name.localeCompare(b.name, 'nl'));
     try {
       await deleteGroep(g, sps);
-      sps.forEach(sp => { if (localStorage.getItem('opk.sid') === sp.id) localStorage.removeItem('opk.sid'); });
+      sps.forEach(sp => lastSpeltak.clearIf(sp.id));
       try { localStorage.removeItem('opk.groep.open.' + g.id); } catch { /* geen opslag */ }
       toast(`${g.name || 'De groep'} is verwijderd`);
       onGone({ name: g.name || 'De groep', people: left });
@@ -400,7 +401,7 @@ function SpeltakRow({ sp, g, me, pool, all, names, open: openInv }: { sp: Spelta
   };
   const remove = async () => {
     setDeleting(true);
-    try { await deleteSpeltak(sp); Object.entries(sp.members).forEach(([u, m]) => releaseIfGone(g, all, sp.id, u, m.name)); if (localStorage.getItem('opk.sid') === sp.id) localStorage.removeItem('opk.sid'); toast(`${word} is verwijderd`); }
+    try { await deleteSpeltak(sp); Object.entries(sp.members).forEach(([u, m]) => releaseIfGone(g, all, sp.id, u, m.name)); lastSpeltak.clearIf(sp.id); toast(`${word} is verwijderd`); }
     catch (e) { err(e, 'Verwijderen mislukt.'); setDeleting(false); }
   };
   return <div className={'member spcard' + (open ? ' open' : '')}>
@@ -409,7 +410,7 @@ function SpeltakRow({ sp, g, me, pool, all, names, open: openInv }: { sp: Spelta
         <ChevronRight size={16} className="gc-chev" />
         <span style={{ minWidth: 0 }}><b>{sp.name || 'Speltak'}</b><span className="hint" style={{ display: 'block' }}>{tl ? `Teamleider: ${tl}` : <span className="err">Nog geen teamleider</span>} · {plural(sp.memberIds.length, 'lid', 'leden')}</span></span>
       </button>
-      <Link className="btn sm" to={`/s/${sp.id}`} onClick={() => localStorage.setItem('opk.sid', sp.id)}><ExternalLink size={14} />Openen</Link>
+      <Link className="btn sm" to={`/s/${sp.id}`} onClick={() => lastSpeltak.set(sp.id)}><ExternalLink size={14} />Openen</Link>
     </div>
     {open && <div className="stack" style={{ gap: 8, paddingTop: 10 }}>
       <b>Leiding</b>

@@ -18,6 +18,20 @@ def check(cond, msg):
     print(('OK   ' if cond else 'FAIL ') + msg)
     if not cond: failures.append(msg)
 
+def bank_names(store):
+    # alle opkomsten in een opkomstenbank (speltakken/*/opkomsten met state bank) en in de groepsbank (groepen/*/gedeeld):
+    # (titels, titels met namen of een eindverantwoordelijke). De bank bevat nooit namen.
+    titles, bad = [], []
+    for k, v in (store or {}).items():
+        if not v: continue
+        if re.match(r'^speltakken/[^/]+/opkomsten/', k) and v.get('state') == 'bank': o = v
+        elif re.match(r'^groepen/[^/]+/gedeeld/', k) and v.get('opk'): o = v['opk']
+        else: continue
+        blocks = [x for d in (o.get('days') or []) for x in (d.get('blocks') or [])] + list(o.get('blocks') or [])
+        titles.append(o.get('title') or '')
+        if o.get('lead') or any(x.get('names') for x in blocks): bad.append(o.get('title') or '')
+    return titles, bad
+
 with sync_playwright() as p:
     b = p.chromium.launch()
     ctx = b.new_context(viewport={'width': 1360, 'height': 900}, locale='nl-NL', accept_downloads=True)
@@ -349,6 +363,7 @@ with sync_playwright() as p:
     pg.click('text=In bank'); w(600)
     pg.click('nav >> text=Opkomstenbank'); w(500); pg.click('.bcard:has-text("Sluipspel")'); w(); pg.click('.side >> text=Bewerken'); w(700)
     check('Vincent Test' not in pg.locator('.blk:has-text("Sluipen") .names').inner_text(), 'opkomstenbank bewaart geen namen')
+    check(soon(lambda: (lambda r: 'Sluipspel' in r[0] and not r[1])(bank_names(fs()))), f'In bank vanuit een ingeplande opkomst met namen: in de data geen namen of eindverantwoordelijke ({bank_names(fs())[1]})')
 
     # --- overnemen uit bank
     pg.click('nav >> text=Opkomstenbank'); w(500)
@@ -566,6 +581,15 @@ with sync_playwright() as p:
       window.__fakeRemote('speltakken/' + sid + '/opkomsten/' + oid, null); if (pl) window.__fakeRemote(pl, null); }"""); w(800)
     check(len(errors) == n_err and pg.locator('.modal').count() == 0 and pg.locator('header.bar nav a').count() == 6 and pg.locator('text=Deze opkomst bestaat niet (meer)').count() == 1,
           'opkomst elders verwijderd terwijl Leiding indelen open staat: venster dicht, app werkt door')
+    # hetzelfde met het venster Inplannen open
+    pg.click('nav >> text=Opkomstbouwer'); w(300); pg.click('text=Nieuwe opkomst'); w(700); pg.fill('#om-title', 'Verdwijnt ook'); w(900)
+    pg.click('.plan-head >> text=Inplannen'); w(400)
+    check(pg.locator('.modal h2:has-text("Inplannen")').count() == 1, 'concept: venster Inplannen geopend')
+    n_err = len(errors)
+    pg.evaluate("""() => { const [, sid, , oid] = location.pathname.match(/\\/s\\/([^/]+)\\/(bouwer)\\/([^/]+)/);
+      window.__fakeRemote('speltakken/' + sid + '/opkomsten/' + oid, null); }"""); w(800)
+    check(len(errors) == n_err and pg.locator('.modal').count() == 0 and pg.locator('.crash').count() == 0 and pg.locator('header.bar nav a').count() == 6
+          and pg.locator('text=Deze opkomst bestaat niet (meer)').count() == 1, 'opkomst elders verwijderd terwijl Inplannen open staat: venster dicht, geen foutscherm, menu blijft')
 
     # --- dashboard, banken, kamp
     pg.click('nav >> text=Dashboard'); w(700); check(pg.locator('.hero').count() == 1, 'dashboard toont komende opkomst'); shot('05-dashboard')
@@ -757,6 +781,7 @@ with sync_playwright() as p:
     pg.click('.side >> text=Kopieer naar onze bank'); w(900)
     check(pg.locator('.tabs.page [aria-selected=true]:has-text("Onze bank")').count() == 1 and pg.locator('.bcard:has-text("Sluipspel")').count() == 1, 'kopie staat in de eigen opkomstenbank')
     check(not pg.locator('#tf-share').is_checked(), 'kopie uit de groep wordt niet opnieuw gedeeld')
+    check(soon(lambda: (lambda r: r[0].count('Sluipspel') >= 3 and not r[1])(bank_names(fs()))), f'groepsbank en kopie uit de groep: in de data geen namen ({bank_names(fs())[1]})')
     pg.click('.tabs.page >> text=Groep'); w(500)
     check('Al in onze bank' in pg.locator('.bcard:has-text("Sluipspel")').inner_text(), 'groepsbank: gekopieerde opkomst gemarkeerd')
     pg.set_viewport_size({'width': 390, 'height': 800}); w(300)
@@ -1086,6 +1111,23 @@ with sync_playwright() as p:
           'alleen recht Banken: bank-opkomst wel verwijderen, geen kopie als concept (dat hoort bij Opkomsten)')
     pg.goto(BASE + '/s/oefen/bouwer/opk-sint'); w(1000)
     check(pg.locator('.plan-head button:has-text("In bank")').count() == 1 and pg.locator('.plan-head button:has-text("Verwijderen")').count() == 0, 'alleen recht Banken: concept wel in de bank zetten, niet verwijderen')
+    # Banken + Jaarplanning zonder Opkomsten: inplannen uit de bank (kopie zonder namen) mag, maar leiding indelen en de titel
+    # aanpassen hoort bij Opkomsten (zoals in de bouwer): geen bewerkbaar venster Opkomst overnemen, titel blijft
+    oefen_bak = oefen_get('s')
+    oefen_set("s['speltakken/oefen'].members['oefen-jij'].perms = { plan: true, build: false, bank: true, settings: false }")
+    pg.goto(BASE + '/s/oefen/opkomsten'); w(1000); pg.click('.bcard:has-text("Rond de wereld")'); w(300); pg.click('.side >> text=Inplannen'); w(400)
+    pg.click('.modal >> text=Hier inplannen >> nth=0'); w(900)
+    kopie = lambda: oefen_get("Object.values(s).filter(o => o && o.state === 'planned' && o.srcId === 'opk-bank-wereld').map(o => [o.title, o.blocks.every(b => !b.names.length)])")
+    check(pg.locator('.modal').count() == 0 and 'zonder namen' in pg.locator('.toast').inner_text() and kopie() == [['Rond de wereld', True]],
+          f'Banken + Jaarplanning zonder Opkomsten: Hier inplannen plant een kopie zonder namen in, zonder venster Opkomst overnemen ({kopie()})')
+    shot('43-inplannen-zonder-opkomsten', False)
+    pg.goto(BASE + '/s/oefen/jaarplanning'); w(1000); pg.click('.presets >> text=Komende 3 maanden'); w(300)
+    pg.locator('.prow .btn:has-text("Koppelen")').first.click(); w(400)
+    pg.locator('.modal .pick:has-text("Knopen en pionieren")').first.locator('button:has-text("Kiezen")').click(); w(900)
+    check(pg.locator('.modal').count() == 0 and 'zonder namen' in pg.locator('.toast').inner_text()
+          and oefen_get("Object.values(s).some(o => o && o.state === 'planned' && o.srcId === 'opk-bank-knopen' && o.title === 'Knopen en pionieren')"),
+          'Banken + Jaarplanning zonder Opkomsten: koppelen uit de bank zonder venster Opkomst overnemen, titel blijft')
+    pg.evaluate("v => localStorage.setItem('opk.oefen.v1', JSON.stringify(v))", oefen_bak)
     oefen_set("s['speltakken/oefen'].members['oefen-jij'].perms = { plan: false, build: true, bank: false, settings: true }")
     # alleen Opkomsten: de opkomstenbank is alleen-lezen, in de bouwer net zo (wel Kopie en Inplannen)
     pg.goto(BASE + '/s/oefen/opkomsten'); w(1000); pg.click('.bcard:has-text("Rond de wereld")'); w(300)
@@ -1183,11 +1225,24 @@ with sync_playwright() as p:
     pg.goto(BASE + '/s/oefen/bouwer'); w(1000)
     check(pg.locator('.pick:has-text("Winterweekend")').count() >= 1, 'back-up op bezette data: het kamp is te zien bij de concepten')
     oefen_set("Object.keys(s).filter(k => k.includes('/x-')).forEach(k => delete s[k])")
+    # back-up met namen in een bank-opkomst (oude versie of met de hand aangepast): de bank blijft zonder namen, ook een kopie ervan
+    pg.goto(BASE + '/s/oefen/instellingen'); w(1000)
+    restore_file({'version': 4, 'plans': [], 'lib': [], 'opks': [{'id': 'bk-namen', 'state': 'bank', 'title': 'Bank met namen', 'lead': 'Kaa',
+                  'blocks': [{'id': 'bk-b1', 'title': 'Spel', 'start': 840, 'dur': 30, 'minLeaders': 2, 'names': ['Baloe', 'Bagheera']}]}]})
+    check(soon(lambda: oefen_get("!!s['speltakken/oefen/opkomsten/bk-namen']")) and (lambda r: 'Bank met namen' in r[0] and not r[1])(bank_names(oefen_get('s'))),
+          f'back-up terugzetten: bank-opkomst met namen komt zonder namen in de bank ({bank_names(oefen_get("s"))[1]})')
+    pg.goto(BASE + '/s/oefen/bouwer/bk-namen'); w(1000)
+    sb('Opslaan als kopie').click(); w(200); pg.fill('#sb-name', 'Bank met namen kopie'); sb('Kopie opslaan').click(); w(900)
+    check((lambda r: 'Bank met namen kopie' in r[0] and not r[1])(bank_names(oefen_get('s'))), 'kopie van die bank-opkomst ook zonder namen')
+    oefen_set("Object.keys(s).filter(k => { const v = s[k]; return v && k.startsWith('speltakken/oefen/opkomsten/') && /^Bank met namen/.test(v.title); }).forEach(k => delete s[k])")
     pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(1000); pg.fill('#om-title', jt0); w(900)
     # extra datum toevoegen en de rij weer leegmaken
     pg.goto(BASE + '/s/oefen/jaarplanning'); w(1000); pg.click('.presets >> text=Komende 3 maanden'); w(300)
     pg.click('button:has-text("Extra datum")')
     pg.fill('.modal input[placeholder="dd-mm-jjjj"]', (date.today() + timedelta(days=12)).strftime('%d-%m-%Y')); pg.fill('.modal input[placeholder="bijv. Groepsweekend"]', 'Extra oefendag')
+    pg.fill('#xd-end', (date.today() + timedelta(days=5)).strftime('%d-%m-%Y')); pg.click('.modal button:has-text("Toevoegen")'); w(200)
+    check(pg.locator('.modal #xd-end').count() == 1 and '"Tot en met" moet na de datum liggen.' in pg.locator('.toast').inner_text(), 'extra datum: "tot en met" vóór de datum geeft dezelfde melding als bij Datum en soort')
+    pg.fill('#xd-end', '')
     pg.click('.modal button:has-text("Toevoegen")')
     xrow = lambda: pg.evaluate("[...document.querySelectorAll('.prow:not(.head)')].findIndex(r => r.querySelector('.ptopic')?.value === 'Extra oefendag')")
     check(soon(lambda: xrow() >= 0 and oefen_get("Object.values(s).some(p => p && p.topic === 'Extra oefendag' && p.slot === null && p.type === 'opkomst')")), 'extra datum toegevoegd in de jaarplanning')
@@ -1841,6 +1896,25 @@ with sync_playwright() as p:
             q.goto(BASE + '/s/oefen/jaarplanning?focus=s:2026-08-08'); q.wait_for_timeout(1200)
             check(q.locator('.rangebar .field:has(label:text-is("Van")) input').input_value() == '09-07-2026', 'datum in de zomerpauze openen: bereik eromheen, geen eindeloze lus')
         c.close()
+
+    # --- opslag geblokkeerd (bijv. "alle cookies blokkeren"): de app werkt, alleen de laatste speltak wordt niet onthouden
+    bc = b.new_context(viewport={'width': 1360, 'height': 900}, locale='nl-NL')
+    bc.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())
+    # de nep-Firebase (fake.*) houdt zijn opslag, de rest gooit een SecurityError
+    bc.add_init_script("""(() => { for (const m of ['getItem', 'setItem', 'removeItem']) { const f = Storage.prototype[m];
+      Storage.prototype[m] = function (k, ...a) { if (String(k).startsWith('fake.')) return f.call(this, k, ...a); throw new DOMException('Opslag geblokkeerd', 'SecurityError'); }; } })()""")
+    bq = bc.new_page(); bq.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+    bq.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' and 'ERR_FAILED' not in m.text else None)
+    bq.goto(BASE + '/inloggen'); bq.wait_for_timeout(600)
+    bq.fill('input[type=email]', 'vluiten2907@gmail.com'); bq.fill('input[type=password]', 'demo123'); bq.click('.btn.primary'); bq.wait_for_timeout(1500)
+    check('/beheer' in bq.url and bq.locator('.crash').count() == 0 and bq.locator('h2:has-text("Beheer (totaal)")').count() == 1, 'opslag geblokkeerd: inloggen werkt, geen foutscherm')
+    bq.evaluate("""() => window.__fakeRemote('speltakken/sblok', { name: 'Blok', groupName: '', createdBy: 'uroot', settings: {}, tlIds: ['uroot'], memberIds: ['uroot'],
+      members: { uroot: { name: 'Beheer (demo)', email: 'vluiten2907@gmail.com', role: 'teamleider', perms: { plan: true, build: true, bank: true, settings: true }, since: 1 } } })""")
+    bq.goto(BASE + '/s/sblok/dashboard'); bq.wait_for_timeout(1500)
+    check(bq.locator('.crash').count() == 0 and bq.locator('header.bar nav a').count() == 6, 'opslag geblokkeerd: speltak openen werkt (laatste speltak onthouden mislukt stil)')
+    bq.goto(BASE + '/'); bq.wait_for_timeout(1200)
+    check(bq.locator('.crash').count() == 0 and '/beheer' in bq.url, 'opslag geblokkeerd: startpagina gaat naar Beheer, geen foutscherm')
+    bc.close()
     b.close()
 
 check(not errors, 'geen fouten in de console' + ('' if not errors else ': ' + '; '.join(errors[:5])))

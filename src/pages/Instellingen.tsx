@@ -7,6 +7,7 @@ import { toast } from '../store/toast';
 import { PageTitle } from '../components/shared';
 import { Chip, ConfirmBtn, Field, TimePicker, useDebouncedInput } from '../components/ui';
 import { download, slugify } from '../lib/export';
+import { lastSpeltak } from '../lib/lastSpeltak';
 import { fmtNL, fmtT, plural, todayISO, uid, DAYS, MONTHS } from '../lib/time';
 import { ACCENTS, normLib, normOpk, normPlan, normSettings, prepLabel, PREP_OPTS, SPELTAKKEN, SWATCHES, type Opk, type Plan, type Settings } from '../lib/model';
 import { ALL_PERMS, DEFAULT_LEIDING_PERMS, PERM_HELP, PERM_LABELS, isTeamleider, type Invite, type Member, type PermKey, type Perms } from '../lib/types';
@@ -223,7 +224,7 @@ function Leave() {
     try { await removeMember(uidX); } catch { toast('Verlaten mislukt.'); return; }
     // je naam in de groep komt vrij als je nergens anders in de groep meer zit (op de achtergrond; niet erg als het niet lukt)
     if (gid && name) releaseOwnName(gid, uidX, name, sid).catch(() => {});
-    try { if (localStorage.getItem('opk.sid') === sid) localStorage.removeItem('opk.sid'); } catch { /* geen opslag */ }
+    lastSpeltak.clearIf(sid);
     nav('/speltakken');
   };
   return <div className="dangerzone"><b>Speltak verlaten</b><span className="hint">Je wordt uit het team gehaald; een teamleider kan je opnieuw uitnodigen.</span>
