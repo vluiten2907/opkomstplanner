@@ -12,9 +12,10 @@ export function usePdf() {
   return (o: Opk | undefined | null) => { if (!o) return; makePdf(o, settings, o.state === 'planned' ? entryOfOpk(o) : null, presentFor(o), practice); };
 }
 
-export const PageTitle = ({ title, sub, kicker, children }: { title: React.ReactNode; sub?: React.ReactNode; kicker?: React.ReactNode; children?: React.ReactNode }) =>
+/** Paginakop. `small`: op het dashboard, zodat de komende opkomst (64 px) het grootst blijft. */
+export const PageTitle = ({ title, sub, kicker, small, children }: { title: React.ReactNode; sub?: React.ReactNode; kicker?: React.ReactNode; small?: boolean; children?: React.ReactNode }) =>
   <div className="row between" style={{ alignItems: 'flex-end' }}>
-    <div>{kicker && <p className="kicker">{kicker}</p>}<h1 className="display text-5xl md:text-7xl font-black tracking-tighter">{title}</h1>{sub && <p className="subline">{sub}</p>}</div>
+    <div>{kicker && <p className="kicker">{kicker}</p>}<h1 className={'display font-black tracking-tighter ' + (small ? 'text-5xl md:text-[56px]' : 'text-5xl md:text-7xl')}>{title}</h1>{sub && <p className="subline">{sub}</p>}</div>
     {children && <div className="row">{children}</div>}
   </div>;
 

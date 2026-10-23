@@ -122,7 +122,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .barrow .track { height: 8px; background: var(--sunk); border-radius: 99px; overflow: hidden; }
 .barrow .fill { height: 100%; background: var(--accent); border-radius: 99px; }
 .barrow .val { font-size: 12.5px; color: var(--muted); }
-.barrow .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barrow .bl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .notices { display: grid; gap: 10px; }
 .notice { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; padding: 14px 16px; }
 .notice > svg { width: 22px; height: 22px; flex: none; }
@@ -248,7 +248,9 @@ button.cday:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 }
 #om-title:hover { background: var(--sunk); }
 #om-title:focus { background: var(--surface); outline: 2px solid var(--accent); }
-.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; padding: 16px 18px 6px; }
+.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; padding: 16px 18px 6px; align-items: start; }
+/* elk veld begint bovenaan, ook als een buurveld een hint eronder heeft (Leiding om 13:30): geen uitgerekte of verspringende velden */
+.meta .field { align-content: start; }
 .timefield select { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
 .present { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 18px 16px; }
 .summary { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 16px 10px; }
@@ -461,7 +463,10 @@ button.cday:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 .zone span { position: absolute; right: 10px; top: 5px; font-size: 11.5px; font-weight: 700; color: var(--signal-ink); letter-spacing: .02em; }
 .blk { z-index: 1; }
 .modal-card.wide { width: min(860px, 100%); }
-.tk-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tk-head { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+/* de titel krijgt de hele breedte (een lange titel blijft leesbaar), de tijden staan eronder */
+.tk-head > .field:first-child { grid-column: 1 / -1; }
+@media (max-width: 600px) { .tk-head { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .tk-prog { display: grid; gap: 8px; }
 .tk-day { margin-top: 6px; }
 .chip.sm { font-size: 12px; padding: 3px 9px; }
@@ -479,7 +484,7 @@ button.cday:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 .ocat { font-size: 11.5px; font-weight: 700; padding: 2px 9px; border-radius: 99px; background: color-mix(in srgb, var(--c) 16%, var(--surface)); color: color-mix(in srgb, var(--c) 70%, var(--ink)); white-space: nowrap; }
 .cdots { display: flex; gap: 3px; margin-top: 3px; }
 .cdots .dot { width: 8px; height: 8px; }
-.barrow .nm { min-width: 0; }
+.barrow .bl { min-width: 0; }
 .bars.wide .barrow { grid-template-columns: minmax(0, 1.5fr) minmax(40px, 1fr) auto; }
 .tpick { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .tpick select { flex: 1 1 0; min-width: 0; font-family: var(--f-mono); font-variant-numeric: tabular-nums; padding-right: 4px; }
@@ -831,10 +836,10 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
   .hero .facts > [data-editable] { padding-block: 7px; margin-block: -7px; }
 }
 
-/* Jaarplanning op de telefoon: compacte rij zonder kolomkoppen. Datum en onderwerp naast elkaar,
+/* Jaarplanning op telefoon en tablet: compacte rij zonder kolomkoppen. Datum en onderwerp naast elkaar,
    daaronder de opkomst, dan wie plant, afwezig en de brief (een lege brief is alleen een envelop). */
 .addtxt { display: none; }
-@media (max-width: 600px) {
+@media (max-width: 1100px) {
   /* de rijen mogen de tabel nooit breder maken dan het scherm */
   .ptable { grid-template-columns: minmax(0, 1fr); }
   .prow, .prow.geen { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px; min-width: 0; }
@@ -860,6 +865,14 @@ body:has(.savebar) .toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px
   .prow .f-abs.none .addtxt { display: inline; }
   .prow .brief.none { padding: 6px 8px; }
   .prow .brief.none .btxt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+/* tablet: de opkomst past nog naast datum en onderwerp, wie plant en afwezig op de regel eronder */
+@media (min-width: 601px) and (max-width: 1100px) {
+  .prow .f-topic { flex: 1 1 180px; }
+  .prow .f-opk { flex: 1 1 340px; }
+  /* altijd een nieuwe regel voor wie plant, afwezig en de brief */
+  .prow:not(.geen)::after { content: ""; flex: 0 0 100%; order: 1; margin-top: -6px; }
+  .prow .f-plan, .prow .f-abs, .prow .f-brief { order: 2; }
 }
 
 /* Opkomstbouwer op de telefoon: details inklapbaar, tellers op één regel, knop naar de activiteitenbank */
@@ -948,3 +961,16 @@ body:has(.auth-wrap) { padding-bottom: 0; }
 /* Dashboard: eerste stappen voor een nieuwe speltak */
 .setup-day { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14px; padding: 10px 12px; border-radius: 10px; background: var(--band); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--edge) 30%, var(--line)); }
 .setup-day svg { width: 16px; height: 16px; color: var(--muted); flex: none; }
+
+/* Instellingen: twee of drie velden naast elkaar staan onderaan gelijk, ook als één label over twee regels loopt */
+.settings .two > .field, .settings .three > .field { align-content: end; }
+
+/* Dashboard: nog geen onderwerp is kleine, gedempte tekst met een knop (niet het grootste op de pagina) */
+.hero-notopic { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.hero .hero-title.none { font-size: 28px; line-height: 1.15; letter-spacing: -.02em; color: var(--muted); }
+.hero input.inline-edit.hero-title.none { font-size: 28px; }
+/* Daarna: alle komende data nog leeg → één regel */
+.nextempty { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 14.5px; }
+/* lege bank: één vlak met uitleg en één knop, over de hele breedte */
+.bank-empty { max-width: 760px; }
+.bank-empty > span { max-width: 62ch; }

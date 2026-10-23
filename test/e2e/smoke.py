@@ -184,6 +184,8 @@ with sync_playwright() as p:
     check(pg.evaluate("localStorage.getItem('opk.invite')") is None, 'na toetreden: uitnodiging niet meer onthouden')
     check(pg.locator('h1').first.inner_text().strip() == 'Scouts', 'dashboard: speltaknaam is de titel')
     check(pg.locator('.kicker-switch').count() == 1, 'dashboard: knop andere speltak')
+    check(pg.locator('.kicker').inner_text().strip() == 'Andere speltak' and pg.locator('.catspread').count() == 0,
+          'dashboard: groepsnaam niet nog eens boven de titel (staat in de kopbalk); geen Activiteitengebieden met alleen nullen')
     # nieuwe speltak: welkomstkaart noemt de opkomstdag met een link om hem aan te passen; nog geen lege kaart "Nog geen onderwerp"
     wc = pg.locator('.welcome')
     check(wc.count() == 1 and 'Opkomstdag: zaterdag 14:00–16:30' in wc.locator('.setup-day').inner_text() and (wc.locator('.setup-day a:text-is("Aanpassen")').get_attribute('href') or '').endswith('/instellingen')
@@ -315,6 +317,8 @@ with sync_playwright() as p:
     pg.click('text=Leiding indelen'); w(500)
     check(pg.locator('.modal .tk-tl .blk').count() >= 2, 'indeelvenster toont tijdlijn')
     check(pg.locator('.modal .tk-head >> text=Opkomst titel').count() == 1, 'indeelvenster heeft veld Opkomst titel')
+    tkw = pg.evaluate("""(() => { const h = document.querySelector('.modal .tk-head'), f = h.querySelector('.field'); return Math.round(f.getBoundingClientRect().width) + '/' + Math.round(h.getBoundingClientRect().width); })()""")
+    check(tkw.split('/')[0] == tkw.split('/')[1], f'indeelvenster: Opkomst titel over de hele breedte, tijden eronder ({tkw})')
     check(pg.locator('#om-title[placeholder="Opkomst titel"]').count() == 1, 'bouwer: titelveld heet Opkomst titel')
     check(pg.locator('.modal >> text=Eindverantwoordelijke').count() == 0, 'indeelvenster: geen apart veld eindverantwoordelijke')
     pc = pg.locator('.modal .field:has(.lbl:text-is("Planning door")) .chip:has-text("Carla")'); pc.click(); w(400)
@@ -672,11 +676,25 @@ with sync_playwright() as p:
     pg.fill('input[placeholder="e-mailadres teamleider"]', 'wim@test.nl'); pg.click('text=Teamleider uitnodigen'); w(800)
     wim_link = invite_link()
     logout_to(wim_link); register('Wim Welp', 'wim@test.nl')
+    # lege banken: geen zoekveld, filters of zijpaneel, alleen uitleg met één knop
+    pg.click('nav >> text=Activiteitenbank'); w(700)
+    check(pg.locator('.toolbar').count() == 0 and pg.locator('aside.side').count() == 0 and pg.locator('main .btn:has-text("Nieuwe activiteit")').count() == 1
+          and pg.locator('.subline').inner_text() == 'Nog geen activiteiten', 'lege activiteitenbank: geen zoekveld, filters of zijpaneel, één knop Nieuwe activiteit')
+    shot('34-activiteitenbank-leeg', False)
+    pg.click('main .btn:has-text("Nieuwe activiteit")'); w(400)
+    check(pg.locator('#lf-title').is_visible() and pg.locator('aside.side').count() == 1, 'lege activiteitenbank: Nieuwe activiteit opent het zijpaneel')
+    pg.click('.side .closex'); w(300)
+    check(pg.locator('aside.side').count() == 0 and pg.locator('main .btn:has-text("Nieuwe activiteit")').count() == 1, 'lege activiteitenbank: sluiten zonder invoer, weer de lege uitleg')
     pg.click('nav >> text=Opkomstenbank'); w(900)
     check(pg.locator('.tabs.page [role=tab]').count() == 2, 'opkomstenbank: tabbladen Onze bank en Groep')
+    check(pg.locator('.toolbar').count() == 0 and pg.locator('aside.side').count() == 0 and pg.locator('main .btn:has-text("Nieuwe opkomst")').count() == 1
+          and pg.locator('.empty.bank-empty').count() == 1, 'lege opkomstenbank: tabbladen blijven, geen zoekveld of zijpaneel, één knop Nieuwe opkomst')
+    shot('34b-opkomstenbank-leeg', False)
     pg.click('.tabs.page >> text=Groep'); w(500)
     card = pg.locator('.bcard:has-text("Sluipspel")')
     check(card.count() == 1 and 'Scouts' in card.inner_text(), 'groepsbank toont gedeelde opkomst van andere speltak')
+    check(pg.locator('h1').first.inner_text() == 'Opkomstenbank' and re.fullmatch(r'\d+ gedeelde opkomsten? van andere speltakken', pg.locator('.subline').inner_text()) and pg.locator('.toolbar').count() == 1,
+          'groepsbank: kop Opkomstenbank, het aantal gedeelde opkomsten eronder, met zoekveld')
     shot('10-groepsbank')
     pg.fill('.toolbar input[type=search]', 'sluipen'); w(200)
     check(card.count() == 1 and pg.locator('.empty:has-text("Niets gevonden.")').count() == 0, 'groepsbank: zoeken vindt ook een onderdeel (Sluipen in Sluipspel)')
@@ -1167,7 +1185,10 @@ with sync_playwright() as p:
     pg.set_viewport_size({'width': 390, 'height': 800}); w(300)
     pg.locator('.modal .tk-tl .blk:has-text("Levend stratego") .t').click(); w(200)
     check(pg.locator('.modal .tk-tl .bdel').count() == 1 and not pg.evaluate(f"({on_name})('.modal .tk-tl .bdel')"), 'leiding indelen mobiel: prullenbak ligt niet op een naam')
-    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'leiding indelen mobiel: geen horizontale scroll'); shot('04b-indelen-mobiel', False)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'leiding indelen mobiel: geen horizontale scroll')
+    tkw = pg.evaluate("""(() => { const h = document.querySelector('.modal .tk-head'), f = h.querySelector('.field'); return Math.round(f.getBoundingClientRect().width) + '/' + Math.round(h.getBoundingClientRect().width); })()""")
+    check(tkw.split('/')[0] == tkw.split('/')[1] and int(tkw.split('/')[0]) > 300, f'leiding indelen mobiel: Opkomst titel over de hele breedte ({tkw})')
+    shot('04b-indelen-mobiel', False); pg.locator('.modal .tk-head').scroll_into_view_if_needed(); shot('04c-indelen-titel-mobiel', False)
     pg.click('.modal >> text=Klaar'); w(300)
     check(pg.locator('.lanes .bdel').count() > 3 and not pg.evaluate(f"({on_name})('.lanes .bdel')"), 'bouwer mobiel: prullenbak ligt niet op een naam, ook niet bij onderdelen naast elkaar')
     pg.evaluate("document.querySelector('.lanes').scrollIntoView({ block: 'start' })"); w(200); shot('03b-bouwer-mobiel', False)
@@ -1365,6 +1386,15 @@ with sync_playwright() as p:
     check(pg.locator('.prow .f-abs.none .addtxt').first.is_visible() and pg.locator('.prow .brief.none .btxt').first.bounding_box()['width'] <= 1
           and pg.locator('.prow .f-plan .plabel').first.is_visible(), 'jaarplanning mobiel: "+ Afwezig", lege brief als envelop, Planning door met label')
     pg.locator('.prow:has(.plink:has-text("Vuur en kompas"))').scroll_into_view_if_needed(); shot('26-jaarplanning-mobiel', False)
+    # tablet: dezelfde compacte rij (datum, onderwerp en opkomst op één regel; wie plant en afwezig eronder)
+    for wd in (768, 1024):
+        pg.set_viewport_size({'width': wd, 'height': 900}); w(300)
+        hs = pg.evaluate("[...document.querySelectorAll('.prow:not(.head)')].map(r => r.getBoundingClientRect().height)")
+        lines = pg.evaluate("""[...document.querySelectorAll('.prow:not(.head):not(.geen)')].filter(r => r.querySelector('.plink')).slice(0, 5).map(r => {
+          const t = s => Math.round(r.querySelector(s).getBoundingClientRect().top); return t('.pdate') <= t('.f-opk') + 4 && t('.f-plan') > t('.f-opk') + 20; })""")
+        check(len(hs) > 20 and max(hs) <= 150 and sum(hs) / len(hs) <= 125 and lines and all(lines) and pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'),
+              f'jaarplanning {wd} px: compacte rijen, opkomst naast de datum (max {max(hs):.0f} px, gemiddeld {sum(hs) / len(hs):.0f} px)')
+    pg.locator('.prow:has(.plink:has-text("Vuur en kompas"))').scroll_into_view_if_needed(); shot('26b-jaarplanning-tablet', False)
     pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     # --- koppelen: zoeken, en wat bij het onderwerp past staat bovenaan met een label
     pg.click('.presets >> text=Dit seizoen'); w(400)
@@ -1463,6 +1493,55 @@ with sync_playwright() as p:
     pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     pg.click('nav >> text=Opkomstbouwer'); w(700)
     check(pg.locator('.metatoggle').count() == 0 and n_draft() == n0 + 1, 'bouwer breed: geen inklapknop; lege nieuwe opkomst weer opgeruimd')
+    # --- eigen oefendata (los van de rest): kop, contrast, Activiteitengebieden, velden, lege dashboardkaart
+    qc = b.new_context(viewport={'width': 1360, 'height': 900}, locale='nl-NL')
+    qc.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())
+    q = qc.new_page(); q.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+    q.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' and 'ERR_FAILED' not in m.text else None)
+    q.goto(BASE + '/s/oefen/dashboard'); q.wait_for_timeout(1200)
+    fsz = lambda sel: q.evaluate(f"parseFloat(getComputedStyle(document.querySelector('{sel}')).fontSize)")
+    hs = [fsz('main h1'), fsz('.hero h2.hero-title')]
+    check(hs[0] < hs[1], f'dashboard: paginakop kleiner dan de titel van de komende opkomst ({hs})')
+    bl = q.evaluate("(() => { const e = document.querySelector('.catspread .barrow .bl'); if (!e) return null; const s = getComputedStyle(e); return [s.backgroundColor, s.fontWeight, s.paddingLeft]; })()")
+    check(bl == ['rgba(0, 0, 0, 0)', '400', '0px'] and q.locator('.catspread .barrow .nm').count() == 0, f'dashboard: Activiteitengebieden met gewone labels, geen naam-pillen ({bl})')
+    sig = q.evaluate("[...document.querySelectorAll('.nextlist .pill.warn')].map(e => getComputedStyle(e).color)")
+    lg = q.evaluate("[...document.querySelectorAll('.counts .legend-dot, .cal .cday.topic:not(.today)')].map(e => getComputedStyle(e).boxShadow.includes('inset'))")
+    check(sig and all(c == 'rgb(138, 82, 0)' for c in sig) and len(lg) >= 6 and all(lg), f'contrast: waarschuwingstekst donker oranje, legenda en kalendervakjes met rand ({set(sig)}, {len(lg)})')
+    q.goto(BASE + '/s/oefen/bouwer/opk-jungle'); q.wait_for_timeout(1200)
+    mt = q.evaluate("""(() => { const rows = {}; document.querySelectorAll('.meta > .field').forEach(f => { const c = f.querySelector('input, select'); if (!c) return;
+      const k = Math.round(f.getBoundingClientRect().top); const r = c.getBoundingClientRect(); (rows[k] = rows[k] || []).push(Math.round(r.top) + '/' + Math.round(r.height)); }); return Object.values(rows); })()""")
+    check(mt and all(len(set(r)) == 1 and r[0].endswith('/38') for r in mt), f'bouwer: velden in de details-rij even hoog en op één lijn ({mt})')
+    q.goto(BASE + '/s/oefen/instellingen'); q.wait_for_timeout(1200)
+    # een label dat over twee regels loopt: de keuzelijsten ernaast blijven op één lijn
+    q.evaluate("document.querySelectorAll('.settings .two')[1].querySelector('.field label').textContent += ' met een heel lange uitleg erbij'"); q.wait_for_timeout(100)
+    st = q.evaluate("[...document.querySelectorAll('.settings .two')[1].querySelectorAll('select')].map(s => Math.round(s.getBoundingClientRect().bottom) + '/' + Math.round(s.getBoundingClientRect().height))")
+    lh = q.evaluate("document.querySelectorAll('.settings .two')[1].querySelector('.field label').getBoundingClientRect().height")
+    check(len(st) == 2 and st[0] == st[1] and st[0].endswith('/38') and lh > 25, f'instellingen: velden naast elkaar op één lijn, ook met een label van twee regels ({st}, label {lh:.0f} px)')
+    # nog niets ingevuld voor de komende data
+    q.goto(BASE + '/s/oefen/dashboard'); q.wait_for_timeout(1000)
+    drop = "pre => { const s = JSON.parse(localStorage.getItem('opk.oefen.v1')); Object.keys(s).forEach(k => { if (k.startsWith(pre)) delete s[k]; }); localStorage.setItem('opk.oefen.v1', JSON.stringify(s)); }"
+    q.evaluate(drop, 'speltakken/oefen/planning/'); q.reload(); q.wait_for_timeout(1200)
+    nt = q.locator('.hero h2.hero-title.none')
+    check(nt.count() == 1 and nt.inner_text() == 'Onderwerp nog kiezen' and fsz('.hero h2.hero-title') <= 28 and q.locator('text=Nog geen onderwerp').count() == 0,
+          'dashboard zonder onderwerp: kleine gedempte tekst Onderwerp nog kiezen, niet het grootste op de pagina')
+    ne = q.locator('.nextempty')
+    check(ne.count() == 1 and ne.inner_text().startswith('De komende 5 zaterdagen zijn nog leeg.') and q.locator('.nextlist').count() == 0 and q.locator('.catspread').count() == 0
+          and (ne.locator('a:has-text("Naar jaarplanning")').get_attribute('href') or '').endswith('/jaarplanning'),
+          'dashboard Daarna: alle komende data leeg → één regel met Naar jaarplanning; geen Activiteitengebieden met nullen')
+    q.screenshot(path=f'{OUT}/33-dashboard-nog-leeg.png', full_page=True)
+    q.set_viewport_size({'width': 390, 'height': 844}); q.wait_for_timeout(200)
+    check(q.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'dashboard zonder onderwerp mobiel: geen horizontale scroll')
+    q.screenshot(path=f'{OUT}/33b-dashboard-nog-leeg-mobiel.png', full_page=False)
+    q.set_viewport_size({'width': 1360, 'height': 900}); q.wait_for_timeout(200)
+    q.click('.hero-notopic button:has-text("Invullen")'); q.wait_for_timeout(200)
+    q.fill('.hero input.inline-edit', 'Bosspel'); q.keyboard.press('Enter'); q.wait_for_timeout(600)
+    check(q.locator('.hero h2.hero-title:not(.none)').inner_text() == 'Bosspel' and q.locator('.hero-notopic').count() == 0, 'dashboard: onderwerp invullen met de knop Invullen')
+    # lege banken in de oefenomgeving (geen groep: geen tabbladen); eerst het opslaan van het onderwerp laten afronden
+    q.wait_for_timeout(800); q.evaluate(drop, 'speltakken/oefen/activiteiten/'); q.evaluate(drop, 'speltakken/oefen/opkomsten/')
+    q.goto(BASE + '/s/oefen/opkomsten'); q.wait_for_timeout(1200)
+    check(q.locator('.toolbar').count() == 0 and q.locator('aside.side').count() == 0 and q.locator('main .btn:has-text("Nieuwe opkomst")').count() == 1
+          and q.locator('h1').first.inner_text() == 'Opkomstenbank' and q.locator('.subline').inner_text() == 'Nog geen opkomsten', 'lege opkomstenbank (oefenen): uitleg met één knop')
+    qc.close()
     # aanraakscherm: grotere naamknoppen, geen prullenbak op een blokje van 5 minuten, groter raakvlak op het dashboard
     tc = b.new_context(viewport={'width': 390, 'height': 844}, locale='nl-NL', has_touch=True, is_mobile=True)
     tc.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())

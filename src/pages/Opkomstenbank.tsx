@@ -55,6 +55,9 @@ export default function Opkomstenbank() {
     document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h);
   });
 
+  // lege bank of lege groep: geen zoekveld, filters of zijpaneel (de tabbladen blijven)
+  const bare = g ? !others.length : !total && !opks.some(o => o.state === 'draft');
+  const newOpkomst = () => guardLeave(() => { const o = newOpk(settings); saveOpk(o); markFresh(o.id); nav(`/s/${sid}/bouwer/${o.id}`); });
   const switchTab = (t: Tab) => guardLeave(() => { setTab(t); setSelRaw(null); setFrom(''); });
   const taken = (n: string, except?: string) => nameTaken(own, n, except);
   const doCopy = (x: Gedeeld) => withFreeName(x.opk.title, {
@@ -77,13 +80,16 @@ export default function Opkomstenbank() {
 
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title="Opkomstenbank"
-      sub={g ? `${plural(others.length, 'opkomst', 'opkomsten')} gedeeld door andere speltakken van ${sp?.groupName || 'de groep'}. Kopieer er een naar jullie eigen bank.` : plural(total, 'opkomst', 'opkomsten')}>
-      {!g && can('build') && <button className="btn primary" onClick={() => guardLeave(() => { const o = newOpk(settings); saveOpk(o); markFresh(o.id); nav(`/s/${sid}/bouwer/${o.id}`); })}><Plus size={16} />Nieuwe opkomst</button>}
+      sub={g ? plural(others.length, 'gedeelde opkomst', 'gedeelde opkomsten') + ' van andere speltakken' : total ? plural(total, 'opkomst', 'opkomsten') : 'Nog geen opkomsten'}>
+      {!g && !bare && can('build') && <button className="btn primary" onClick={newOpkomst}><Plus size={16} />Nieuwe opkomst</button>}
     </PageTitle>
     {groupOn && <div className="tabs page" role="tablist" aria-label="Opkomstenbank">
       <button role="tab" aria-selected={!g} onClick={() => switchTab('own')}>Onze bank <span className="count">{total}</span></button>
       <button role="tab" aria-selected={g} onClick={() => switchTab('group')}>Groep <span className="count">{others.length}</span></button>
     </div>}
+    {bare ? <div className="empty bank-empty">{g ? <span>Andere speltakken van {sp?.groupName || 'de groep'} hebben nog niets gedeeld. Wat zij in hun opkomstenbank zetten, verschijnt hier.</span>
+      : <><span>Bewaar hier opkomsten die je vaker gebruikt: bouw een opkomst en kies "In bank". Namen van leiding gaan niet mee.</span>
+        {can('build') && <button className="btn primary" onClick={newOpkomst}><Plus size={16} />Nieuwe opkomst</button>}</>}</div> : <>
     <div className="toolbar"><input className="inp" type="search" placeholder={g ? 'Zoek in de groep' : 'Zoek opkomst'} aria-label={g ? 'Zoek in de groep' : 'Zoek opkomst'} value={q} onChange={e => setQ(e.target.value)} />
       {g && speltakken.length > 1 && <div className="catfilter" role="group" aria-label="Speltak"><Chip on={!from} onClick={() => setFrom('')}>Alle speltakken</Chip>{speltakken.map(([id, name]) => <Chip key={id} on={from === id} onClick={() => setFrom(id)}>{name}</Chip>)}</div>}
       <div className="catfilter" role="group" aria-label="Categorie"><Chip on={!cat} onClick={() => setCat('')}>Alle</Chip>{opkCatList(settings).map(c => <Chip key={c.id} on={cat === c.id} onClick={() => setCat(c.id)}><Dot color={c.color} />{c.label}</Chip>)}</div></div>
@@ -123,7 +129,7 @@ export default function Opkomstenbank() {
             : <div className="pad stack"><h3>{g ? 'Uit de groepsbank' : 'Opkomst uit de bank'}</h3><p className="muted">{g ? 'Kies een opkomst om de onderdelen te zien en hem naar jullie eigen bank te kopiëren.' : 'Kies een opkomst om de onderdelen te zien, hem te openen of in te plannen.'}</p></div>}
       </aside>
       <div className={'scrim' + (T || G ? ' on' : '')} onClick={() => setSel(null)} />
-    </div>
+    </div></>}
   </div>;
 }
 

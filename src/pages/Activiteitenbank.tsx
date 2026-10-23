@@ -31,6 +31,12 @@ export default function Activiteitenbank() {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.modal')) setSel(null); };
     document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h);
   });
+  // lege bank (en niets open): geen zoekveld, filters of zijpaneel, alleen uitleg met één knop
+  if (!lib.length && !L) return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
+    <PageTitle title="Activiteitenbank" sub="Nog geen activiteiten" />
+    <div className="empty bank-empty"><span>Bewaar hier spellen en onderdelen die je vaker gebruikt. Maak er een, of bewaar een onderdeel vanuit de opkomstbouwer.</span>
+      {edit && <button className="btn primary" onClick={create}><Plus size={16} />Nieuwe activiteit</button>}</div>
+  </div>;
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title="Activiteitenbank" sub={plural(lib.length, 'activiteit', 'activiteiten')}>{edit && <button className="btn primary" onClick={create}><Plus size={16} />Nieuwe activiteit</button>}</PageTitle>
     <div className="toolbar">
@@ -44,7 +50,7 @@ export default function Activiteitenbank() {
         {l.short && <span className="bs">{l.short}</span>}
         <span className="hint">{uses[l.id] ? `${uses[l.id]}× gebruikt` : 'Nog niet gebruikt'}</span>
       </button></BankCard>; })}</div>
-        : <div className="empty"><span>{lib.length ? 'Geen activiteiten gevonden met deze filter.' : 'Nog geen activiteiten. Maak er een, of bewaar een onderdeel vanuit de opkomstbouwer.'}</span>{!lib.length && edit && <button className="btn primary" onClick={create}>Nieuwe activiteit</button>}</div>}</div>
+        : <div className="empty"><span>{lib.length ? 'Geen activiteiten gevonden met deze filter.' : 'Nog geen activiteiten. Vul de nieuwe activiteit in en kies Opslaan.'}</span></div>}</div>
       <aside className={'card side sheet' + (L ? ' editing' : '')}>{L ? <div ref={sheetRef} {...sheetProps}><LibEditor key={L.id} l={L} isNew={isNew} lib={lib} readOnly={!edit} onClose={() => setSel(null)} onCancelNew={() => { setFresh(null); setSelRaw(null); }}
         onSave={x => { saveLib(x); if (isNew) setFresh(null); toast(isNew ? 'Activiteit opgeslagen in de bank' : 'Activiteit opgeslagen'); }}
         onCopy={x => { saveLib(x); setSelRaw(x.id); toast(`Kopie "${x.title}" opgeslagen`); }}

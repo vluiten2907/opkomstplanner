@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarClock, ChevronLeft, ChevronRight, Download, ExternalLink, Mail, Plus, Tent, Users } from 'lucide-react';
+import { CalendarClock, ChevronLeft, ChevronRight, Download, ExternalLink, Mail, Plus, SquarePen, Tent, Users } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal } from '../store/modal';
@@ -21,9 +21,15 @@ export default function Dashboard() {
   const letters = plans.filter(e => e.letter.needed && !e.letter.sent && e.type !== 'geen' && (e.endDate || e.date) >= today)
     .map(e => ({ e, due: letterDue(settings, e) })).filter(x => today >= addDays(x.due, -settings.letterNotice)).sort((a, b) => a.due.localeCompare(b.due));
   const empty = !opks.length && !lib.length && !plans.length;
+  // nog helemaal niets ingevuld voor de komende data: één regel in plaats van vijf dezelfde lege rijen
+  const allBlank = after.length > 0 && after.every(r => blankRow(r, S.opkOf(r.e)));
+  const onDay = after.every(r => fromISO(rowDate(r)).getDay() === settings.opkDay);
+  const blankLine = after.length === 1 ? `De volgende ${onDay ? DAYS[settings.opkDay] : 'opkomst'} is nog leeg.`
+    : `De komende ${after.length} ${onDay ? DAYS[settings.opkDay] + 'en' : 'opkomsten'} zijn nog leeg.`;
   const create = (kamp: boolean) => { const o = kamp ? newKamp(settings, 3) : newOpk(settings); saveOpk(o); markFresh(o.id); nav(`/s/${sid}/bouwer/${o.id}`); };
   return <div className="stack pt-6 md:pt-8" style={{ gap: 20 }}>
-    <PageTitle kicker={<>{settings.groupName && <span>{settings.groupName}</span>}{!S.practice && <Link className="kicker-switch" to="/speltakken"><Users size={13} />Andere speltak</Link>}</>} title={S.sp?.name || settings.speltak || 'Overzicht'} sub={`${cap(fmtLong(today))}, week ${isoWeek(today)}`}>
+    {/* de groepsnaam staat al in de kopbalk; de titel blijft kleiner dan die van de komende opkomst */}
+    <PageTitle small kicker={S.practice ? undefined : <Link className="kicker-switch" to="/speltakken"><Users size={13} />Andere speltak</Link>} title={S.sp?.name || settings.speltak || 'Overzicht'} sub={`${cap(fmtLong(today))}, week ${isoWeek(today)}`}>
       {can('build') && <><button className="btn" onClick={() => create(true)}><Tent size={16} />Weekendkamp</button><button className="btn primary" onClick={() => create(false)}><Plus size={16} />Nieuwe opkomst</button></>}
     </PageTitle>
     <div className="dash2">
@@ -35,15 +41,16 @@ export default function Dashboard() {
       : <div className="stack" style={{ gap: 20 }}>
         {next ? <Hero r={next} today={today} /> : <section className="card pad empty-hero"><h2>Er staat nog niets gepland</h2><p className="muted">Vul in de jaarplanning de onderwerpen en de planning per {DAYS[settings.opkDay]} in.</p><div className="row"><Link className="btn primary" to={`/s/${sid}/jaarplanning`}>Naar jaarplanning</Link></div></section>}
         <section className="card pad stack">
-          <div className="row between"><h3>Daarna</h3><Link className="linkbtn" to={`/s/${sid}/jaarplanning`}>Hele jaarplanning</Link></div>
-          {after.length ? <ul className="nextlist">{after.map(r => <NextItem key={r.key} r={r} />)}</ul> : <p className="hint">Nog niets verder gepland.</p>}
+          <div className="row between"><h3>Daarna</h3>{!allBlank && <Link className="linkbtn" to={`/s/${sid}/jaarplanning`}>Hele jaarplanning</Link>}</div>
+          {allBlank ? <p className="nextempty"><span className="muted">{blankLine}</span><Link className="linkbtn" to={`/s/${sid}/jaarplanning`}>Naar jaarplanning</Link></p>
+            : after.length ? <ul className="nextlist">{after.map(r => <NextItem key={r.key} r={r} />)}</ul> : <p className="hint">Nog niets verder gepland.</p>}
         </section>
       </div>}
       <aside className="stack lg:mt-16" style={{ gap: 20 }}>
         {letters.length > 0 && <div className="notices">{letters.map(x => <Notice key={x.e.id} e={x.e} due={x.due} today={today} />)}</div>}
         <section className="card pad"><MiniCal today={today} /></section>
         <section className="card pad stack"><SeasonCounts today={today} /></section>
-        <section className="card pad stack"><CatSpread today={today} /></section>
+        <CatSpread today={today} />
       </aside>
     </div>
   </div>;
@@ -74,12 +81,13 @@ function useDoubleTap(on: (() => void) | null) {
 /** Tekst die na een dubbelklik een invoerveld wordt. Enter of wegklikken slaat op, Esc annuleert. */
 function InlineText({ value, onSave, enabled, label, multiline, render, className }: {
   value: string; onSave: ((v: string) => void) | null; enabled: boolean; label: string; multiline?: boolean; className?: string;
-  render: (tap: Record<string, unknown>) => ReactNode;
+  render: (tap: Record<string, unknown>, start: (() => void) | null) => ReactNode;
 }) {
   const [edit, setEdit] = useState<string | null>(null);
   const closed = useRef(false);
-  const tap = useDoubleTap(enabled && onSave ? () => { closed.current = false; setEdit(value); } : null);
-  if (edit === null) return <>{render(tap)}</>;
+  const start = enabled && onSave ? () => { closed.current = false; setEdit(value); } : null;
+  const tap = useDoubleTap(start);
+  if (edit === null) return <>{render(tap, start)}</>;
   const done = (save: boolean) => {
     if (closed.current) return; closed.current = true;
     const v = edit.trim(); if (save && v !== value.trim() && onSave) onSave(v); setEdit(null);
@@ -113,7 +121,7 @@ function Hero({ r, today }: { r: Row; today: string }) {
   const [st, en] = entryTimes(settings, e, o || null), days = dayDiff(today, d);
   const when = d < today ? 'Bezig' : days === 0 ? 'Vandaag' : days === 1 ? 'Morgen' : `Over ${days} dagen`;
   const kamp = !!e && e.type === 'kamp';
-  const title = (o && o.title) || (e && e.topic) || 'Nog geen onderwerp';
+  const title = (o && o.title) || (e && e.topic) || '';
   const short = (o && o.short) || (e && e.note) || '';
   const planners = plannersOf(e, o), absent = e ? e.absent : [], present = presentForEntry(e, o);
   const dt = fromISO(d), need = o ? minNeed(o) : 0;
@@ -151,8 +159,10 @@ function Hero({ r, today }: { r: Row; today: string }) {
       <div className={'hero-date patch -mt-14 -rotate-6 md:-ml-10' + (kamp ? ' kamp' : '')}><span>{DAYS[dt.getDay()].slice(0, 2)}</span><b>{dt.getDate()}</b><span>{mon3(d)}</span></div>
       <div className="hero-main">
         <div className="row hero-eyebrow"><span className="eyebrow">{kamp ? 'Komend kamp' : 'Komende opkomst'}</span><span className="pill acc">{when}</span>{o && <StatusPill o={o} />}</div>
-        <InlineText value={(o && o.title) || (e && e.topic) || ''} enabled={canEdit} label="Opkomst titel" className="hero-title" onSave={saveTitle}
-          render={tap => <h2 className="hero-title" {...tap}>{title}</h2>} />
+        {/* nog geen onderwerp: kleine gedempte tekst (niet het grootste op de pagina), met een knop om het in te vullen */}
+        <InlineText value={title} enabled={canEdit} label="Opkomst titel" className={'hero-title' + (title ? '' : ' none')} onSave={saveTitle}
+          render={(tap, start) => title ? <h2 className="hero-title" {...tap}>{title}</h2>
+            : <div className="hero-notopic"><h2 className="hero-title none" {...tap}>Onderwerp nog kiezen</h2>{start && <button className="btn sm" onClick={start}><SquarePen size={14} />Invullen</button>}</div>} />
         {o && <CatTags o={o} />}
         <div className="facts">{facts}</div>
         <InlineText value={short} enabled={canEdit} label="Korte omschrijving" className="hero-short" multiline onSave={saveShort}
@@ -260,6 +270,16 @@ function CatSpread({ today }: { today: string }) {
   const Y = seasonOf(settings, today), R = seasonRange(settings, Y), cnt: Record<string, number> = {};
   rowsIn(settings, plans, R.from, R.to).forEach(r => { const o = opkOf(r.e); if (!o) return; o.cats.forEach(c => cnt[c] = (cnt[c] || 0) + 1); });
   const list = opkCatList(settings), max = Math.max(1, ...Object.values(cnt));
-  return <><h3>Activiteitengebieden</h3>
-    <div className="bars wide">{list.map(c => <div key={c.id} className="barrow"><span className="nm" title={c.label}>{c.label}</span><div className="track"><div className="fill" style={{ width: `${(cnt[c.id] || 0) / max * 100}%`, background: `color-mix(in srgb, ${c.color} var(--keep), #fff)` }} /></div><span className="val">{cnt[c.id] || 0}</span></div>)}</div></>;
+  // nog geen enkele opkomst met een categorie: geen rij nullen laten zien
+  if (!list.some(c => cnt[c.id])) return null;
+  return <section className="card pad stack catspread"><h3>Activiteitengebieden</h3>
+    <div className="bars wide">{list.map(c => <div key={c.id} className="barrow"><span className="bl" title={c.label}>{c.label}</span><div className="track"><div className="fill" style={{ width: `${(cnt[c.id] || 0) / max * 100}%`, background: `color-mix(in srgb, ${c.color} var(--keep), #fff)` }} /></div><span className="val">{cnt[c.id] || 0}</span></div>)}</div></section>;
+}
+
+/** Een datum waar nog niets voor is ingevuld: geen onderwerp, planner, programma, afwezigen, brief of notitie. */
+function blankRow(r: Row, o: Opk | undefined | null) {
+  const e = r.e;
+  if (o) return false;
+  if (!e) return true;
+  return e.type === 'opkomst' && !e.topic.trim() && !e.note.trim() && !e.opkId && !plannersOf(e, null).length && !e.absent.length && !e.letter.needed;
 }
