@@ -31,6 +31,11 @@ export type Settings = {
 
 /* ---------- Vaste gegevens ---------- */
 export const SWATCHES = ['#3B6A9C', '#2D7A4F', '#D9792B', '#8A5A2B', '#94477F', '#B5462F', '#4F6B2D', '#5B4FA8', '#1F7A80', '#6B7F99', '#C0466E', '#B87A12', '#7E837A'];
+/** Naam van elke kleur in SWATCHES (voor schermlezers; de categorie bewaart de hexcode). */
+export const SWATCH_NAMES: Record<string, string> = {
+  '#3B6A9C': 'Blauw', '#2D7A4F': 'Groen', '#D9792B': 'Oranje', '#8A5A2B': 'Bruin', '#94477F': 'Pruim', '#B5462F': 'Rood', '#4F6B2D': 'Olijfgroen',
+  '#5B4FA8': 'Violet', '#1F7A80': 'Petrol', '#6B7F99': 'Grijsblauw', '#C0466E': 'Framboos', '#B87A12': 'Oker', '#7E837A': 'Grijs',
+};
 export const DEFAULT_CATS: Cat[] = [
   { id: 'spel', label: 'Spel', color: '#2D7A4F' },
   { id: 'ust', label: 'Uitdagende Scoutingtechnieken', color: '#8A5A2B' },

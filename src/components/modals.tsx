@@ -135,7 +135,7 @@ export function PeopleModal({ keyId, field, onClose }: { keyId: string; field: '
   };
   const add = () => { const v = extra.trim(); if (!v) return; const en = { ...entryFor(keyId) }; if (!en[field].includes(v)) en[field] = [...en[field], v]; if (field === 'absent') dropAbsent(en); savePlan(en); setExtra(''); bump(x => x + 1); };
   return <Modal title={field === 'planners' ? 'Wie plant deze opkomst?' : 'Wie is er afwezig?'} sub={fmtRange(d, e && e.endDate, true)} onClose={onClose}>
-    {names.length ? <div className="row" style={{ gap: 6 }}>{names.map(n => <Chip key={n} on={list.includes(n)} onClick={() => toggle(n)}>{n}</Chip>)}</div> : <p className="hint">Nog geen leidingteam.</p>}
+    {names.length ? <div className="row" style={{ gap: 6 }} role="group" aria-label={field === 'planners' ? 'Planning door' : 'Afwezig'}>{names.map(n => <Chip key={n} on={list.includes(n)} onClick={() => toggle(n)}>{n}</Chip>)}</div> : <p className="hint">Nog geen leidingteam.</p>}
     <div className="row"><input className="inp" value={extra} onChange={e => setExtra(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} placeholder="Andere naam" aria-label="Andere naam" style={{ flex: '1 1 160px' }} /><button className="btn" onClick={add}>Toevoegen</button></div>
     <div className="row"><button className="btn primary" onClick={onClose}>Klaar</button></div>
   </Modal>;
@@ -348,8 +348,8 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
     const durs: number[] = []; for (let d = 5; d <= Math.max(C.hi - b.start, b.dur); d += 5) durs.push(d);
     const who = leaders.filter(n => present.includes(n) || b.names.includes(n)), extra = b.names.filter(n => !leaders.includes(n));
     return <div className="tk-sel" id="tk-sel" ref={selRef}><b>{b.title || 'Naamloos onderdeel'} <span className="hint">{fmtT(b.start)}–{fmtT(b.start + b.dur)}</span></b>
-      <div className="field tk-who"><span className="lbl">Leiding bij dit onderdeel</span>
-        {who.length ? <div className="row" style={{ gap: 6 }}>{who.map(n => { const away = !present.includes(n);
+      <div className="field tk-who"><span className="lbl" id="tk-who-l">Leiding bij dit onderdeel</span>
+        {who.length ? <div className="row" style={{ gap: 6 }} role="group" aria-labelledby="tk-who-l">{who.map(n => { const away = !present.includes(n);
           return <Chip key={n} className={away || A.clashes.has(b.id + '|' + n) ? 'clash' : ''} on={b.names.includes(n)} title={away ? 'Afwezig: tik om weg te halen' : undefined} onClick={() => toggle(b, n)}>{n}{away ? ' (afwezig)' : ''}</Chip>; })}</div>
           : <p className="hint">Nog geen leidingteam.</p>}
         {extra.length > 0 && <p className="hint">Ook ingedeeld: {extra.join(', ')}</p>}</div>
@@ -386,7 +386,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
         <Field label="Nabespreking"><select value={o.post} disabled={ro} onChange={ev => upd(() => { o.post = +ev.target.value; })}>{PREP_OPTS.map(m => <option key={m} value={m}>{prepLabel(m)}</option>)}</select></Field>
       </>}
     </div>
-    {e && <div className="field"><span className="lbl">Planning door</span><div className="row" style={{ gap: 6 }}>{[...new Set([...present, ...plannersOf(e, o)])].map(n => <Chip key={n} on={plannersOf(e, o).includes(n)} disabled={ro} onClick={() => togglePlanner(n)}>{n}</Chip>)}</div></div>}
+    {e && <Field label="Planning door"><div className="row" style={{ gap: 6 }}>{[...new Set([...present, ...plannersOf(e, o)])].map(n => <Chip key={n} on={plannersOf(e, o).includes(n)} disabled={ro} onClick={() => togglePlanner(n)}>{n}</Chip>)}</div></Field>}
     <div className="row statrow"><span className="stat">Minimaal leiding<b>{need}</b></span><span className={'stat' + (need > present.length ? ' warnc' : '')}>Aanwezig<b>{present.length}</b></span><span className={'stat' + (A.warn ? ' warnc' : '')}>Aandachtspunten<b>{A.warn}</b></span></div>
     {A.warn > 0 && <ul className="issues">{A.issues.filter(i => i.lvl === 'warn').slice(0, 6).map((i, k) => <li key={k} className="warn"><i /><span>{i.text}</span></li>)}</ul>}
     <p className="hint">{ro ? 'Alleen bekijken: leiding indelen en het programma aanpassen kan met het recht Opkomsten.' : 'Klik op een naam om die in te delen. Klik op een onderdeel voor alle leiding, de tijd of om het weg te halen.'}</p>

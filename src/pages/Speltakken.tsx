@@ -34,7 +34,7 @@ export default function SpeltakkenPage() {
     return () => { alive = false; };
   }, [user]);
   const invite = pending && !(pending.sid && list?.some(s => s.id === pending.sid)) ? pending : null;
-  return <div className="auth-wrap" style={{ alignItems: 'start' }}>
+  return <main className="auth-wrap" style={{ alignItems: 'start' }}>
     <div className="stack" style={{ width: 'min(760px, 100%)', gap: 18 }}>
       <PageHead title="Opkomstplanner"><Link className="btn ghost sm" to="/account"><UserRound size={14} />Account</Link></PageHead>
       <h1 className="display text-5xl md:text-7xl font-black tracking-tighter">Mijn speltakken</h1>
@@ -48,5 +48,5 @@ export default function SpeltakkenPage() {
       <div className="pick"><div className="info"><b>Oefenomgeving</b><span className="hint">Een voorbeeldspeltak om alles uit te proberen. Je echte speltakken veranderen niet.</span></div>
         <Link className="btn sm" to="/s/oefen"><GraduationCap size={14} />Oefenen</Link></div>
     </div>
-  </div>;
+  </main>;
 }

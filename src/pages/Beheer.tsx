@@ -64,7 +64,7 @@ export default function BeheerPage() {
   const me = { uid: user!.uid, name: user?.displayName || user?.email || '', email: user?.email || '' };
 
   const head = <PageHead title="Opkomstplanner · Beheer"><Link className="btn ghost sm" to="/speltakken"><Users size={14} />Mijn speltakken</Link><Link className="btn ghost sm" to="/account"><UserRound size={14} />Account</Link></PageHead>;
-  const wrap = (body: React.ReactNode) => <div className="auth-wrap" style={{ alignItems: 'start' }}><div className="stack beheer" style={{ width: 'min(960px, 100%)', gap: 18 }}>{head}{body}</div></div>;
+  const wrap = (body: React.ReactNode) => <main className="auth-wrap" style={{ alignItems: 'start' }}><div className="stack beheer" style={{ width: 'min(960px, 100%)', gap: 18 }}>{head}{body}</div></main>;
   if (!R.ready) return wrap(<p className="hint">Laden…</p>);
   if (!R.isAdmin) return wrap(<div className="empty"><span>Je bent geen beheerder. Deze pagina is voor Beheer (totaal) en beheerders van een groep.</span><Link className="btn" to="/speltakken">Mijn speltakken</Link></div>);
 
@@ -123,7 +123,7 @@ function RootCard({ me, invites }: { me: Me; invites: Invite[] }) {
     <PeopleList people={people} me={me.uid} canRemove={true} onRemove={uid => removeRootPerson(uid, root.ids).then(() => toast(uid === me.uid ? 'Je bent afgetreden' : 'Verwijderd')).catch(e => err(e, 'Aanpassen mislukt.'))} />
     <div className="invite stack">
       <h3><UserPlus size={16} style={{ verticalAlign: -3, marginRight: 6 }} />Mede-beheerder (totaal) uitnodigen of je rol overdragen</h3>
-      <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="e-mailadres" style={{ flex: '1 1 220px' }} />
+      <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="e-mailadres" aria-label="E-mailadres" style={{ flex: '1 1 220px' }} />
         <label className="toggle-inline"><input type="checkbox" checked={transfer} onChange={e => setTransfer(e.target.checked)} />Ik draag mijn rol over</label>
         <button className="btn primary" disabled={busy} onClick={send}><Link2 size={16} />Uitnodigingslink maken</button></div>
       {transfer && <p className="hint">Je blijft beheerder tot de ander de uitnodiging accepteert. Daarna tik je hierboven bij jezelf op Aftreden.</p>}
@@ -277,7 +277,7 @@ function GroupCard({ g, sps, loaded, invites, me, canAll, allSps, groups, onGone
 
     <h3>Speltakken</h3>
     <div className="team">{sps.map(sp => <SpeltakRow key={sp.id} sp={sp} g={g} me={me} pool={pool} all={sps} names={names} open={invites.filter(i => i.sid === sp.id)} />)}{!sps.length && <p className="hint">Nog geen speltakken.</p>}</div>
-    <div className="row"><input className="inp" value={newSp} onChange={e => setNewSp(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addSp(); }} placeholder="Naam nieuwe speltak, bijv. Welpen" list="speltaklist-b" style={{ flex: '1 1 220px' }} />
+    <div className="row"><input className="inp" value={newSp} onChange={e => setNewSp(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addSp(); }} placeholder="Naam nieuwe speltak, bijv. Welpen" aria-label="Naam nieuwe speltak" list="speltaklist-b" style={{ flex: '1 1 220px' }} />
       <datalist id="speltaklist-b">{SPELTAKKEN.map(x => <option key={x} value={x} />)}</datalist>
       <button className="btn" disabled={adding} onClick={addSp}><Plus size={16} />{adding ? 'Aanmaken…' : 'Speltak aanmaken'}</button></div>
     {canAll && <DeleteGroup g={g} sps={sps} me={me} allSps={allSps} groups={groups} onGone={onGone} />}
@@ -450,7 +450,7 @@ function SpeltakRow({ sp, g, me, pool, all, names, open: openInv }: { sp: Spelta
       </PersonPicker>
       {!tl && <p className="hint">Er is nog geen teamleider: wie je nu toevoegt of uitnodigt, wordt teamleider.</p>}
       <b>Of uitnodigen met een link</b>
-      <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={tl ? 'e-mailadres nieuw lid' : 'e-mailadres teamleider'} style={{ flex: '1 1 220px' }} />
+      <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={tl ? 'e-mailadres nieuw lid' : 'e-mailadres teamleider'} aria-label={tl ? 'E-mailadres nieuw lid' : 'E-mailadres teamleider'} style={{ flex: '1 1 220px' }} />
         {tl && <select className="inp" value={kind} onChange={e => setKind(e.target.value as 'leiding' | 'teamleider')} aria-label="Uitnodigen als" style={{ width: 'auto', flex: 'none' }}><option value="leiding">Leiding</option><option value="teamleider">Teamleider</option></select>}
         <button className="btn" disabled={busy} onClick={send}><Link2 size={16} />{tl ? 'Uitnodigen' : 'Teamleider uitnodigen'}</button></div>
       {tl && <p className="hint">Nieuwe leiding krijgt de rechten jaarplanning, opkomsten en banken; aanpassen kan hierboven bij de leiding. Bekijken mag iedereen in de speltak altijd.</p>}

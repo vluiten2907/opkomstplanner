@@ -61,12 +61,12 @@ export default function Jaarplanning() {
     <div className="card rangebar">
       <RangeInput label="Van" value={range.from} onChange={iso => { if (iso > range.to) { toast('De begindatum moet voor de einddatum liggen.'); return false; } setRange({ ...range, from: iso }); return true; }} />
       <RangeInput label="Tot en met" value={range.to} onChange={iso => { if (iso < range.from) { toast('De begindatum moet voor de einddatum liggen.'); return false; } setRange({ ...range, to: iso }); return true; }} />
-      <div className="presets">{presets.map(([p, l]) => <Chip key={p} on={same(presetRange(settings, p), range)} onClick={() => setRange(presetRange(settings, p))}>{l}</Chip>)}</div>
+      <div className="presets" role="group" aria-label="Periode">{presets.map(([p, l]) => <Chip key={p} on={same(presetRange(settings, p), range)} onClick={() => setRange(presetRange(settings, p))}>{l}</Chip>)}</div>
       <div className="rangestats"><span className="stat">Gepland<b>{cnt.opk}</b></span><span className="stat">Kamp<b>{cnt.kamp}</b></span><span className="stat">Geen opkomst<b>{cnt.off}</b></span><span className="stat">Nog open<b>{cnt.open}</b></span></div>
     </div>
     {rows.length ? <div className="ptable">
       <div className="prow head"><span>Datum</span><span>Onderwerp</span><span>Opkomst</span><span>Planning door</span><span>Afwezig</span><span>Brief</span></div>
-      {Object.entries(groups).map(([k, rs]) => <Fragment key={k}><div className="pmonth">{MONTHS[+k.slice(5) - 1]} {k.slice(0, 4)}</div>{rs.map(r => <PlanRow key={r.rk} r={r} today={today} />)}</Fragment>)}
+      {Object.entries(groups).map(([k, rs]) => <Fragment key={k}><h2 className="pmonth">{MONTHS[+k.slice(5) - 1]} {k.slice(0, 4)}</h2>{rs.map(r => <PlanRow key={r.rk} r={r} today={today} />)}</Fragment>)}
     </div> : <div className="empty">Er vallen geen {dayPlural} in dit tijdbereik.</div>}
   </div>;
 }
@@ -109,7 +109,7 @@ function PlanRow({ r, today }: { r: Row; today: string }) {
   if (type === 'geen') return <div className={cls} id={rowDomId(r.key)}>{dateBtn}<div className="pf f-topic"><span className="plabel">Reden</span><div className="pcell nowrap"><span className="pill neutral">Geen opkomst</span>{topic}</div></div></div>;
   // op de telefoon heet een lege afwezig-knop "+ Afwezig" (de kolomkoppen staan er dan niet)
   const people = (f: 'planners' | 'absent', list: string[]) => <div className="pcell"><PeopleChips list={list} abs={f === 'absent'} />
-    {plan && <button className="addbtn" onClick={() => openModal({ kind: 'people', keyId: r.key, field: f })} aria-label={f === 'planners' ? 'Planning door aanpassen' : 'Afwezigheid aanpassen'} title={f === 'planners' ? 'Wie plant deze opkomst?' : 'Wie is er afwezig?'}>{list.length ? <SquarePen size={14} /> : <Plus size={14} />}{f === 'absent' && !list.length && <span className="addtxt" aria-hidden="true">Afwezig</span>}</button>}</div>;
+    {plan && <button className="addbtn" onClick={() => openModal({ kind: 'people', keyId: r.key, field: f })} aria-label={`${f === 'planners' ? 'Planning door' : 'Afwezigheid'} ${fmtShort(d)} aanpassen`} title={f === 'planners' ? 'Wie plant deze opkomst?' : 'Wie is er afwezig?'}>{list.length ? <SquarePen size={14} /> : <Plus size={14} />}{f === 'absent' && !list.length && <span className="addtxt" aria-hidden="true">Afwezig</span>}</button>}</div>;
   const absent = e ? e.absent : [];
   let lcls = 'brief' + (e && e.letter.needed ? '' : ' none'), ltxt = 'Geen brief';
   if (e && e.letter.needed) {
@@ -122,11 +122,11 @@ function PlanRow({ r, today }: { r: Row; today: string }) {
       <button className="plink" onClick={() => nav(`/s/${sid}/bouwer/${o.id}`)} title="Opkomst openen"><b>{o.title || 'Naamloze opkomst'}</b><span className="hint">{isKamp(o) ? 'kamp · ' : ''}{plural(allBlocks(o).length, 'onderdeel', 'onderdelen')}{minNeed(o) ? ' · min. ' + minNeed(o) : ''}</span>
         {o.cats.length > 0 && <span className="cdots">{o.cats.map(c => opkCatOf(settings, c)).filter(Boolean).map(c => <Dot key={c!.id} color={c!.color} />)}</span>}</button>
       <StatusPill o={o} />
-      {can('build') && <button className="iconbtn" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })} title="Leiding indelen" aria-label="Leiding indelen"><Users size={15} /></button>}
-      {canLink && <ConfirmBtn className="iconbtn danger" label={<X size={15} />} confirm="Ontkoppelen?" title="Ontkoppelen" ariaLabel="Opkomst ontkoppelen" onConfirm={() => { unlinkEntry(e!); toast('Ontkoppeld. De opkomst staat nu bij de concepten in de opkomstenbank.', { label: 'Ongedaan maken', fn: () => relink(o.id, e!.id) }); }} />}
-    </div> : <div className="pcell">{canLink ? <button className="btn sm" onClick={() => openModal({ kind: 'link', keyId: r.key })}><Plus size={14} />Koppelen</button> : <span className="hint">Nog geen programma</span>}</div>}</div>
+      {can('build') && <button className="iconbtn" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })} title="Leiding indelen" aria-label={`Leiding indelen ${fmtShort(d)}`}><Users size={15} /></button>}
+      {canLink && <ConfirmBtn className="iconbtn danger" label={<X size={15} />} confirm="Ontkoppelen?" title="Ontkoppelen" ariaLabel={`Opkomst ${fmtShort(d)} ontkoppelen`} onConfirm={() => { unlinkEntry(e!); toast('Ontkoppeld. De opkomst staat nu bij de concepten in de opkomstenbank.', { label: 'Ongedaan maken', fn: () => relink(o.id, e!.id) }); }} />}
+    </div> : <div className="pcell">{canLink ? <button className="btn sm" onClick={() => openModal({ kind: 'link', keyId: r.key })} aria-label={`Koppelen ${fmtShort(d)}`}><Plus size={14} />Koppelen</button> : <span className="hint">Nog geen programma</span>}</div>}</div>
     <div className="pf f-plan"><span className="plabel">Planning door</span>{people('planners', plannersOf(e, o))}</div>
     <div className={'pf f-abs' + (absent.length ? '' : ' none')}><span className="plabel">Afwezig</span>{people('absent', absent)}</div>
-    <div className="pf f-brief"><span className="plabel">Brief</span><div className="pcell"><button className={lcls} disabled={!plan} onClick={() => openModal({ kind: 'letter', keyId: r.key })}><Mail size={14} aria-hidden="true" /><span className="btxt">{ltxt}</span></button></div></div>
+    <div className="pf f-brief"><span className="plabel">Brief</span><div className="pcell"><button className={lcls} disabled={!plan} onClick={() => openModal({ kind: 'letter', keyId: r.key })} aria-label={`Brief ${fmtShort(d)}: ${ltxt}`}><Mail size={14} aria-hidden="true" /><span className="btxt">{ltxt}</span></button></div></div>
   </div>;
 }

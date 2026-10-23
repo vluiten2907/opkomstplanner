@@ -33,7 +33,7 @@ export default function AccountPage() {
     catch (e) { toast(authError(e)); }
     setPwBusy(false);
   };
-  return <div className="auth-wrap" style={{ alignItems: 'start' }}>
+  return <main className="auth-wrap" style={{ alignItems: 'start' }}>
     <div className="stack" style={{ width: 'min(640px, 100%)', gap: 18 }}>
       <PageHead title="Opkomstplanner · Mijn account"><button className="btn ghost sm" onClick={back}><ArrowLeft size={14} />Terug</button></PageHead>
       <h1 className="display text-5xl md:text-7xl font-black tracking-tighter">Mijn account</h1>
@@ -49,5 +49,5 @@ export default function AccountPage() {
         <div className="row"><button className="btn primary" disabled={busy} onClick={save}><Save size={16} />Opslaan</button><button className="btn ghost" disabled={pwBusy} onClick={newPw}><KeyRound size={16} />{pwBusy ? 'Versturen…' : 'Wachtwoord wijzigen'}</button></div>
       </section>
     </div>
-  </div>;
+  </main>;
 }

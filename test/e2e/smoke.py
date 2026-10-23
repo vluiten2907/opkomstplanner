@@ -14,6 +14,34 @@ OUT = os.environ.get('E2E_OUT', os.path.join(os.path.dirname(os.path.abspath(__f
 os.makedirs(OUT, exist_ok=True)
 errors, failures = [], []
 
+# elke keuzeknop (.chip) zit in een groep met een naam (role=group + aria-label of aria-labelledby), zodat een schermlezer weet waar hij bij hoort
+CHIPGRP = """() => [...document.querySelectorAll('.chip')].filter(c => c.getClientRects().length && !c.closest('[inert]')).filter(c => {
+  const g = c.closest('[role=group]'); if (!g) return true;
+  if ((g.getAttribute('aria-label') || '').trim()) return false;
+  const lb = g.getAttribute('aria-labelledby'); return !(lb && lb.split(' ').some(i => (document.getElementById(i)?.textContent || '').trim()));
+}).map(c => c.textContent.trim().slice(0, 20))"""
+# contrast van tekst (ook ::placeholder) op de achtergrond eronder (< 4,5:1 = te laag). glow: de pagina-achtergrond met de gloed van het accent (30 %) erover
+LOWC = """([sels, glow]) => {
+  const P = s => { let m = s.match(/rgba?\\(([^)]+)\\)/), f = 1; if (!m) { m = s.match(/color\\(srgb ([^)]+)\\)/); f = 255; } if (!m) return null;
+    const p = m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number); return [p[0] * f, p[1] * f, p[2] * f, p.length > 3 ? p[3] : 1]; };
+  const hex = h => { h = h.trim().replace('#', ''); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)).concat(1); };
+  const over = (t, u) => [0, 1, 2].map(i => t[i] * t[3] + u[i] * (1 - t[3])).concat(1);
+  const L = c => { const f = v => (v /= 255) <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; return .2126 * f(c[0]) + .7152 * f(c[1]) + .0722 * f(c[2]); };
+  const cr = (a, u) => (Math.max(L(a), L(u)) + .05) / (Math.min(L(a), L(u)) + .05);
+  let base = P(getComputedStyle(document.body).backgroundColor);
+  if (glow) { const a = hex(getComputedStyle(document.documentElement).getPropertyValue('--accent')); base = over([a[0], a[1], a[2], .3], base); }
+  const out = []; let n = 0;
+  for (const sel of sels) { const [q, pseudo] = sel.split('::');
+    for (const e of document.querySelectorAll(q)) {
+      if (!e.getClientRects().length || e.closest('[inert]')) continue;
+      const chain = []; for (let x = e; x && x !== document.body; x = x.parentElement) chain.unshift(x);
+      let bg = base, op = 1;
+      for (const x of chain) { const st = getComputedStyle(x), c = P(st.backgroundColor); if (c && c[3]) bg = over(c, bg); op *= +st.opacity; }
+      const c = P(getComputedStyle(e, pseudo ? '::' + pseudo : null).color), r = cr(over([c[0], c[1], c[2], c[3] * op], bg), bg); n++;
+      if (r < 4.5) out.push(sel + ' "' + (pseudo ? e.placeholder : e.textContent).trim().slice(0, 16) + '" ' + r.toFixed(2));
+    } }
+  return [n, out]; }"""
+
 def check(cond, msg):
     print(('OK   ' if cond else 'FAIL ') + msg)
     if not cond: failures.append(msg)
@@ -66,6 +94,11 @@ with sync_playwright() as p:
         if who: pg.click(f'.side .chip:has-text("{who}")')
         w(600); pg.click('.side .closex'); w(200)
 
+    def open_meta(P=None):
+        # details van een bestaande opkomst staan standaard ingeklapt (ook op een breed scherm): eerst openklappen
+        P = P or pg; t = P.locator('.metatoggle[aria-expanded="false"]')
+        if t.count(): t.click(); P.wait_for_timeout(250)
+
     def logout_to(url):
         pg.evaluate("localStorage.setItem('fake.auth.current','null'); localStorage.removeItem('opk.sid')"); pg.goto(url); w(600)
 
@@ -114,6 +147,7 @@ with sync_playwright() as p:
     # --- Beheer (totaal): groep, speltak en uitnodigingen
     pg.fill('input[type=email]', 'vluiten2907@gmail.com'); pg.fill('input[type=password]', 'demo123'); pg.click('.btn.primary'); w(1200)
     check('/beheer' in pg.url and pg.locator('h2:has-text("Beheer (totaal)")').count() == 1, 'hoofdaccount → Beheer (totaal)')
+    check(pg.locator('main').count() == 1 and pg.locator('main h1:text-is("Beheer")').count() == 1, 'beheer: inhoud in main (landmark), kop Beheer')
     pg.click('text=Nieuwe Scouting-groep'); w(); pg.fill('#ng-name', 'Testgroep'); pg.click('text=Groep aanmaken'); w(800)
     check(pg.locator('.groupcard.open').count() == 1, 'nieuwe groep aangemaakt en opengeklapt')
     check(pg.locator('.groupcard select[aria-label="Bestaande persoon kiezen"]').count() == 0, 'beheerder kiezen kan pas als er leiding is')
@@ -180,6 +214,7 @@ with sync_playwright() as p:
     # --- teamleider maakt account via de uitnodiging
     logout_to(tl_link)
     check(pg.locator('input[type=email]').input_value() == 'vincent@test.nl', 'uitnodiging: e-mailadres staat vast')
+    check(pg.locator('main h1:has-text("nodigt je uit")').count() == 1 and pg.locator('h2').count() == 0 and pg.title() == 'Uitnodiging · Opkomstplanner', 'uitnodiging: kop (h1) in main en eigen paginatitel')
     check(pg.locator('#i-name').get_attribute('maxlength') == '40', 'uitnodiging: gebruikersnaam hoogstens 40 tekens')
     pg.evaluate("localStorage.setItem('fake.noverify','1')")
     register('Vincent Test', 'vincent@test.nl')
@@ -191,6 +226,7 @@ with sync_playwright() as p:
     tl_token = pg.evaluate("localStorage.getItem('opk.invite')")
     pg.evaluate("localStorage.removeItem('opk.invite')"); pg.goto(BASE + '/speltakken'); w(900)
     check(pg.locator('.empty:has-text("Open de link uit die mail nog een keer")').count() == 1 and pg.locator('.invitenote').count() == 0, 'mijn speltakken zonder speltak: uitleg over de link in de mail')
+    check(pg.locator('main h1:text-is("Mijn speltakken")').count() == 1, 'mijn speltakken: inhoud in main (landmark)')
     pk = pg.evaluate("(() => { const c = getComputedStyle(document.querySelector('.pick')); return [c.backgroundImage.includes('gradient'), c.boxShadow.includes('inset')]; })()")
     check(all(pk), 'mijn speltakken: lijst in v3-stijl (papier met rand, geen vlakke band)')
     # ... en wijst op dit apparaat meteen naar de uitnodiging die er openstaat
@@ -202,6 +238,7 @@ with sync_playwright() as p:
     pg.set_viewport_size({'width': 1360, 'height': 900})
     pg.click('.invitenote >> text=Toetreden'); w(800)
     check('/uitnodiging/' in pg.url and pg.locator('text=Bevestig je e-mailadres').count() == 1, 'Toetreden: terug op de uitnodiging')
+    check(pg.title() == 'Uitnodiging · Opkomstplanner' and pg.locator('main h1').count() == 1 and pg.locator('main h2:has-text("Bevestig je e-mailadres")').count() == 1, 'uitnodiging via de app geopend: eigen paginatitel, h1 en daaronder h2')
     pg.click('text=Ik heb bevestigd'); w(500)
     check('/uitnodiging/' in pg.url and pg.locator('text=Nog niet bevestigd').count() == 1, 'zonder klikken op de link geen toegang')
     pg.evaluate("localStorage.setItem('fake.clicked','vincent@test.nl'); localStorage.removeItem('fake.noverify')")
@@ -317,7 +354,7 @@ with sync_playwright() as p:
     first.locator('.brief').click(); w(300); pg.locator('.modal input[type=checkbox]').first.check(); pg.click('.modal >> text=Opslaan'); w(300)
     first.locator('.btn:has-text("Koppelen")').click(); w(300); pg.click('.modal >> text=Nieuwe opkomst'); w(800)
     check('/bouwer/' in pg.url, 'koppelen → nieuwe opkomst in bouwer')
-    lw = pg.locator('#om-loc').bounding_box()['width']; gw = pg.locator('#om-group').bounding_box()['width']
+    open_meta(); lw = pg.locator('#om-loc').bounding_box()['width']; gw = pg.locator('#om-group').bounding_box()['width']
     check(lw > gw * 1.8, f'bouwer: veld Locatie twee kolommen breed ({lw:.0f} px)')
 
     # --- bouwer
@@ -365,7 +402,7 @@ with sync_playwright() as p:
     check(tkw.split('/')[0] == tkw.split('/')[1], f'indeelvenster: Opkomst titel over de hele breedte, tijden eronder ({tkw})')
     check(pg.locator('#om-title[placeholder="Opkomst titel"]').count() == 1, 'bouwer: titelveld heet Opkomst titel')
     check(pg.locator('.modal >> text=Eindverantwoordelijke').count() == 0, 'indeelvenster: geen apart veld eindverantwoordelijke')
-    pc = pg.locator('.modal .field:has(.lbl:text-is("Planning door")) .chip:has-text("Carla")'); pc.click(); w(400)
+    pc = pg.locator('.modal .field[role=group]:has(> label:text-is("Planning door")) .chip:has-text("Carla")'); pc.click(); w(400)
     check(pc.get_attribute('aria-pressed') == 'true', 'indeelvenster: Planning door aanpassen')
     pg.locator('.modal .blk:has-text("Kompasposten") .tk-names button:has-text("Vincent Test")').first.click(); w(200)
     shot('04-indelen', False)
@@ -375,7 +412,7 @@ with sync_playwright() as p:
     names_now = lambda: ' '.join(pg.locator('.blk .names').all_inner_texts())
     check('Carla' in names_now(), 'Carla is ingedeeld bij een onderdeel')
     pg.click('nav >> text=Jaarplanning'); w(500); pg.click('.presets >> text=Dit seizoen'); w(300)
-    rows.nth(1).locator('[aria-label="Afwezigheid aanpassen"]').click(); pg.click('.modal .chip:text-is("Carla")'); pg.click('.modal >> text=Klaar')
+    rows.nth(1).locator('[aria-label^="Afwezigheid "][aria-label$=" aanpassen"]').click(); pg.click('.modal .chip:text-is("Carla")'); pg.click('.modal >> text=Klaar')
     rows.nth(1).locator('.plink').click()
     check(soon(lambda: '/bouwer/' in pg.url and pg.locator('.blk:has-text("Kompasposten")').count() == 2 and 'Carla' not in names_now()), 'afwezig gemeld in de jaarplanning: naam weg uit de indeling')
 
@@ -458,7 +495,7 @@ with sync_playwright() as p:
     def row_times(i, h1, h2):
         prow(i).locator('.pdate').click(); w(300)
         tp('Begintijd / vertrek', h1, 0); tp('Eindtijd / terug', h2, 0); pg.click('.modal >> text=Opslaan'); w(400)
-    opk_times = lambda: [pg.locator('.meta .timefield').nth(k).locator(c).input_value() for k in (0, 1) for c in ('.tp-h', '.tp-m')]
+    opk_times = lambda: (open_meta(), [pg.locator('.meta .timefield').nth(k).locator(c).input_value() for k in (0, 1) for c in ('.tp-h', '.tp-m')])[1]
     pg.click('nav >> text=Jaarplanning'); w(500); pg.click('.presets >> text=Dit seizoen'); w(400)
     prow(3).locator('.pdate').click(); w(300)
     d_ok = pg.input_value('#md-date'); pg.fill('#md-date', d_ok[:-1]); pg.click('.modal >> text=Opslaan'); w(300)
@@ -557,7 +594,7 @@ with sync_playwright() as p:
     check(sb_err[0] == 'true' and sb_err[1] == 'polite' and 'bestaat al' in (sb_err[2] or ''), f'kopie met bestaande naam: veld ongeldig, fout gekoppeld en voorgelezen ({sb_err})')
     pg.fill('#sb-name', 'Nachtspel'); sb('Kopie opslaan').click(); w(700)
     check(pg.locator('#om-title').input_value() == 'Nachtspel', 'opslaan als kopie opent de kopie')
-    pg.fill('#om-short', 'Spel in het donker'); w(200); sb('Opslaan').click(); w(500)
+    open_meta(); pg.fill('#om-short', 'Spel in het donker'); w(200); sb('Opslaan').click(); w(500)
     pg.click('nav >> text=Opkomstenbank'); w(500)
     check(pg.locator('.bcard:has-text("Sluipspel")').count() == 1 and 'Spel in het donker' in pg.locator('.bcard:has-text("Nachtspel")').inner_text(), 'origineel en kopie staan in de bank, wijziging opgeslagen')
     pg.click('.bcard:has-text("Nachtspel")'); w(300); pg.fill('#tf-title', 'Sluipspel'); w(200)
@@ -745,7 +782,7 @@ with sync_playwright() as p:
     anna_uid = pg.evaluate("JSON.parse(localStorage.getItem('fake.auth.current')).uid")
     check(pg.evaluate("t => JSON.parse(localStorage.getItem('fake.firestore'))['invites/' + t].usedBy", link.rsplit('/', 1)[-1]) == anna_uid, 'uitnodiging na toetreden als gebruikt gemarkeerd')
     pg.goto(link); w(700)
-    check(pg.locator('h2:has-text("Je bent al lid")').count() == 1 and pg.locator('p:has-text("Testgroep · Scouts")').count() >= 1 and pg.locator('.err').count() == 0,
+    check(pg.locator('main h1:has-text("Je bent al lid")').count() == 1 and pg.locator('p:has-text("Testgroep · Scouts")').count() >= 1 and pg.locator('.err').count() == 0,
           'eigen, al gebruikte uitnodiging nog eens openen: "Je bent al lid", geen fout'); shot('05b-al-lid', False)
     pg.click('button:has-text("Openen")'); w(900)
     check(re.search(r'/s/[^/]+/dashboard', pg.url) is not None, 'al lid: Openen gaat naar de speltak')
@@ -755,7 +792,7 @@ with sync_playwright() as p:
       window.__fakeRemote('invites/dubbelanna', { kind: 'leiding', role: 'leiding', email: 'anna@test.nl', gid: sp.gid, groupName: sp.groupName, sid, speltakName: sp.name,
         perms: { plan: true, build: true, bank: true, settings: false }, invitedBy: 'uroot', invitedByName: 'Beheer (demo)', createdAt: Date.now(), expiresAt: Date.now() + 864e5, usedBy: null, transfer: false }); }""", scouts_sid)
     pg.goto(BASE + '/uitnodiging/dubbelanna'); w(900)
-    check(pg.locator('h2:has-text("Je bent al lid")').count() == 1 and pg.locator('.err').count() == 0
+    check(pg.locator('main h1:has-text("Je bent al lid")').count() == 1 and pg.locator('.err').count() == 0
           and soon(lambda: pg.evaluate("JSON.parse(localStorage.getItem('fake.firestore'))['invites/dubbelanna'].usedBy") == anna_uid),
           'open uitnodiging terwijl je al lid bent: "Je bent al lid", uitnodiging als gebruikt gemarkeerd')
     pg.set_viewport_size({'width': 390, 'height': 800}); w(200); shot('05c-al-lid-mobiel', False)
@@ -1263,14 +1300,14 @@ with sync_playwright() as p:
         check(pg.evaluate(NAVFIT) == [True, True, True] and pg.locator('header.bar nav a:text-is("Instellingen")').count() == 1, f'leiding {wd}px: alle zes menuknoppen in beeld ({pg.evaluate(NAVFIT)})')
     pg.set_viewport_size({'width': 1360, 'height': 900}); w(150)
     vr = pg.locator('.prow:has(.plink:has-text("Vuur en kompas"))')
-    check(pg.locator('.prow .btn:has-text("Koppelen")').count() == 0 and pg.locator('.prow [aria-label="Opkomst ontkoppelen"]').count() == 0, 'alleen recht Jaarplanning: geen Koppelen of Ontkoppelen')
+    check(pg.locator('.prow .btn:has-text("Koppelen")').count() == 0 and pg.locator('.prow [aria-label^="Opkomst "][aria-label$=" ontkoppelen"]').count() == 0, 'alleen recht Jaarplanning: geen Koppelen of Ontkoppelen')
     check(vr.locator('.ptopic').is_disabled() and pg.locator('.prow:not(:has(.plink)):not(.geen) .ptopic:enabled').count() > 0, 'alleen recht Jaarplanning: onderwerp van een gekoppelde opkomst vast, andere aan te passen')
-    vr.locator('[aria-label="Afwezigheid aanpassen"]').click(); w(300); pg.click('.modal .chip:text-is("Bagheera")'); pg.click('.modal >> text=Klaar'); w(900)
+    vr.locator('[aria-label^="Afwezigheid "][aria-label$=" aanpassen"]').click(); w(300); pg.click('.modal .chip:text-is("Bagheera")'); pg.click('.modal >> text=Klaar'); w(900)
     check(oefen_get("s['speltakken/oefen/planning/pl-1'].absent.includes('Bagheera') && JSON.stringify(s['speltakken/oefen/opkomsten/opk-vuur'].blocks).includes('Bagheera')"), 'alleen recht Jaarplanning: afwezigheid opgeslagen, opkomst niet aangeraakt')
     pg.goto(BASE + '/s/oefen/opkomsten'); w(1000); pg.click('.bcard:has-text("Rond de wereld")'); w(300)
     check(pg.locator('.side button:has-text("Inplannen")').count() == 0, 'alleen recht Jaarplanning: geen Inplannen vanuit de bank')
     pg.goto(BASE + '/s/oefen/bouwer/opk-vuur'); w(1000)
-    tsel = pg.locator('.meta .timefield select')
+    open_meta(); tsel = pg.locator('.meta .timefield select')
     check(pg.locator('.pill:has-text("Alleen lezen")').count() == 1 and tsel.count() == 4 and all(tsel.nth(k).is_disabled() for k in range(4)), 'alleen lezen: begin- en eindtijd van de opkomst niet aan te passen')
     check(pg.locator('#om-title').get_attribute('readonly') is not None and pg.locator('.ctx button:has-text("Leiding indelen")').count() == 0 and pg.locator('.plan-head button:has-text("In bank")').count() == 0,
           'alleen lezen: titel vast, geen Leiding indelen en geen In bank')
@@ -1498,7 +1535,7 @@ with sync_playwright() as p:
     pg.click('.modal >> text=Activiteit toevoegen'); w(400)
     check(pg.locator('.modal .tk-tl .blk').count() == nb + 1 and 'toegevoegd om' in pg.locator('.toast').inner_text(), 'leiding indelen: activiteit toevoegen op het eerste vrije moment')
     pg.click('.modal >> text=Klaar'); w(300)
-    tf = lambda k: pg.locator('.meta .timefield').nth(k).locator('.tp-h')
+    open_meta(); tf = lambda k: pg.locator('.meta .timefield').nth(k).locator('.tp-h')
     tf(0).select_option('18'); w(300)
     check(tf(1).input_value() == '19' and 'Eindtijd verschoven naar 19:' in pg.locator('.toast').inner_text(), 'bouwer: begintijd na de eindtijd schuift de eindtijd mee')
     check(pg.locator('.blk[aria-label^="Openen, 18:00 tot 18:05"]').count() == 1 and pg.locator('.blk[aria-label^="Sluiten, 18:55 tot 19:00"]').count() == 1, 'bouwer: begintijd wijzigen, Openen en Sluiten schuiven mee')
@@ -1507,7 +1544,7 @@ with sync_playwright() as p:
     w(700); check(oefen_get("s['speltakken/oefen/opkomsten/opk-vuur'].end") // 60 == 19, 'bouwer: nieuwe tijden opgeslagen')
     # venster met het toetsenbord: focus gaat erin, Tab blijft erin, de kop is de naam, Esc sluit en de focus gaat terug
     pg.goto(BASE + '/s/oefen/jaarplanning'); w(1000); pg.click('.presets >> text=Komende 3 maanden'); w(300)
-    trig = pg.locator('.prow [aria-label="Afwezigheid aanpassen"]').first
+    trig = pg.locator('.prow [aria-label^="Afwezigheid "][aria-label$=" aanpassen"]').first
     trig.focus(); pg.keyboard.press('Enter'); w(300)
     in_card = lambda: pg.evaluate("!!document.activeElement && !!document.activeElement.closest('.modal-card')")
     focus_in, stays = in_card(), True
@@ -1520,13 +1557,13 @@ with sync_playwright() as p:
     check(rest_inert and pg.locator('[inert]').count() == 0, 'venster: de rest van de app is zolang onbereikbaar (inert), de melding onderin niet; daarna alles weer bereikbaar')
     # ontkoppelen vraagt eerst bevestiging
     vk = lambda: pg.locator('.prow:has(.plink:has-text("Vuur en kompas"))')
-    vk().locator('[aria-label="Opkomst ontkoppelen"]').click(); w(200)
+    vk().locator('[aria-label^="Opkomst "][aria-label$=" ontkoppelen"]').click(); w(200)
     armed = vk().count() == 1 and vk().locator('button:text-is("Ontkoppelen?")').count() == 1
     vk().locator('button:text-is("Ontkoppelen?")').click(); w(700)
     check(armed and vk().count() == 0 and 'Ontkoppeld' in pg.locator('.toast').inner_text(), 'ontkoppelen in de jaarplanning: eerst Ontkoppelen?, pas daarna los')
     # terugknop met een venster open: het venster gaat dicht (op Android is dat de gewone manier om iets te sluiten)
     pg.click('header nav a[href$="/dashboard"]'); w(800); pg.click('header nav a[href$="/jaarplanning"]'); w(1000)
-    pg.locator('.prow [aria-label="Afwezigheid aanpassen"]').first.click(); w(300)
+    pg.locator('.prow [aria-label^="Afwezigheid "][aria-label$=" aanpassen"]').first.click(); w(300)
     opened = pg.locator('.modal').count() == 1
     pg.evaluate('history.back()'); w(800)
     check(opened and '/dashboard' in pg.url and pg.locator('.modal').count() == 0, 'terugknop met een venster open: venster dicht, terug naar de vorige pagina')
@@ -1584,7 +1621,7 @@ with sync_playwright() as p:
       const lb = el.getAttribute('aria-labelledby'); if (lb && lb.split(' ').some(i => (document.getElementById(i)?.textContent || '').trim())) return false;
       return !([...(el.labels || [])].some(l => l.textContent.trim()) || (el.closest('label')?.textContent || '').trim());
     }).map(el => el.outerHTML.slice(0, 100))"""
-    noname = pg.evaluate(NONAME)
+    open_meta(); noname = pg.evaluate(NONAME)
     check(not noname and pg.locator('select[aria-label="Begintijd uur"]').count() == 1 and pg.locator('select[aria-label="Eindtijd minuten"]').count() == 1, f'bouwer: elk veld heeft een naam, begin- en eindtijd apart ({noname[:2]})')
     n_blk = pg.locator('.lanes .blk').count()
     pg.locator('#bf-add').focus(); pg.keyboard.press('Enter'); w(400)
@@ -1810,8 +1847,8 @@ with sync_playwright() as p:
     pg.click('.modal .closex'); w(200)
     # ontkoppelen kan terug; Leiding indelen heeft een eigen icoon (niet hetzelfde potlood als Planning door en Afwezig)
     vk = lambda: pg.locator('.prow:has(.plink:has-text("Vuur en kompas"))')
-    check(vk().locator('[aria-label="Leiding indelen"] svg.lucide-users').count() == 1, 'jaarplanning: Leiding indelen met het icoon van een groepje mensen')
-    vk().locator('[aria-label="Opkomst ontkoppelen"]').click(); w(200); vk().locator('button:text-is("Ontkoppelen?")').click(); w(500)
+    check(vk().locator('[aria-label^="Leiding indelen "] svg.lucide-users').count() == 1, 'jaarplanning: Leiding indelen met het icoon van een groepje mensen')
+    vk().locator('[aria-label^="Opkomst "][aria-label$=" ontkoppelen"]').click(); w(200); vk().locator('button:text-is("Ontkoppelen?")').click(); w(500)
     undo = pg.locator('.toast.show button:has-text("Ongedaan maken")')
     loose = vk().count() == 0 and undo.count() == 1
     undo.click(); w(600)
@@ -1892,7 +1929,33 @@ with sync_playwright() as p:
     check(pg.locator('#om-meta').is_visible() and pg.locator('.metatoggle[aria-expanded="true"]').count() == 1, 'bouwer mobiel: een nieuwe opkomst opent met de details open')
     pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     pg.click('nav >> text=Opkomstbouwer'); w(700)
-    check(pg.locator('.metatoggle').count() == 0 and n_draft() == n0 + 1, 'bouwer breed: geen inklapknop; lege nieuwe opkomst weer opgeruimd')
+    check(n_draft() == n0 + 1, 'bouwer breed: lege nieuwe opkomst weer opgeruimd')
+    # --- bouwer op een laptop: details van een bestaande opkomst ook ingeklapt, zodat de tijdlijn boven de vouw begint; open of dicht wordt onthouden
+    pg.evaluate("localStorage.removeItem('opk.details.breed')"); pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(1200)
+    lt = pg.evaluate("document.querySelector('.lanes').getBoundingClientRect().top + scrollY")
+    check(pg.locator('.metatoggle[aria-expanded="false"]').count() == 1 and pg.locator('#om-meta').count() == 0 and pg.locator('.present').count() == 0 and pg.locator('.summary .stat').count() > 3 and lt < 900,
+          f'bouwer breed: details ingeklapt (met inklapknop), tellers blijven, de tijdlijn begint op {lt:.0f} px (boven de vouw)')
+    shot('30b-bouwer-breed-ingeklapt', False)
+    pg.click('.metatoggle'); w(300)
+    opened = pg.locator('#om-meta .timefield').count() == 2 and pg.locator('.present .chip').count() > 0
+    pg.reload(); w(1200)
+    kept = pg.locator('.metatoggle[aria-expanded="true"]').count() == 1 and pg.locator('#om-meta').is_visible()
+    pg.click('.metatoggle'); w(300); pg.reload(); w(1200)
+    check(opened and kept and pg.locator('.metatoggle[aria-expanded="false"]').count() == 1 and pg.evaluate("localStorage.getItem('opk.details.smal')") == '1',
+          'bouwer breed: Details klapt open (tijden, aanwezige leiding); open of dicht onthouden op dit apparaat, los van de telefoon')
+    # bewerkpaneel bij het laatste onderdeel (onderaan de tijdlijn): de bovenkant met titel en sluiten komt niet onder de kopbalk, het onderdeel blijft in beeld
+    pg.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)"); w(300)
+    pg.locator('.lanes .blk').last.locator('.t').click(); w(600)
+    ED = """(() => { const h = document.querySelector('header.bar').getBoundingClientRect().bottom, x = document.querySelector('.side .closex').getBoundingClientRect(),
+      t = document.getElementById('bf-title').getBoundingClientRect(), b = document.querySelector('.lanes .blk.sel').getBoundingClientRect();
+      return [Math.round(h), Math.round(x.top), Math.round(t.top), Math.round(b.top), Math.round(b.bottom), innerHeight]; })()"""
+    ed = pg.evaluate(ED)
+    check(ed[1] >= ed[0] and ed[2] >= ed[0] and ed[3] >= ed[0] and ed[4] <= ed[5], f'bouwer breed: bewerkpaneel bij het laatste onderdeel staat onder de kopbalk, het onderdeel blijft in beeld ({ed})')
+    shot('30c-bouwer-paneel-onderaan', False)
+    pg.keyboard.press('Escape'); w(300)
+    pg.locator('.lanes .blk').first.locator('.t').click(); w(600); ed = pg.evaluate(ED)
+    check(ed[1] >= ed[0] and ed[3] >= ed[0] and ed[4] <= ed[5], f'bouwer breed: bewerkpaneel bij het eerste onderdeel ook goed in beeld ({ed})')
+    pg.keyboard.press('Escape'); w(300)
     # --- eigen oefendata (los van de rest): kop, contrast, Activiteitengebieden, velden, lege dashboardkaart
     qc = b.new_context(viewport={'width': 1360, 'height': 900}, locale='nl-NL')
     qc.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())
@@ -1907,7 +1970,7 @@ with sync_playwright() as p:
     sig = q.evaluate("[...document.querySelectorAll('.nextlist .pill.warn')].map(e => getComputedStyle(e).color)")
     lg = q.evaluate("[...document.querySelectorAll('.counts .legend-dot, .cal .cday.topic:not(.today)')].map(e => getComputedStyle(e).boxShadow.includes('inset'))")
     check(sig and all(c == 'rgb(138, 82, 0)' for c in sig) and len(lg) >= 6 and all(lg), f'contrast: waarschuwingstekst donker oranje, legenda en kalendervakjes met rand ({set(sig)}, {len(lg)})')
-    q.goto(BASE + '/s/oefen/bouwer/opk-jungle'); q.wait_for_timeout(1200)
+    q.goto(BASE + '/s/oefen/bouwer/opk-jungle'); q.wait_for_timeout(1200); open_meta(q)
     mt = q.evaluate("""(() => { const rows = {}; document.querySelectorAll('.meta > .field').forEach(f => { const c = f.querySelector('input, select'); if (!c) return;
       const k = Math.round(f.getBoundingClientRect().top); const r = c.getBoundingClientRect(); (rows[k] = rows[k] || []).push(Math.round(r.top) + '/' + Math.round(r.height)); }); return Object.values(rows); })()""")
     check(mt and all(len(set(r)) == 1 and r[0].endswith('/38') for r in mt), f'bouwer: velden in de details-rij even hoog en op één lijn ({mt})')
@@ -2234,6 +2297,76 @@ with sync_playwright() as p:
         if acc == 'Oranje': k.screenshot(path=f'{OUT}/36b-dashboard-oranje.png')
     check(not low, f'contrast: tekst en status op de kaart van de komende opkomst en Ingepland ≥ 4,5:1 bij elk accent ({low})')
     kc.close()
+    # --- toegankelijkheid (eigen oefendata): contrast licht en donker, groepen keuzeknoppen, namen van herhaalde knoppen, koppen, bevestigen met twee klikken
+    ac = b.new_context(viewport={'width': 1360, 'height': 900}, locale='nl-NL', color_scheme='dark')
+    ac.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())
+    a = ac.new_page(); a.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+    a.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' and 'ERR_FAILED' not in m.text else None)
+    aw = lambda ms=400: a.wait_for_timeout(ms)
+    # donker (volgt het systeem) en licht: melding op het dashboard, kop eronder, categorielabels, voorbeeldtekst in velden ≥ 4,5:1
+    for scheme in ('dark', 'light'):
+        a.emulate_media(color_scheme=scheme); low, seen = [], {}
+        a.goto(BASE + '/s/oefen/dashboard'); aw(1200)
+        for sels, glow in ((['.notice .ntext span', '.notice .btn.ghost'], False), (['main .subline'], True)):
+            n, o = a.evaluate(LOWC, [sels, glow]); seen[sels[0]] = n; low += o
+        if scheme == 'dark': a.screenshot(path=f'{OUT}/37-donker-dashboard.png')
+        for path in ('bouwer', 'opkomsten'):
+            a.goto(BASE + '/s/oefen/' + path); aw(1000); n, o = a.evaluate(LOWC, [['.ocat'], False]); seen[path] = n; low += o
+        a.goto(BASE + '/s/oefen/instellingen'); aw(1000)
+        n, o = a.evaluate(LOWC, [['input:placeholder-shown::placeholder'], False]); seen['placeholder'] = n; low += o
+        ph = a.evaluate("getComputedStyle(document.querySelector('input:placeholder-shown'), '::placeholder').opacity")
+        check(all(seen.values()) and not low and ph == '1', f'contrast {scheme}: melding, kop, categorielabels en voorbeeldtekst in velden ≥ 4,5:1 ({seen}; {low[:4]})')
+    a.emulate_media(color_scheme='light')
+    # keuzeknoppen zitten in een groep met een naam (schermlezer: "Categorieën van de opkomst, groep" in plaats van een losse knop)
+    nogrp = {}
+    a.goto(BASE + '/s/oefen/bouwer/opk-jungle'); aw(1200); open_meta(a)
+    a.locator('.lanes .blk:has-text("Junglejacht") .t').click(); aw(400); nogrp['bouwer'] = a.evaluate(CHIPGRP); a.keyboard.press('Escape'); aw(300)
+    a.click('.ctx >> text=Leiding indelen'); aw(500); a.locator('.modal .tk-tl .blk:has-text("Junglejacht") .tk-pick').click(); aw(300)
+    nogrp['leiding indelen'] = a.evaluate(CHIPGRP); n_chips = a.evaluate("document.querySelectorAll('.modal .chip').length"); a.keyboard.press('Escape'); aw(300)
+    a.goto(BASE + '/s/oefen/jaarplanning'); aw(1200); nogrp['jaarplanning'] = a.evaluate(CHIPGRP)
+    a.locator('.prow .f-plan .addbtn').first.click(); aw(300); nogrp['planning door'] = a.evaluate(CHIPGRP); a.keyboard.press('Escape'); aw(300)
+    for path in ('instellingen', 'activiteiten', 'opkomsten'):
+        a.goto(BASE + '/s/oefen/' + path); aw(1000); nogrp[path] = a.evaluate(CHIPGRP)
+        if path == 'instellingen': n_acc = a.locator('.field[role=group]:has(> label:text-is("Kleur")) .acc').count()
+    bad = {k: v for k, v in nogrp.items() if v}
+    check(not bad and n_chips > 3 and n_acc == 7, f'keuzeknoppen: elke groep heeft een naam (bouwer, leiding indelen, jaarplanning, instellingen, banken) ({bad}, {n_chips}, {n_acc})')
+    # herhaalde knoppen hebben een eigen naam: datum of titel erbij (in de lijst van een schermlezer niet 30× "Planning door aanpassen")
+    a.goto(BASE + '/s/oefen/jaarplanning'); aw(1200); a.click('.presets >> text=Dit seizoen'); aw(400)
+    NM = "sel => [...document.querySelectorAll(sel)].map(b => b.getAttribute('aria-label') || b.textContent.trim())"
+    jn = {k: a.evaluate(NM, sel) for k, sel in (('plan', '.f-plan .addbtn'), ('abs', '.f-abs .addbtn'), ('brief', '.brief'), ('indelen', '.f-opk [aria-label^="Leiding indelen"]'), ('los', '.f-opk .iconbtn.danger'), ('koppelen', '.f-opk .btn.sm'))}
+    uniq = all(len(v) > 1 and len(set(v)) == len(v) for v in jn.values())
+    bvis = a.evaluate("[...document.querySelectorAll('.brief')].every(b => b.getAttribute('aria-label').endsWith(b.textContent.trim()))")
+    check(uniq and bvis and re.fullmatch(r'Planning door \w+ \d+ \w+ aanpassen', jn['plan'][0]) is not None and all(x.startswith('Opkomst ') and x.endswith(' ontkoppelen') for x in jn['los']),
+          f'jaarplanning: herhaalde knoppen met de datum in de naam, brief met de zichtbare tekst erin ({ {k: v[:2] for k, v in jn.items()} })')
+    a.goto(BASE + '/s/oefen/bouwer'); aw(1000)
+    pk = a.evaluate("[...document.querySelectorAll('.picklist .pick > .btn, .picklist .pick > .row > .btn.primary')].map(b => b.getAttribute('aria-label'))")
+    check(len(pk) > 2 and all(x and x.startswith('Openen: ') and len(x) > 9 for x in pk), f'opkomstbouwer: elke knop Openen heeft de titel in de naam ({pk[:3]})')
+    a.goto(BASE + '/s/oefen/instellingen'); aw(1000)
+    a.locator('.catrow .sw.cur').first.click(); aw(200)
+    swn = a.evaluate("[...document.querySelectorAll('.swatches .sw')].map(b => b.getAttribute('aria-label'))")
+    rb = a.locator('.member button[aria-expanded]').first; rl0, re0 = rb.get_attribute('aria-label'), rb.get_attribute('aria-expanded'); rb.click(); aw(200)
+    check(len(swn) == 13 and len(set(swn)) == 13 and not any('#' in x for x in swn) and rl0.startswith('Rechten van ') and re0 == 'false' and rb.get_attribute('aria-expanded') == 'true',
+          f'instellingen: kleuren hebben een naam (geen hexcode), Rechten zegt van wie en of hij open is ({swn[:3]}, {rl0})')
+    # koppen: maanden in de jaarplanning zijn koppen (springen per maand), banken slaan geen niveau over
+    a.goto(BASE + '/s/oefen/jaarplanning'); aw(1000)
+    LV = "[...document.querySelectorAll('main h1, main h2, main h3, main h4')].filter(h => h.getClientRects().length).map(h => +h.tagName[1])"
+    lv = {'jaarplanning': a.evaluate(LV)}
+    months = a.locator('main h2.pmonth').count()
+    for path in ('activiteiten', 'opkomsten'):
+        a.goto(BASE + '/s/oefen/' + path); aw(1000); lv[path] = a.evaluate(LV)
+    jumps = {k: v for k, v in lv.items() if not v or v[0] != 1 or any(y - x > 1 for x, y in zip(v, v[1:]))}
+    check(months >= 2 and a.locator('aside h2:text-is("Opkomst uit de bank")').count() == 1 and not jumps, f'koppen: {months} maanden als kop in de jaarplanning, geen niveau overgeslagen ({jumps})')
+    # bevestigen met twee klikken: blijft staan zolang de focus erop staat (toetsenbord, schermlezer) of de muis erop, en wordt voorgelezen
+    a.goto(BASE + '/s/oefen/instellingen'); aw(1000)
+    n_cat = a.locator('.catrow').count(); cb = a.locator('.catrow .iconbtn.danger').first
+    cb.focus(); a.keyboard.press('Enter'); aw(3400)
+    kb_hold = cb.get_attribute('data-armed') is not None and (a.locator('#sr-live').text_content() or '').startswith('Zeker?')
+    a.keyboard.press('Shift+Tab'); aw(3400); kb_off = cb.get_attribute('data-armed') is None
+    cb.hover(); cb.click(); aw(3400); ms_hold = cb.get_attribute('data-armed') is not None
+    a.mouse.move(5, 300); aw(3400); ms_off = cb.get_attribute('data-armed') is None
+    check([kb_hold, kb_off, ms_hold, ms_off] == [True] * 4 and a.locator('.catrow').count() == n_cat,
+          f'twee keer klikken: de vraag blijft staan met focus of muis erop (en wordt voorgelezen), verdwijnt 3 s daarna; niets verwijderd ({[kb_hold, kb_off, ms_hold, ms_off]})')
+    ac.close()
     # aanraakscherm: grotere naamknoppen, geen prullenbak op een blokje van 5 minuten, groter raakvlak op het dashboard
     tc = b.new_context(viewport={'width': 390, 'height': 844}, locale='nl-NL', has_touch=True, is_mobile=True)
     tc.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())

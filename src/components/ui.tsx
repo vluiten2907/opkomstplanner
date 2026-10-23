@@ -32,12 +32,46 @@ export function Toast() {
   </div>;
 }
 
-/** Klik twee keer om te bevestigen (geen alert/confirm in de browser). */
+/** Eén gedeeld, onzichtbaar meldvak voor schermlezers, direct in body (zo maakt een open venster het nooit onbereikbaar). */
+let liveBox: HTMLElement | null = null;
+function liveRegion() {
+  if (typeof document === 'undefined') return null;
+  if (!liveBox || !liveBox.isConnected) {
+    liveBox = document.createElement('div'); liveBox.className = 'sr-only'; liveBox.id = 'sr-live';
+    liveBox.setAttribute('aria-live', 'polite'); document.body.appendChild(liveBox);
+  }
+  return liveBox;
+}
+/** Laat een schermlezer iets zeggen zonder iets te tonen (dezelfde tekst twee keer wordt ook twee keer gezegd). */
+export function announce(text: string) {
+  const el = liveRegion(); if (!el) return;
+  el.textContent = '';
+  setTimeout(() => { el.textContent = text; }, 60);
+}
+const focusVisible = (el: Element) => { try { return el.matches(':focus-visible'); } catch { return true; } };
+
+/**
+ * Klik twee keer om te bevestigen (geen alert/confirm in de browser).
+ * Na de eerste klik blijft de vraag staan zolang de muis erop staat of de knop de focus heeft via het toetsenbord
+ * (of een schermlezer); daarna nog 3 seconden. De vraag wordt ook voorgelezen.
+ */
 export function ConfirmBtn({ label, confirm, onConfirm, className = 'btn ghost', title, ariaLabel, role, tabIndex }: { label: ReactNode; confirm: string; onConfirm: () => void; className?: string; title?: string; ariaLabel?: string; role?: string; tabIndex?: number }) {
   const [armed, setArmed] = useState(false);
-  useEffect(() => { if (!armed) return; const t = setTimeout(() => setArmed(false), 3000); return () => clearTimeout(t); }, [armed]);
+  const [hold, setHold] = useState({ hover: false, focus: false });
+  const held = hold.hover || hold.focus;
+  const set = (k: 'hover' | 'focus', v: boolean) => setHold(h => h[k] === v ? h : { ...h, [k]: v });
+  useEffect(() => { liveRegion(); }, []);
+  useEffect(() => { if (!armed || held) return; const t = setTimeout(() => setArmed(false), 3000); return () => clearTimeout(t); }, [armed, held]);
   // aria-label alleen in rust (bijv. een knop met alleen een pictogram); gewapend is de zichtbare vraag de naam
-  return <button type="button" className={className} role={role} tabIndex={tabIndex} data-armed={armed || undefined} title={title} aria-label={armed ? undefined : ariaLabel} onClick={() => { if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}>{armed ? confirm : label}</button>;
+  return <button type="button" className={className} role={role} tabIndex={tabIndex} data-armed={armed || undefined} title={title} aria-label={armed ? undefined : ariaLabel}
+    onPointerEnter={e => { if (e.pointerType === 'mouse') set('hover', true); }} onPointerLeave={e => { if (e.pointerType === 'mouse') set('hover', false); }}
+    onFocus={e => { if (focusVisible(e.currentTarget)) set('focus', true); }} onBlur={() => set('focus', false)}
+    onClick={e => {
+      // detail 0: met het toetsenbord of een schermlezer ingedrukt (dan blijft de vraag staan zolang de focus erop staat)
+      if (e.detail === 0) set('focus', true);
+      if (armed) { setArmed(false); onConfirm(); }
+      else { setArmed(true); announce(/nogmaals/i.test(confirm) ? confirm : `${confirm} Nogmaals drukken om te bevestigen.`); }
+    }}>{armed ? confirm : label}</button>;
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';

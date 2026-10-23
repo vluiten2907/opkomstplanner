@@ -39,7 +39,7 @@ export default function VerifyNote({ box, onVerified }: { box?: boolean; onVerif
   const sendBtn = <button className={'btn sm' + (sent ? '' : ' primary')} disabled={busy} onClick={again}>{sent ? 'Mail opnieuw sturen' : 'Bevestigingsmail sturen'}</button>;
   const buttons = <div className="row">{sent ? <>{checkBtn}{sendBtn}</> : <>{sendBtn}{checkBtn}</>}</div>;
   if (box) return <div className="stack verifynote">
-    <h3 style={{ margin: 0 }}><MailCheck size={18} style={{ verticalAlign: -3, marginRight: 6 }} />Bevestig je e-mailadres</h3>
+    <h2 className="h-sm" style={{ margin: 0 }}><MailCheck size={18} style={{ verticalAlign: -3, marginRight: 6 }} />Bevestig je e-mailadres</h2>
     <p className="hint" style={{ margin: 0 }}>{sent
       ? <>We hebben een mail gestuurd naar <b>{user.email}</b>. Klik op de link in die mail en kom daarna hier terug.</>
       : <>Je e-mailadres <b>{user.email}</b> is nog niet bevestigd. Tik op Bevestigingsmail sturen, klik op de link in die mail en kom daarna hier terug.</>} Zo weten we zeker dat het adres van jou is.</p>

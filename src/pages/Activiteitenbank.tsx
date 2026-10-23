@@ -52,7 +52,7 @@ export default function Activiteitenbank() {
         onSave={x => { saveLib(x); if (isNew) setFresh(null); toast(isNew ? 'Activiteit opgeslagen in de bank' : 'Activiteit opgeslagen'); }}
         onCopy={x => { saveLib(x); setSelRaw(x.id); toast(`Kopie "${x.title}" opgeslagen`); }}
         onDelete={() => remove(L)} /></div>
-        : <div className="pad stack"><h3>Activiteit bewerken</h3><p className="muted">Kies een activiteit om hem te bekijken{edit ? ' of te bewerken' : ''}. In de opkomstbouwer sleep je activiteiten vanuit het zijpaneel op de tijdlijn.</p></div>}</aside>
+        : <div className="pad stack"><h2 className="h-sm">Activiteit bewerken</h2><p className="muted">Kies een activiteit om hem te bekijken{edit ? ' of te bewerken' : ''}. In de opkomstbouwer sleep je activiteiten vanuit het zijpaneel op de tijdlijn.</p></div>}</aside>
       <div className={'scrim' + (L ? ' on' : '')} onClick={() => setSel(null)} />
     </div>
   </div>;

@@ -30,6 +30,12 @@ function TitleArea({ value, readOnly, onChange, placeholder, autoFocus }: { valu
 
 const blkSel = (id: string) => `.lanes [data-bid="${CSS.escape(id)}"]`;
 
+/** Details open of dicht, onthouden per apparaat (telefoon en breed scherm apart). Zonder opslag (privévenster): niets onthouden. */
+function metaPref(narrow: boolean, v?: '0' | '1') {
+  const k = 'opk.details.' + (narrow ? 'smal' : 'breed');
+  try { if (v) localStorage.setItem(k, v); return localStorage.getItem(k); } catch { return null; }
+}
+
 /* ============ Startscherm ============ */
 export default function Bouwer() {
   const { oid } = useParams();
@@ -86,9 +92,11 @@ function Builder({ o: stored }: { o: Opk }) {
     const L = latest(), cur = L.getO(stored.id);
     if (cur && cur.state === 'draft' && isBlankOpk(cur) && !L.entryOfOpk(cur)) L.deleteOpk(cur.id);
   }), [stored.id]);
-  // smal scherm (telefoon): details van een bestaande opkomst ingeklapt, zodat de tijdlijn en de activiteitenbank sneller in beeld zijn
+  // Details van een bestaande opkomst ingeklapt (ook op een laptop), zodat de tijdlijn meteen in beeld is; een nieuwe opkomst
+  // (of een zonder titel) opent ze. Wie ze open- of dichtklapt, krijgt dat op dit apparaat ook bij de volgende opkomst.
   const narrow = useMedia('(max-width: 900px)');
-  const [metaOpen, setMetaOpen] = useState(() => fresh || !stored.title.trim());
+  const [metaOpen, setMetaOpen] = useState(() => fresh || !stored.title.trim() || metaPref(narrow) === '1');
+  const toggleMeta = () => { metaPref(narrow, metaOpen ? '0' : '1'); setMetaOpen(!metaOpen); };
   // net ingepland of gesleept onderdeel: in beeld brengen en even laten oplichten
   const [flashId, setFlashId] = useState<string | null>(null);
   useEffect(() => { if (!flashId) return; const t = setTimeout(() => setFlashId(null), 1600); return () => clearTimeout(t); }, [flashId]);
@@ -153,6 +161,14 @@ function Builder({ o: stored }: { o: Opk }) {
     if (id && kamp) { const k = o.days.findIndex(d => d.blocks.some(b => b.id === id)); if (k >= 0 && k !== di) setDayIdx(k); }
     setSelId(id); if (id && sideRef.current) sideRef.current.scrollTop = 0;
     if (id && kb) setTimeout(() => document.getElementById('bf-title')?.focus(), 30);
+    if (id) setTimeout(editorInView, 30);
+  };
+  // Breed scherm: het bewerkpaneel plakt naast de tijdlijn, maar bij een onderdeel onderaan duwt het einde van de tijdlijn
+  // het omhoog, onder de kopbalk (titel en sluiten onzichtbaar). Dan terugschuiven tot het paneel weer op zijn plek staat.
+  const editorInView = () => {
+    const el = sideRef.current; if (!el || window.matchMedia('(max-width: 900px)').matches) return;
+    const bar = document.querySelector('header.bar')?.getBoundingClientRect().bottom ?? 0, top = el.getBoundingClientRect().top;
+    if (top < bar + 4) window.scrollBy(0, top - (parseFloat(getComputedStyle(el).top) || bar + 16));
   };
   // sluiten (kruisje, Esc of naast het paneel): de focus gaat terug naar het onderdeel in de tijdlijn
   const closeEditor = () => { const id = selId; setSelId(null); if (id) focusSoon(blkSel(id)); };
@@ -246,13 +262,13 @@ function Builder({ o: stored }: { o: Opk }) {
       {o.state === 'planned' && e && <div className="ctx">{!readOnly && <button className="btn sm" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })}>Leiding indelen</button>}Ingepland op <b>{fmtRange(e.date, e.endDate, true)}</b><span>week {isoWeek(e.date)}</span><span>planning door: <b>{plannersOf(e, o).join(', ') || 'nog niemand'}</b></span>
         {src && can('bank') && <span>uit de opkomstenbank: {src.title || 'naamloos'} · <ConfirmBtn className="linkbtn" label="bank bijwerken met deze versie" confirm="Klik nogmaals: bank overschrijven" onConfirm={updBank} /></span>}</div>}
       <div className="card">
-        {narrow && <button className="metatoggle" aria-expanded={metaOpen} aria-controls="om-meta" onClick={() => setMetaOpen(v => !v)}>
+        <button className="metatoggle" aria-expanded={metaOpen} aria-controls="om-meta" onClick={toggleMeta}>
           <ChevronRight size={18} className="chev" aria-hidden="true" /><b>Details</b>
-          <span className="hint">{[!kamp && fmtT(o.start) + '–' + fmtT(o.end), o.location.trim(), o.cats.length ? plural(o.cats.length, 'categorie', 'categorieën') : '', e && plural(present.length, 'leiding', 'leiding') + ' aanwezig'].filter(Boolean).join(' · ')}</span></button>}
-        {(!narrow || metaOpen) && <div className="meta" id="om-meta">
+          <span className="hint">{[!kamp && fmtT(o.start) + '–' + fmtT(o.end), o.location.trim(), o.cats.length ? plural(o.cats.length, 'categorie', 'categorieën') : '', e && plural(present.length, 'leiding', 'leiding') + ' aanwezig'].filter(Boolean).join(' · ')}</span></button>
+        {metaOpen && <div className="meta" id="om-meta">
           <Field label="Korte beschrijving" htmlFor="om-short" className="wide"><textarea id="om-short" rows={2} value={o.short} readOnly={readOnly} onChange={ev => upd(() => { o.short = ev.target.value; })} placeholder="Waar gaat deze opkomst over? Komt op het dashboard en in de bank." /></Field>
-          <div className="field wide"><span className="lbl">Categorieën van de {kamp ? 'activiteit' : 'opkomst'}</span>
-            <div className="row" style={{ gap: 6 }}>{opkCatList(settings).map(c => <Chip key={c.id} on={o.cats.includes(c.id)} disabled={readOnly} onClick={() => upd(() => { o.cats = o.cats.includes(c.id) ? o.cats.filter(x => x !== c.id) : [...o.cats, c.id]; })}><Dot color={c.color} />{c.label}</Chip>)}</div></div>
+          <Field label={`Categorieën van de ${kamp ? 'activiteit' : 'opkomst'}`} className="wide">
+            <div className="row" style={{ gap: 6 }}>{opkCatList(settings).map(c => <Chip key={c.id} on={o.cats.includes(c.id)} disabled={readOnly} onClick={() => upd(() => { o.cats = o.cats.includes(c.id) ? o.cats.filter(x => x !== c.id) : [...o.cats, c.id]; })}><Dot color={c.color} />{c.label}</Chip>)}</div></Field>
           <Field label="Speltak / groep" htmlFor="om-group"><input id="om-group" value={o.group} readOnly={readOnly} onChange={ev => upd(() => { o.group = ev.target.value; })} placeholder="bijv. Scouts" /></Field>
           <Field label="Locatie" htmlFor="om-loc" className="loc"><input id="om-loc" value={o.location} readOnly={readOnly} onChange={ev => upd(() => { o.location = ev.target.value; })} placeholder="bijv. Clubhuis" /></Field>
           {!kamp && <>
@@ -263,7 +279,7 @@ function Builder({ o: stored }: { o: Opk }) {
           </>}
         </div>}
         {kamp && <DaysBar o={o} di={di} setDayIdx={setDayIdx} upd={upd} date={e ? e.date : null} readOnly={readOnly} />}
-        {e && (!narrow || metaOpen) && <div className="present"><span className="lbl" style={{ marginRight: 6 }}>Aanwezige leiding</span>
+        {e && metaOpen && <div className="present" role="group" aria-labelledby="om-present-l"><span className="lbl" id="om-present-l" style={{ marginRight: 6 }}>Aanwezige leiding</span>
           {leaders.length ? leaders.map(n => <Chip key={n} on={!e.absent.includes(n)} disabled={!can('plan')} onClick={() => { const en = { ...e, absent: e.absent.includes(n) ? e.absent.filter(x => x !== n) : [...e.absent, n] }; dropAbsent(en); savePlan(en); }}>{n}</Chip>) : <span className="hint">Nog geen leidingteam.</span>}
           {present.filter(n => !leaders.includes(n)).map(n => <Chip key={n} on disabled title="Met de hand ingedeeld">{n}</Chip>)}</div>}
       </div>
@@ -518,8 +534,8 @@ function Editor({ b, ctx, upd, onClose, onDelete, onDup, saveLib }: { b: Block; 
     <div className="two">{isFixed(b) ? <div className="field"><span className="lbl">Soort</span><span className="pill neutral" style={{ justifySelf: 'start' }}>{catOf(settings, b.cat).label}</span></div> : <CatSelect prefix="bf" value={b.cat} disabled={ro} onChange={id => upd(() => { b.cat = id; })} />}
       <Field label="Minimaal aantal leiding" htmlFor="bf-min"><NumInput id="bf-min" min={0} max={30} readOnly={ro} value={b.minLeaders} onChange={n => upd(() => { b.minLeaders = n; })} /></Field></div>
     <Field label="Locatie" htmlFor="bf-loc"><LocInput id="bf-loc" value={b.location} readOnly={ro} onChange={v => upd(() => { b.location = v; })} placeholder="bijv. Grasveld" /></Field>
-    {nn ? <div className="field"><span className="lbl">Verantwoordelijk</span><span className="hint">Deel je in bij het inplannen.</span></div> : <div className="field"><span className="lbl">Verantwoordelijk</span>
-      <div className="row" style={{ gap: 6 }}>{leaders.length ? leaders.map(n => present.includes(n) ? <Chip key={n} on={b.names.includes(n)} disabled={ro} onClick={() => upd(() => { b.names = b.names.includes(n) ? b.names.filter(x => x !== n) : [...b.names, n]; })}>{n}</Chip>
+    {nn ? <div className="field"><span className="lbl">Verantwoordelijk</span><span className="hint">Deel je in bij het inplannen.</span></div> : <div className="field"><span className="lbl" id="bf-who-l">Verantwoordelijk</span>
+      <div className="row" style={{ gap: 6 }} role="group" aria-labelledby="bf-who-l">{leaders.length ? leaders.map(n => present.includes(n) ? <Chip key={n} on={b.names.includes(n)} disabled={ro} onClick={() => upd(() => { b.names = b.names.includes(n) ? b.names.filter(x => x !== n) : [...b.names, n]; })}>{n}</Chip>
         : <Chip key={n} className="absent" disabled title="Afwezig volgens de jaarplanning">{n} · afwezig</Chip>) : <span className="hint">Nog geen leidingteam.</span>}</div>
       <input className="inp" aria-label="Andere namen" value={extraTxt} readOnly={ro} onChange={e => setExtras(e.target.value, false)} onBlur={e => setExtras(e.target.value, true)} placeholder="Andere namen, gescheiden door komma's" />
       <span className="hint">{b.minLeaders ? `${b.names.length} van minimaal ${b.minLeaders} ingedeeld` : 'Geen minimum ingesteld'}</span></div>}

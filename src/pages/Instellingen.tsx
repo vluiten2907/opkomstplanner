@@ -9,7 +9,7 @@ import { Chip, ConfirmBtn, Field, TimePicker, useDebouncedInput } from '../compo
 import { download, slugify } from '../lib/export';
 import { lastSpeltak } from '../lib/lastSpeltak';
 import { fmtNL, fmtT, plural, todayISO, uid, DAYS, MONTHS } from '../lib/time';
-import { ACCENTS, normLib, normOpk, normPlan, normSettings, prepLabel, PREP_OPTS, SPELTAKKEN, SWATCHES, type Opk, type Plan, type Settings } from '../lib/model';
+import { ACCENTS, normLib, normOpk, normPlan, normSettings, prepLabel, PREP_OPTS, SPELTAKKEN, SWATCHES, SWATCH_NAMES, type Opk, type Plan, type Settings } from '../lib/model';
 import { ALL_PERMS, DEFAULT_LEIDING_PERMS, PERM_HELP, PERM_LABELS, isTeamleider, type Invite, type Member, type PermKey, type Perms } from '../lib/types';
 import { ensureTlIds, inviteOnce, isEmail, releaseOwnName, removeGroupAdmin, renewInvite, setGroupAdmin, setTeamleider, stepDownTeamleider, transferJoiners, transferTeamleider } from '../store/beheer';
 import { useRoles } from '../store/roles';
@@ -44,7 +44,7 @@ export default function Instellingen() {
           : <Field label="Naam van de groep" htmlFor="gs-name"><DebText id="gs-name" value={settings.groupName} onCommit={v => set({ groupName: v.trim() })} placeholder="bijv. Scoutinggroep De Verkenners" /></Field>}
         <Field label="Speltak" htmlFor="gs-speltak"><DebText id="gs-speltak" list="speltaklist" value={settings.speltak} onCommit={v => set({ speltak: v.trim() })} placeholder="bijv. Scouts" /><datalist id="speltaklist">{SPELTAKKEN.map(x => <option key={x} value={x} />)}</datalist></Field>
         <Logo />
-        <div className="field"><span className="lbl">Kleur</span><div className="accents">{Object.entries(ACCENTS).map(([k, a]) => <button key={k} className="acc" aria-pressed={settings.accent === k} style={{ ['--c' as any]: a.l }} onClick={() => set({ accent: k })}><i />{a.label}</button>)}</div></div>
+        <Field label="Kleur"><div className="accents">{Object.entries(ACCENTS).map(([k, a]) => <button key={k} className="acc" aria-pressed={settings.accent === k} style={{ ['--c' as any]: a.l }} onClick={() => set({ accent: k })}><i />{a.label}</button>)}</div></Field>
       </fieldset>
       <fieldset className="card pad stack" disabled={!edit}>
         <h2>Standaardtijden en seizoen</h2>
@@ -131,7 +131,7 @@ function CatRow({ label, color, onLabel, onColor, onRemove }: { label: string; c
     <div className="row"><button type="button" className="sw cur" style={{ ['--c' as any]: color }} aria-expanded={open} aria-controls={id} aria-label={`Kleur van ${label || 'categorie'} kiezen`} title="Kleur kiezen" onClick={() => setOpen(o => !o)} />
       <DebText className="inp" value={label} aria-label="Naam categorie" style={{ flex: 1 }} onCommit={onLabel} />
       <ConfirmBtn className="iconbtn danger" label={<Trash2 />} title="Verwijderen" ariaLabel={`${label || 'Categorie'} verwijderen`} confirm="Zeker?" onConfirm={onRemove} /></div>
-    {open && <div className="swatches" id={id} role="group" aria-label="Kleur">{SWATCHES.map(sw => <button key={sw} type="button" className="sw" style={{ ['--c' as any]: sw }} aria-pressed={sw === color} aria-label={'Kleur ' + sw} onClick={() => { onColor(sw); setOpen(false); }} />)}</div>}
+    {open && <div className="swatches" id={id} role="group" aria-label="Kleur">{SWATCHES.map(sw => <button key={sw} type="button" className="sw" style={{ ['--c' as any]: sw }} aria-pressed={sw === color} aria-label={SWATCH_NAMES[sw] || sw} onClick={() => { onColor(sw); setOpen(false); }} />)}</div>}
   </div>;
 }
 
@@ -140,13 +140,14 @@ function NameList({ items, placeholder, label, onChange, dedupe }: { items: stri
   return <>
     {/* plek bestaat niet meer (intussen verwijderd): niets doen */}
     <ul className="setlist">{items.map((n, i) => <li key={i}><DebText className="inp" value={n} aria-label={label} onCommit={v => onChange(cur => i < cur.length ? cur.map((x, j) => j === i ? v : x) : cur)} /><ConfirmBtn className="iconbtn danger" label={<Trash2 />} title="Verwijderen" ariaLabel={`${n || label} verwijderen`} confirm="Zeker?" onConfirm={() => onChange(cur => cur[i] === n ? cur.filter((_, j) => j !== i) : cur.filter(x => x !== n))} /></li>)}</ul>
-    <AddRow placeholder={placeholder} onAdd={v => { if (dedupe && items.includes(v)) { toast(v + ' staat er al in.'); return; } onChange(cur => [...cur, v]); }} />
+    <AddRow placeholder={placeholder} label={'Nieuwe ' + label.toLowerCase()} onAdd={v => { if (dedupe && items.includes(v)) { toast(v + ' staat er al in.'); return; } onChange(cur => [...cur, v]); }} />
   </>;
 }
-function AddRow({ placeholder, onAdd }: { placeholder: string; onAdd: (v: string) => void }) {
+/** Eén regel om iets toe te voegen. `label`: naam van het veld (de voorbeeldtekst is alleen een voorbeeld). */
+function AddRow({ placeholder, label = placeholder, onAdd }: { placeholder: string; label?: string; onAdd: (v: string) => void }) {
   const [v, setV] = useState('');
   const add = () => { const t = v.trim(); if (!t) return; onAdd(t); setV(''); };
-  return <div className="row"><input className="inp" value={v} onChange={e => setV(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} placeholder={placeholder} aria-label={placeholder} style={{ flex: 1 }} /><button className="btn" onClick={add}>Toevoegen</button></div>;
+  return <div className="row"><input className="inp" value={v} onChange={e => setV(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} placeholder={placeholder} aria-label={label} style={{ flex: 1 }} /><button className="btn" onClick={add}>Toevoegen</button></div>;
 }
 
 /* ---------- Back-up terugzetten (ook uit de losse versie) ---------- */
@@ -340,8 +341,8 @@ function MemberRow({ m, isTl, me, iAmTL, isAdmin, lastTL, heir, groupAdmin, grou
     <div className="row between" style={{ flexWrap: 'nowrap' }}>
       <div className="row" style={{ flexWrap: 'nowrap', minWidth: 0 }}><span className="avatar">{initials}</span><div style={{ minWidth: 0 }}><b>{m.name}{me ? ' (jij)' : ''}</b><div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}{m.email ? ' · ' : ''}{isTl ? 'Teamleider' : 'Leiding'}{groupAdmin ? ' · beheerder' : ''} · {summary}</div></div></div>
       {manage && <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
-        <button className="btn sm ghost" onClick={() => setOpen(o => !o)}>{open ? 'Sluiten' : 'Rechten'}</button>
-        {canRemove && <ConfirmBtn className="iconbtn danger" label={<Trash2 size={15} />} confirm="Zeker?" title="Uit het team halen" onConfirm={onRemove} />}
+        <button className="btn sm ghost" aria-expanded={open} aria-label={`Rechten van ${m.name}${open ? ' sluiten' : ''}`} onClick={() => setOpen(o => !o)}>{open ? 'Sluiten' : 'Rechten'}</button>
+        {canRemove && <ConfirmBtn className="iconbtn danger" label={<Trash2 size={15} />} confirm="Zeker?" title="Uit het team halen" ariaLabel={`${m.name} uit het team halen`} onConfirm={onRemove} />}
       </div>}
     </div>
     {heir && <div className="heir"><span className="hint">{m.name} kwam binnen via jouw overdracht.</span>
@@ -349,7 +350,7 @@ function MemberRow({ m, isTl, me, iAmTL, isAdmin, lastTL, heir, groupAdmin, grou
     {open && manage && <div className="stack" style={{ gap: 10, paddingTop: 10 }}>
       {groupAdmin !== null && <label className="toggle"><input type="checkbox" checked={groupAdmin} onChange={e => onGroupAdmin(e.target.checked)} /><span><b>Beheerder van {groupName}</b><br /><span className="hint">Ziet alle speltakken van de groep, stelt teamleiders aan en nodigt ze uit.</span></span></label>}
       {noGroup && <p className="hint">Deze speltak hangt nog niet onder een groep. Koppel hem eerst op de Beheer-pagina; daarna kun je hier beheerders aanzetten.</p>}
-      {isAdmin && <div className="seg"><Chip on={!isTl} disabled={lastTL} title={lastTL ? 'Er moet minstens één teamleider blijven' : undefined} onClick={() => onTeamleider(false)}>Leiding</Chip><Chip on={isTl} onClick={() => onTeamleider(true)}>Teamleider</Chip></div>}
+      {isAdmin && <div className="seg" role="group" aria-label="Rol"><Chip on={!isTl} disabled={lastTL} title={lastTL ? 'Er moet minstens één teamleider blijven' : undefined} onClick={() => onTeamleider(false)}>Leiding</Chip><Chip on={isTl} onClick={() => onTeamleider(true)}>Teamleider</Chip></div>}
       {!isAdmin && iAmTL && !isTl && <div className="row"><ConfirmBtn className="btn sm" label="Teamleiderschap aan deze persoon overdragen" confirm="Klik nogmaals: overdragen (jij wordt leiding)" onConfirm={onTransfer} /></div>}
       {iAmTL && me && isTl && <div className="row">{lastTL ? <span className="hint">Je bent de enige teamleider. Draag je rol eerst over aan iemand anders.</span> : <ConfirmBtn className="btn sm" label="Aftreden als teamleider" confirm="Klik nogmaals: aftreden (je blijft leiding)" onConfirm={onStepDown} />}</div>}
       {!isTl ? <PermGrid perms={m.perms} onChange={onPerm} /> : <p className="hint">Een teamleider mag alles, ook het team beheren en leiding uitnodigen. Een extra teamleider aanstellen doet de beheerder van de groep.</p>}

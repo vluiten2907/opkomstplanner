@@ -123,7 +123,7 @@ export default function Opkomstenbank() {
       <aside className={'card side sheet' + (T || G ? ' editing' : '')}>
         {T || G ? <div ref={sheetRef} {...sheetProps}>{T ? <TplEditor key={T.id} t={T} own={own} groupOn={groupOn} onClose={() => setSel(null)} onDelete={() => remove(T)} onCopied={id => setSelRaw(id)} />
           : G && <SharedView key={G.id} x={G} copied={copied.has(G.id)} onClose={() => setSel(null)} onCopy={() => doCopy(G)} />}</div>
-            : <div className="pad stack"><h3>{g ? 'Uit de groepsbank' : 'Opkomst uit de bank'}</h3><p className="muted">{g ? 'Kies een opkomst om de onderdelen te zien en hem naar jullie eigen bank te kopiëren.' : 'Kies een opkomst om de onderdelen te zien, hem te openen of in te plannen.'}</p></div>}
+            : <div className="pad stack"><h2 className="h-sm">{g ? 'Uit de groepsbank' : 'Opkomst uit de bank'}</h2><p className="muted">{g ? 'Kies een opkomst om de onderdelen te zien en hem naar jullie eigen bank te kopiëren.' : 'Kies een opkomst om de onderdelen te zien, hem te openen of in te plannen.'}</p></div>}
       </aside>
       <div className={'scrim' + (T || G ? ' on' : '')} onClick={() => setSel(null)} />
     </div></>}

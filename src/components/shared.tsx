@@ -61,7 +61,8 @@ export function OpkMeta({ o }: { o: Opk }) {
 
 /** Opkomst in een keuzelijst. `kicker`: regel boven de titel, bijv. de datum en de status van een ingeplande opkomst. */
 export function PickOpk({ o, label, onPick, primary = true, extra, kicker }: { o: Opk; label: string; onPick: () => void; primary?: boolean; extra?: ReactNode; kicker?: ReactNode }) {
-  const btn = <button className={'btn sm' + (primary ? ' primary' : '')} onClick={onPick}>{label}</button>;
+  // naam met de titel erbij: in een lijst van schermlezers zijn de knoppen anders allemaal "Openen"
+  const btn = <button className={'btn sm' + (primary ? ' primary' : '')} onClick={onPick} aria-label={`${label}: ${o.title || 'Naamloze opkomst'}`}>{label}</button>;
   return <div className="pick"><div className="info">{kicker && <span className="pick-kicker">{kicker}</span>}<b>{o.title || 'Naamloze opkomst'}</b><OpkMeta o={o} /><CatTags o={o} /><Strip o={o} /></div>
     {extra ? <div className="row">{btn}{extra}</div> : btn}</div>;
 }

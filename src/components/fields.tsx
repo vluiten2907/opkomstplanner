@@ -20,7 +20,7 @@ export function CatSelect({ value, onChange, prefix, disabled }: { value: string
       {(!value || !settings.categories.some(c => c.id === value)) && <option value={value}>Zonder categorie</option>}
       {can('settings') && !disabled && <option value="__new">+ Nieuwe categorie…</option>}
     </select>
-    {newOpen && !disabled && <div className="newcat"><input className="inp" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} placeholder="Naam nieuwe categorie" autoFocus /><button className="btn sm" onClick={add}>Toevoegen</button></div>}
+    {newOpen && !disabled && <div className="newcat"><input className="inp" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} placeholder="Naam nieuwe categorie" aria-label="Naam nieuwe categorie" autoFocus /><button className="btn sm" onClick={add}>Toevoegen</button></div>}
   </Field>;
 }
 

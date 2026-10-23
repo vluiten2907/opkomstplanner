@@ -34,8 +34,8 @@ export default function InvitePage() {
   const [pick, setPick] = useState<{ taken: string; name: string } | null>(null);
   // Zit je er al in (bijv. direct toegevoegd door de beheerder)? Dan heb je de uitnodiging niet meer nodig.
   const [already, setAlready] = useState(false);
-  // standaardkleur (marine), ook als je net uit een speltak met een ander accent komt
-  useEffect(() => { applyAccent('marine'); }, []);
+  // standaardkleur (marine) en eigen titel van het tabblad, ook als je net uit een speltak komt
+  useEffect(() => { applyAccent('marine'); document.title = 'Uitnodiging · Opkomstplanner'; }, []);
   useEffect(() => {
     readInvite(token!).then(i => {
       setInv(i);
@@ -57,14 +57,15 @@ export default function InvitePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inv, uid, myMail, verified]);
   if (!ready || inv === undefined) return <div className="loading">Uitnodiging ophalen…</div>;
-  const box = (body: React.ReactNode) => <div className="auth-wrap"><div className="card pad stack auth-card">
+  // de eerste kop (h1) staat in elke variant van `body`
+  const box = (body: React.ReactNode) => <main className="auth-wrap"><div className="card pad stack auth-card">
     <div className="brand flex items-center gap-2.5" style={{ paddingBottom: 0 }}><TentTree size={26} strokeWidth={1.9} /><span className="brand-txt"><span>Opkomstplanner</span><small>voor scoutinggroepen</small></span></div>
-    {body}</div></div>;
-  if (!inv) return box(<><h2>Uitnodiging niet gevonden</h2><p className="hint">De link klopt niet, is ingetrokken of al gebruikt.</p><Link className="btn" to="/">Naar de start</Link></>);
+    {body}</div></main>;
+  if (!inv) return box(<><h1 className="auth-h">Uitnodiging niet gevonden</h1><p className="hint">De link klopt niet, is ingetrokken of al gebruikt.</p><Link className="btn" to="/">Naar de start</Link></>);
 
   const where = inviteWhere(inv, 'de hele Opkomstplanner');
   const intro = <>
-    <h2>{inv.invitedByName || 'Iemand'} nodigt je uit</h2>
+    <h1 className="auth-h">{inv.invitedByName || 'Iemand'} nodigt je uit</h1>
     <p>Als <b>{KIND_LABELS[inv.kind]}</b> voor <b>{where}</b>.</p>
     {inv.kind === 'leiding' && <p className="hint">Rechten: {Object.entries(inv.perms).filter(([, v]) => v).map(([k]) => PERM_LABELS[k as keyof typeof PERM_LABELS]).join(', ') || 'alleen bekijken'}.</p>}
     {inv.kind === 'leiding' && inv.transfer && <p className="hint">{inv.invitedByName || 'De teamleider'} wil de rol van teamleider aan je overdragen. Dat doet {inv.invitedByName || 'hij'} zodra je in het team zit.</p>}
@@ -78,7 +79,7 @@ export default function InvitePage() {
     };
     const admin = inv.kind === 'totaal' || inv.kind === 'groep';
     return box(<>
-      <h2>{admin ? 'Je bent al beheerder' : 'Je bent al lid'}</h2>
+      <h1 className="auth-h">{admin ? 'Je bent al beheerder' : 'Je bent al lid'}</h1>
       <p>{inv.kind === 'totaal' ? <>Je bent al <b>Beheer (totaal)</b>.</> : admin ? <>Je beheert <b>{where}</b> al.</> : <>Je zit al in <b>{where}</b>.</>} Deze uitnodiging heb je niet meer nodig.</p>
       <div className="row"><button className="btn primary" onClick={open}>Openen</button></div>
     </>);
