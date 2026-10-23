@@ -6,7 +6,7 @@ import { toast } from '../store/toast';
 import { Modal, TimePicker, Field, Chip, ConfirmBtn, useMedia } from './ui';
 import { PickOpk } from './shared';
 import { addDays, clone, fmtLong, fmtNL, fmtRange, parseNL, parseRange, tidyNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, plural, todayISO } from '../lib/time';
-import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, defaultTimes, entryTimes, firstFree, fitsTopic, freeName, isKamp, kampMismatch, kampMismatchNote, kampStart, lanesLayout, minNeed, nameTaken, newEntry, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
+import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, defaultTimes, entryTimes, ownTimes, firstFree, fitsTopic, freeName, isKamp, kampMismatch, kampMismatchNote, kampStart, lanesLayout, minNeed, nameTaken, newEntry, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from './timeline';
 import { withFreeName, type NameSpec } from '../store/modal';
 import type { Gedeeld } from '../store/groepsbank';
@@ -26,9 +26,12 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
   const [st, setSt] = useState(st0); const [en, setEn] = useState(en0); const [note, setNote] = useState(e ? e.note : '');
   // Rij zonder eigen tijden: zolang je de tijden niet zelf aanpast, volgen ze de soort en de datums
   // (een kamp vertrekt standaard 's avonds en is de laatste dag 's middags terug, net als een nieuw weekendkamp).
+  // Eigen tijden zijn alleen tijden die afwijken van de standaard: een oudere rij met de standaardtijden opgeslagen volgt ook de soort.
   const [touched, setTouched] = useState(false);
-  const own = !!e && e.start != null && e.end != null;
-  const [stV, enV] = linked || own || touched ? [st, en] : defaultTimes(settings, type, parseNL(date) || d0, (end.trim() && parseNL(end)) || '');
+  const own = ownTimes(settings, e);
+  // "tot en met" zonder jaartal telt vanaf de datum (zoals bij opslaan)
+  const dRef = parseNL(date) || d0;
+  const [stV, enV] = linked || own || touched ? [st, en] : defaultTimes(settings, type, dRef, (end.trim() && parseNL(end, dRef)) || '');
   const base = slot || d0, mon = addDays(base, -((fromISO(base).getDay() + 6) % 7)), fri = addDays(mon, 4), sat = addDays(mon, 5), sun = addDays(mon, 6);
   // de vaste dag als eigen knop alleen als hij nog niet bij vrijdag, zaterdag of zondag staat
   const quick: [string, string, string][] = [...([5, 6, 0].includes(settings.opkDay) ? [] : [[DAYS[settings.opkDay] + ' (standaard)', base, ''] as [string, string, string]]),
@@ -39,8 +42,13 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
     const { iso, endIso } = r;
     if (!linked && type === 'opkomst' && !endIso && enV <= stV) { toast('De eindtijd moet na de begintijd liggen.'); return; }
     const en2 = { ...entryFor(keyId) };
-    if (!linked) { en2.start = stV; en2.end = enV; }
     en2.type = type; en2.date = iso; en2.endDate = endIso && endIso !== iso ? endIso : ''; en2.note = note.trim();
+    // Alleen echt eigen tijden opslaan (zelf aangepast, of al eigen). De standaardtijden niet: anders blijft een rij die tijden houden
+    // als je later de soort of de standaard verandert (een kamp met opkomsttijden, of een opkomst die 19:00–15:00 duurt).
+    if (!linked) {
+      const [ds, de] = defaultTimes(settings, en2.type, en2.date, en2.endDate), mine = (touched || own) && (stV !== ds || enV !== de);
+      en2.start = mine ? stV : null; en2.end = mine ? enV : null;
+    }
     if (en2.type === 'geen' && en2.opkId) {
       if (!canOpk) { toast(NO_UNLINK); return; }
       unlinkEntry(en2); en2.opkId = null; toast('De gekoppelde opkomst staat nu bij de concepten.');
@@ -55,7 +63,7 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
   return <Modal title="Datum en soort" sub={slot ? 'Vaste ' + DAYS[settings.opkDay] + ': ' + fmtLong(slot) : 'Extra datum'} onClose={onClose}>
     <Field label="Soort"><div className="seg">{([['opkomst', 'Opkomst'], ['kamp', 'Kamp / weekend'], ['geen', 'Geen opkomst']] as const).map(([v, l]) => <Chip key={v} on={type === v} onClick={() => setType(v)}>{l}</Chip>)}</div></Field>
     <div className="two"><Field label="Datum" htmlFor="md-date"><input id="md-date" value={date} onChange={e => setDate(e.target.value)} onBlur={() => setDate(tidyNL(date))} placeholder="dd-mm-jjjj" inputMode="numeric" /></Field>
-      <Field label="Tot en met" htmlFor="md-end"><input id="md-end" value={end} onChange={e => setEnd(e.target.value)} onBlur={() => setEnd(tidyNL(end))} placeholder="leeg = één dag" inputMode="numeric" /></Field></div>
+      <Field label="Tot en met" htmlFor="md-end"><input id="md-end" value={end} onChange={e => setEnd(e.target.value)} onBlur={() => setEnd(tidyNL(end, parseNL(date)))} placeholder="leeg = één dag" inputMode="numeric" /></Field></div>
     <Field label="Snel kiezen"><div className="row" style={{ gap: 6 }}>{quick.map(([l, a, b]) => <Chip key={l} onClick={() => { setDate(fmtNL(a)); setEnd(b ? fmtNL(b) : ''); if (b && type === 'opkomst') setType('kamp'); if (!b && type === 'kamp') setType('opkomst'); }}>{l}</Chip>)}</div></Field>
     {linked ? <p className="hint">De tijden komen uit de gekoppelde opkomst: {fmtT(st0)}–{fmtT(en0)}.</p>
       : <div className="two"><Field label="Begintijd / vertrek"><TimePicker value={stV} onChange={v => { setSt(v); setEn(enV); setTouched(true); }} /></Field><Field label="Eindtijd / terug"><TimePicker value={enV} onChange={v => { setSt(stV); setEn(v); setTouched(true); }} /></Field></div>}
@@ -111,7 +119,7 @@ export function ExtraModal({ onClose, onCreated }: { onClose: () => void; onCrea
   return <Modal title="Extra datum" sub={'Voor een opkomst, kamp of activiteit buiten de vaste ' + day + 'en, of een periode zonder opkomst.'} onClose={onClose}>
     <Field label="Soort"><div className="seg">{([['opkomst', 'Opkomst'], ['kamp', 'Kamp / weekend'], ['geen', 'Geen opkomst']] as const).map(([v, l]) => <Chip key={v} on={type === v} onClick={() => setType(v)}>{l}</Chip>)}</div></Field>
     <div className="two"><Field label={geen ? 'Van' : 'Datum'} htmlFor="xd-date"><input id="xd-date" value={date} onChange={e => setDate(e.target.value)} onBlur={() => setDate(tidyNL(date))} placeholder="dd-mm-jjjj" inputMode="numeric" /></Field>
-      <Field label="Tot en met" htmlFor="xd-end"><input id="xd-end" value={end} onChange={e => setEnd(e.target.value)} onBlur={() => setEnd(tidyNL(end))} placeholder="leeg = één dag" inputMode="numeric" /></Field></div>
+      <Field label="Tot en met" htmlFor="xd-end"><input id="xd-end" value={end} onChange={e => setEnd(e.target.value)} onBlur={() => setEnd(tidyNL(end, parseNL(date)))} placeholder="leeg = één dag" inputMode="numeric" /></Field></div>
     {geen && <p className="hint">Alle {day}en in deze periode worden Geen opkomst. Een {day} met een opkomst, onderwerp of kamp blijft staan.</p>}
     <Field label={geen ? 'Reden' : 'Onderwerp'} htmlFor="xd-topic"><input id="xd-topic" value={topic} onChange={e => setTopic(e.target.value)} placeholder={geen ? 'bijv. Herfstvakantie' : 'bijv. Groepsweekend'} /></Field>
     <div className="row"><button className="btn primary" onClick={save}>Toevoegen</button><button className="btn ghost" onClick={onClose}>Annuleren</button></div>

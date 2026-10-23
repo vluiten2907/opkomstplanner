@@ -232,7 +232,7 @@ function NextItem({ r }: { r: Row }) {
     <span className="nt">{tags}</span></button></li>;
 }
 
-const STATUS_WORD: Record<ReturnType<typeof entryStatus>, string> = { ok: 'programma klaar', warn: 'aandachtspunten', topic: 'alleen onderwerp', open: 'nog open', kamp: 'kamp', off: 'geen opkomst' };
+const STATUS_WORD: Record<ReturnType<typeof entryStatus>, string> = { ok: 'programma klaar', warn: 'aandachtspunten', leeg: 'programma nog leeg', topic: 'alleen onderwerp', open: 'nog open', kamp: 'kamp', off: 'geen opkomst' };
 
 function MiniCal({ today }: { today: string }) {
   const { settings, plans, opkOf, leaders, sid } = useSpeltak();
@@ -270,12 +270,12 @@ function MiniCal({ today }: { today: string }) {
 function SeasonCounts({ today }: { today: string }) {
   const { settings, plans, opkOf, leaders, sid } = useSpeltak();
   const Y = seasonOf(settings, today), R = seasonRange(settings, Y), rows = rowsIn(settings, plans, R.from, R.to);
-  const c: Record<string, number> = { ok: 0, warn: 0, topic: 0, open: 0, kamp: 0, off: 0 };
+  const c: Record<ReturnType<typeof entryStatus>, number> = { ok: 0, warn: 0, leeg: 0, topic: 0, open: 0, kamp: 0, off: 0 };
   rows.forEach(r => { const st = entryStatus(r.e, opkOf(r.e), leaders); if (st !== 'open' || rowEnd(r) >= today) c[st]++; });
   const letters = plans.filter(e => e.letter.needed && !e.letter.sent && e.date >= today).length;
   const li = (cls: string, label: string, n: number) => <li key={cls}><i className={'legend-dot cday ' + cls} />{label}<b>{n}</b></li>;
   return <><div className="row between"><h3>Seizoen {seasonLabel(settings, Y)}</h3><Link className="linkbtn" to={`/s/${sid}/jaarplanning`}>Openen</Link></div>
-    <ul className="counts">{li('ok', 'Programma klaar', c.ok)}{li('warn', 'Programma met aandachtspunten', c.warn)}{li('topic', 'Alleen onderwerp', c.topic)}{li('open', 'Nog open, vanaf vandaag', c.open)}{li('kamp', 'Kampen en weekenden', c.kamp)}{li('off', 'Geen opkomst', c.off)}
+    <ul className="counts">{li('ok', 'Programma klaar', c.ok)}{li('warn', 'Programma met aandachtspunten', c.warn)}{li('leeg', 'Programma nog leeg', c.leeg)}{li('topic', 'Alleen onderwerp', c.topic)}{li('open', 'Nog open, vanaf vandaag', c.open)}{li('kamp', 'Kampen en weekenden', c.kamp)}{li('off', 'Geen opkomst', c.off)}
       <li><Mail size={14} />Brieven nog te versturen<b>{letters}</b></li></ul></>;
 }
 

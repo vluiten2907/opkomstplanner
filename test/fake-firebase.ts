@@ -100,8 +100,18 @@ function invitesDenied(ref: Ref) {
 }
 const rootDenied = (ref: Ref) => ref.kind === 'doc' && ref.path === 'beheer/totaal' && ref.path in store && !(current && inRoot(current.uid));
 // Testhaak 'fake.offlineFirst' = ms: een speltak komt eerst als "bestaat niet" uit een lege cache (zoals Firestore offline doet),
-// pas na ms het echte document (de verbinding is terug). Alleen voor de rooktest.
-const offlineFirst = (ref: Ref) => ref.kind === 'doc' && /^speltakken\/[^/]+$/.test(ref.path) ? Number(localStorage.getItem('fake.offlineFirst')) || 0 : 0;
+// pas na ms het echte document (de verbinding is terug). De lijsten in de speltak (opkomsten, activiteiten, planning) komen eerst
+// leeg uit de cache en pas 'fake.offlineSlow' ms na het document van de server (een trage verbinding). Alleen voor de rooktest.
+const offlineFirst = (ref: Ref) => {
+  const ms = Number(localStorage.getItem('fake.offlineFirst')) || 0;
+  if (!ms) return 0;
+  if (ref.kind === 'doc' && /^speltakken\/[^/]+$/.test(ref.path)) return ms;
+  if (ref.kind === 'coll' && /^speltakken\/[^/]+\/(opkomsten|activiteiten|planning)$/.test(ref.path)) return ms + (Number(localStorage.getItem('fake.offlineSlow')) || 0);
+  return 0;
+};
+const cacheSnap = (ref: Ref) => ref.kind === 'doc'
+  ? { id: ref.path.split('/').pop(), exists: () => false, data: () => undefined, metadata: { fromCache: true } }
+  : { docs: [], empty: true, size: 0, metadata: { fromCache: true }, docChanges: () => [] };
 // Zoals Firestore: onSnapshot(ref, cb, onErr) of onSnapshot(ref, opties, cb, onErr).
 export function onSnapshot(ref: Ref, a: any, b?: any, c?: any) {
   const [cb, onErr]: [(s: any) => void, ((e: any) => void) | undefined] = typeof a === 'function' ? [a, b] : [b, c];
@@ -115,7 +125,7 @@ export function onSnapshot(ref: Ref, a: any, b?: any, c?: any) {
   const l = () => cb(snap(ref));
   const off = offlineFirst(ref);
   if (off) {
-    const t0 = setTimeout(() => cb({ id: ref.path.split('/').pop(), exists: () => false, data: () => undefined, metadata: { fromCache: true } }), 0);
+    const t0 = setTimeout(() => cb(cacheSnap(ref)), 0);
     const t = setTimeout(() => { listeners.add(l); l(); }, off);
     return () => { clearTimeout(t0); clearTimeout(t); listeners.delete(l); };
   }

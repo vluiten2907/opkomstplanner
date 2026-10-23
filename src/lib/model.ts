@@ -167,8 +167,10 @@ export function newOpk(s: Settings): Opk {
   return { id: uid(), state: 'draft', srcId: null, kind: 'opkomst', cats: [], lead: '', title: '', short: '', group: s.speltak || '', location: '',
     start: s.defStart, end: s.defEnd, prep: s.prepMin, post: s.postMin, days: [], blocks: fixedBlocks(s, s.defStart, s.defEnd), createdAt: Date.now(), updatedAt: Date.now(), shared: true, fromShared: null };
 }
+/** Onderdelen van het programma, zonder de vaste blokken (openen, ranja, sluiten): voor tellingen als "3 onderdelen". */
+export const progBlocks = (o: Opk) => allBlocks(o).filter(b => !isFixed(b));
 /** Programma nog leeg: alleen de vaste blokken, of helemaal niets (kamp: dagen zonder onderdelen). */
-export const progEmpty = (o: Opk) => allBlocks(o).every(isFixed);
+export const progEmpty = (o: Opk) => !progBlocks(o).length;
 /** Nog niets ingevuld: geen titel, beschrijving, locatie of categorie, en alleen de vaste blokken (kamp: dagen zonder onderdelen). */
 export const isBlankOpk = (o: Opk) => !o.title.trim() && !o.short.trim() && !o.location.trim() && !o.cats.length && progEmpty(o);
 /** Zoektekst van een opkomst: titel, beschrijving, locatie en de onderdelen (zonder de vaste blokken). */
@@ -188,6 +190,15 @@ export const kampTimes = (n: number): [number, number] => n > 1 ? [KAMP_START, K
 /** Tijden van een rij in de jaarplanning zonder eigen tijden: een kamp de kamptijden, anders de standaard opkomsttijden. */
 export function defaultTimes(s: Settings, type: Plan['type'], date: string, endDate?: string | null): [number, number] {
   return type === 'kamp' ? kampTimes(kampLength(date, endDate)) : [s.defStart, s.defEnd];
+}
+/**
+ * Heeft een rij in de jaarplanning eigen tijden? Alleen als ze afwijken van de standaardtijden van zijn soort en datums:
+ * oudere rijen hebben de standaard soms opgeslagen, die volgen gewoon de soort (en latere standaardtijden).
+ */
+export function ownTimes(s: Settings, e: Plan | null | undefined) {
+  if (!e || e.start == null || e.end == null) return false;
+  const [a, b] = defaultTimes(s, e.type, e.date, e.endDate);
+  return e.start !== a || e.end !== b;
 }
 export function kampDaysFor(n: number, firstISO: string | null, st?: number | null, en?: number | null): Day[] {
   const out: Day[] = [], [dSt, dEn] = kampTimes(n);
@@ -237,6 +248,37 @@ export function kampMismatch(o: Opk, date: string, endDate?: string | null): { p
 export function kampMismatchNote(o: Opk, date: string, endDate?: string | null) {
   const m = kampMismatch(o, date, endDate);
   return m ? `Het kamp heeft ${plural(m.prog, 'dag', 'dagen')}, de jaarplanning ${m.row} (${fmtRange(date, endDate)}). Controleer de data.` : '';
+}
+/**
+ * Rij in de jaarplanning gelijk trekken met het kamp (na een dag toevoegen, kopiëren of weghalen in de bouwer):
+ * t/m het aantal kampdagen. Heet de eerste dag naar een andere weekdag dan de datum en ligt die dag binnen de oude rij
+ * (bijv. de vrijdag is weggehaald, het kamp begint nu op zaterdag), dan begint de rij op die dag.
+ */
+export function kampFitRow(o: Opk, date: string, endDate?: string | null): { date: string; endDate: string } {
+  let d = date;
+  const w = isKamp(o) && o.days.length && !isNaN(fromISO(date).getTime()) ? DAYS.indexOf((o.days[0].label || '').trim().toLowerCase()) : -1;
+  if (w >= 0) { const k = (w - fromISO(date).getDay() + 7) % 7, last = endDate && endDate > date ? endDate : date; if (k > 0 && addDays(date, k) <= last) d = addDays(date, k); }
+  return { date: d, endDate: isKamp(o) && o.days.length > 1 ? addDays(d, o.days.length - 1) : '' };
+}
+/** Dagnaam na `label`: een weekdag krijgt de volgende weekdag ("Zaterdag" → "Zondag"), anders null. */
+export const nextWeekday = (label: string) => isWeekdayLabel(label) ? cap(DAYS[(DAYS.indexOf(label.trim().toLowerCase()) + 1) % 7]) : null;
+/**
+ * Dag kopiëren in een kamp: de kopie komt direct na dag `i`, met alle onderdelen (nieuwe ids). Heet de dag naar een weekdag,
+ * dan heet de kopie naar de volgende weekdag en lopen de dagen daarna door (met een datum: de weekdag van hun datum).
+ * Een andere naam krijgt " (kopie)". Geeft de index van de kopie.
+ */
+export function copyKampDay(o: Opk, i: number, firstISO: string | null) {
+  const d = o.days[i], nd = normDay(clone(d), i); nd.id = uid(); nd.blocks.forEach(b => { b.id = uid(); });
+  const next = nextWeekday(d.label);
+  nd.label = next || (d.label + ' (kopie)');
+  o.days.splice(i + 1, 0, nd);
+  if (next && firstISO) relabelDays(o, firstISO);
+  else if (next) {
+    // zonder datum: de dagen na de kopie die een weekdag heten schuiven één weekdag op (geen twee tabs "Zondag")
+    const base = DAYS.indexOf(next.toLowerCase());
+    for (let j = i + 2; j < o.days.length; j++) if (isWeekdayLabel(o.days[j].label)) o.days[j].label = cap(DAYS[(base + j - i - 1) % 7]);
+  }
+  return i + 1;
 }
 /** Kampdagen die een weekdag heten krijgen de weekdag van hun datum (vanaf firstISO). Geeft true als er iets veranderde. */
 export function relabelDays(o: Opk, firstISO: string) {
@@ -429,12 +471,12 @@ export function progStatus(o: Opk, present: string[], leaders: string[]): 'leeg'
   if (progEmpty(o)) return 'leeg';
   return analyze(o, present, leaders).warn ? 'warn' : 'ok';
 }
-/** Status van een rij in de jaarplanning. Met een gekoppelde opkomst telt de analyse mee (afwezige leiding, te weinig leiding, enz.); een leeg programma is niet klaar. */
-export function entryStatus(e: Plan | null, o: Opk | null, leaders: string[] = []): 'open' | 'off' | 'kamp' | 'warn' | 'ok' | 'topic' {
+/** Status van een rij in de jaarplanning. Met een gekoppelde opkomst telt de analyse mee (afwezige leiding, te weinig leiding, enz.); een leeg programma heet 'leeg' (zoals de statuspil), niet klaar. */
+export function entryStatus(e: Plan | null, o: Opk | null, leaders: string[] = []): 'open' | 'off' | 'kamp' | 'leeg' | 'warn' | 'ok' | 'topic' {
   if (!e) return 'open';
   if (e.type === 'geen') return 'off';
   if (e.type === 'kamp') return 'kamp';
-  if (o) return progStatus(o, presentNames(leaders, e.absent, o), leaders) === 'ok' ? 'ok' : 'warn';
+  if (o) return progStatus(o, presentNames(leaders, e.absent, o), leaders);
   return e.topic ? 'topic' : 'open';
 }
 export function dayTitle(o: Opk, i: number, date: string | null, long?: boolean) {

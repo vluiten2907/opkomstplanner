@@ -1,6 +1,6 @@
 import { useId, useRef, useState, type ReactNode } from 'react';
 import { useSpeltak } from '../store/speltak';
-import { allBlocks, analyze, catOf, isKamp, minNeed, opkCatOf, progEmpty, type Cat, type Opk, type Day } from '../lib/model';
+import { progBlocks, analyze, catOf, isKamp, minNeed, opkCatOf, progEmpty, type Cat, type Opk, type Day } from '../lib/model';
 import { fmtDur, fmtT, plural } from '../lib/time';
 import { makePdf } from '../lib/export';
 import { Trash2 } from 'lucide-react';
@@ -56,7 +56,7 @@ export const PeopleChips = ({ list, abs }: { list: string[]; abs?: boolean }) =>
 
 export function OpkMeta({ o }: { o: Opk }) {
   const n = minNeed(o);
-  return <span className="hint">{isKamp(o) ? 'Weekendkamp · ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(allBlocks(o).length, 'onderdeel', 'onderdelen')}{n ? ' · min. ' + n + ' leiding' : ''}{o.short ? ' · ' + o.short : ''}</span>;
+  return <span className="hint">{isKamp(o) ? 'Weekendkamp · ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(progBlocks(o).length, 'onderdeel', 'onderdelen')}{n ? ' · min. ' + n + ' leiding' : ''}{o.short ? ' · ' + o.short : ''}</span>;
 }
 
 /** Opkomst in een keuzelijst. `kicker`: regel boven de titel, bijv. de datum en de status van een ingeplande opkomst. `cats`: categorieën van een andere speltak (groepsbank). */

@@ -1,4 +1,4 @@
-import { ACCENTS, FIXED_CATS, allBlocks, dayShort, dayTitle, isKamp, minNeed, opkCatOf, plannersOf, type Opk, type Plan, type Settings } from './model';
+import { ACCENTS, FIXED_CATS, dayShort, progEmpty, dayTitle, isKamp, minNeed, opkCatOf, plannersOf, type Opk, type Plan, type Settings } from './model';
 import { fmtNL, fmtRange, addDays } from './time';
 import { toast } from '../store/toast';
 
@@ -13,13 +13,20 @@ export const slugify = (s: string) => s.toLowerCase().normalize('NFD').replace(/
 
 export const groupLine = (s: Settings) => [s.groupName, s.speltak].map(x => (x || '').trim()).filter(Boolean).join(' · ');
 
+/**
+ * Datum in de kop en voettekst van de pdf. Een kamp telt zijn dagen vanaf de datum (zoals de dagkoppen),
+ * ook als de jaarplanning (nog) een andere einddatum heeft: de pdf spreekt zichzelf dan niet tegen.
+ */
+const dateLabel = (o: Opk, e: Plan) => isKamp(o) ? fmtRange(e.date, o.days.length > 1 ? addDays(e.date, o.days.length - 1) : '', true) : fmtRange(e.date, e.endDate, true);
+
 /** Pdf maken; jsPDF en de pdf-opbouw worden pas hier geladen, zodat ze niet in de hoofdbundel zitten. */
 export async function makePdf(o: Opk | undefined | null, settings: Settings, e: Plan | null, present: string[], practice = false) {
   if (!o) return;
-  if (!allBlocks(o).length) { toast('Voeg eerst een onderdeel toe.'); return; }
+  // alleen de vaste blokken (openen, ranja, sluiten) is nog geen programma
+  if (progEmpty(o)) { toast('Voeg eerst een onderdeel toe.'); return; }
   const A = ACCENTS[settings.accent] || ACCENTS.marine;
   const input = {
-    ...o, date: e ? e.date : '', dateLabel: e ? fmtRange(e.date, e.endDate, true) : '', present: e ? present : [],
+    ...o, date: e ? e.date : '', dateLabel: e ? dateLabel(o, e) : '', present: e ? present : [],
     noNames: o.state === 'bank', minNeed: minNeed(o), planners: o.state === 'bank' ? [] : plannersOf(e, o),
     catsLabel: (o.cats || []).map(c => opkCatOf(settings, c)).filter(Boolean).map(c => c!.label).join(', '),
     groupName: settings.groupName, headLabel: groupLine(settings) ? groupLine(settings).toUpperCase() : 'PROGRAMMA OPKOMST',

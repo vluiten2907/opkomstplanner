@@ -181,6 +181,8 @@ button.cday:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 .cday.other { opacity: .65; }
 .cday.open { background: var(--sunk); }
 .cday.topic { background: var(--accent-soft); }
+/* programma gekoppeld maar nog leeg: gestreept, zodat het (ook in de legenda) anders is dan alleen een onderwerp */
+.cday.leeg { background: repeating-linear-gradient(135deg, var(--accent-soft) 0 4px, var(--surface) 4px 7px); }
 .cday.ok { color: var(--accent-ink); font-weight: 700; }
 .cday.warn { background: color-mix(in srgb, var(--signal) 28%, var(--surface)); font-weight: 700; }
 .cday.kamp { background: color-mix(in srgb, var(--kamp) 26%, var(--surface)); font-weight: 700; }
@@ -233,6 +235,10 @@ h2.h-sm { font-size: 16.5px; }
 /* Overig */
 .ctx { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 14px; color: var(--muted); border-radius: 12px; padding: 10px 14px; }
 .ctx b { color: var(--ink); }
+/* kamp past niet (meer) bij de jaarplanning: eigen regel in de contextbalk, met de knop om de rij gelijk te trekken */
+.ctx-misfit { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--signal-ink); font-weight: 600; }
+.ctx-misfit > svg { flex: none; }
+.ctx-misfit > span { flex: 1 1 220px; min-width: 0; }
 .meta .wide { grid-column: 1 / -1; }
 .iconbtn { border: 0; background: transparent; color: var(--muted); border-radius: 8px; min-width: 30px; height: 30px; display: inline-grid; place-items: center; cursor: pointer; padding: 0 6px; flex: none; }
 .iconbtn:hover { background: var(--sunk); color: var(--ink); }
@@ -663,7 +669,7 @@ aside .notice .ntext { flex: none; }
 .blk.sel { box-shadow: inset 4px 0 0 var(--cc), 0 0 0 2px var(--edge), 4px 4px 0 2px var(--hard); }
 .cday.ok { background: var(--accent); }
 /* dagen met een status (en de legenda) hebben een rand, zodat ze ook zonder de zachte kleur te zien zijn; vandaag een dubbele rand */
-.cday.open, .cday.topic, .cday.ok, .cday.warn, .cday.kamp, .cday.off { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink) 55%, transparent); }
+.cday.open, .cday.topic, .cday.leeg, .cday.ok, .cday.warn, .cday.kamp, .cday.off { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink) 55%, transparent); }
 .cday.today { box-shadow: inset 0 0 0 2px var(--edge), inset 0 0 0 4px var(--pop); font-weight: 800; }
 
 /* Komende opkomst: diep groen, gloed, insigne-datum */

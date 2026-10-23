@@ -141,6 +141,10 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
       const next = (s: F.QuerySnapshot) => {
         // opkomsten: onthouden wanneer de server ze heeft bevestigd (zie opksReady)
         if (name === 'opkomsten' && !s.metadata?.fromCache) setOpksServer(true);
+        // Eerste antwoord alleen uit de cache (offline, of de server heeft nog niet geantwoord): zonder blijvende cache is dat
+        // (bijna) altijd leeg of onvolledig. Nog niet als geladen tellen, anders tonen de pagina's lege lijsten zodra de speltak
+        // binnen is, en maakt typen in de jaarplanning een tweede rij voor dezelfde datum. Pas het eerste antwoord van de server telt.
+        if (first && s.metadata?.fromCache) return;
         // alleen de status veranderd: de lijst is hetzelfde gebleven
         if (!first && typeof s.docChanges === 'function' && s.docChanges().length === 0) return;
         first = false;
@@ -150,7 +154,8 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
         set([...map.values()]);
         mark(name, 'ok');
       };
-      return name === 'opkomsten' ? onSnapshot(ref, { includeMetadataChanges: true }, next, err(name)) : onSnapshot(ref, next, err(name));
+      // met includeMetadataChanges komt de bevestiging van de server ook als er niets verandert (een lege lijst blijft leeg)
+      return onSnapshot(ref, { includeMetadataChanges: true }, next, err(name));
     };
     const u2 = sub('opkomsten', normOpk, setOpks), u3 = sub('activiteiten', normLib, setLib), u4 = sub('planning', normPlan, setPlans);
     return () => { u1(); u2(); u3(); u4(); };

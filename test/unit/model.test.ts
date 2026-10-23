@@ -173,7 +173,7 @@ test('entryStatus', () => {
   assert.equal(M.entryStatus(plan({}), o, ['Baloe']), 'ok');
   const leeg = { ...M.newOpk(S()), state: 'planned' as const };
   assert.ok(leeg.blocks.length > 0 && M.progEmpty(leeg), 'nieuwe opkomst: alleen vaste blokken');
-  assert.equal(M.entryStatus(plan({}), leeg, ['Baloe']), 'warn', 'alleen vaste blokken is geen programma klaar');
+  assert.equal(M.entryStatus(plan({}), leeg, ['Baloe']), 'leeg', 'alleen vaste blokken: programma nog leeg (zoals de statuspil), niet klaar en geen aandachtspunten');
   const kort = opk({ state: 'planned', blocks: [blk('a', 840, 10, { names: ['Baloe'], short: 'x', location: 'Bos' })] });
   assert.equal(M.entryStatus(plan({}), kort, ['Baloe']), 'ok', 'veel vrije tijd is geen aandachtspunt');
 });
@@ -232,6 +232,60 @@ test('kampStart: een kamp vr–zo op de vaste zaterdag begint op de vrijdag ervo
   const eigen = M.newKamp(S(), 3); eigen.days[0].label = 'Aankomst';
   assert.equal(M.kampStart(eigen, '2026-11-07'), '2026-11-07', 'eerste dag zonder weekdagnaam: datum blijft');
   assert.equal(M.kampStart(opk(), '2026-11-07'), '2026-11-07', 'gewone opkomst: datum blijft');
+});
+test('ownTimes: alleen tijden die afwijken van de standaard zijn eigen tijden', () => {
+  const s = S();
+  assert.equal(M.ownTimes(s, null), false);
+  assert.equal(M.ownTimes(s, plan({ date: '2026-11-14' })), false, 'geen tijden');
+  assert.equal(M.ownTimes(s, plan({ date: '2026-11-14', start: s.defStart, end: s.defEnd })), false, 'opkomst met de standaardtijden opgeslagen');
+  assert.equal(M.ownTimes(s, plan({ date: '2026-11-14', start: 600, end: 720 })), true, 'ochtendopkomst');
+  assert.equal(M.ownTimes(s, plan({ date: '2026-11-13', endDate: '2026-11-15', type: 'kamp', start: M.KAMP_START, end: M.KAMP_END })), false, 'kamp met de kamptijden');
+  assert.equal(M.ownTimes(s, plan({ date: '2026-11-13', endDate: '2026-11-15', type: 'kamp', start: s.defStart, end: s.defEnd })), true, 'kamp met opkomsttijden: wel eigen (oude data blijft zoals hij is)');
+  assert.equal(M.ownTimes(S({ defStart: 810, defEnd: 960 }), plan({ date: '2026-11-14', start: 840, end: 990 })), true, 'standaard later veranderd: de oude tijden wijken nu af');
+});
+test('kampFitRow: rij in de jaarplanning gelijk trekken met het kamp', () => {
+  const k = M.newKamp(S(), 3, '2026-11-13'); // vr 13 – zo 15 nov
+  k.days.push(M.normDay({ label: 'Maandag' }, 3));
+  assert.deepEqual(M.kampFitRow(k, '2026-11-13', '2026-11-15'), { date: '2026-11-13', endDate: '2026-11-16' }, 'dag toegevoegd: t/m maandag');
+  const zz = M.newKamp(S(), 3, '2026-11-13'); zz.days.shift(); // vrijdag weggehaald: Zaterdag, Zondag
+  assert.deepEqual(M.kampFitRow(zz, '2026-11-13', '2026-11-15'), { date: '2026-11-14', endDate: '2026-11-15' }, 'eerste dag weggehaald: begint op zaterdag');
+  const zo = M.newKamp(S(), 3, '2026-11-13'); zo.days.splice(2, 1); // zondag weggehaald
+  assert.deepEqual(M.kampFitRow(zo, '2026-11-13', '2026-11-15'), { date: '2026-11-13', endDate: '2026-11-14' }, 'laatste dag weggehaald');
+  const eigen = M.newKamp(S(), 2, '2026-11-13'); eigen.days[0].label = 'Aankomst';
+  assert.deepEqual(M.kampFitRow(eigen, '2026-11-13', '2026-11-15'), { date: '2026-11-13', endDate: '2026-11-14' }, 'eerste dag zonder weekdagnaam: datum blijft');
+  const een = M.newKamp(S(), 1, '2026-11-14');
+  assert.deepEqual(M.kampFitRow(een, '2026-11-14', '2026-11-15'), { date: '2026-11-14', endDate: '' }, 'kamp van één dag: geen einddatum');
+  const ma = M.newKamp(S(), 2, '2026-11-13'); ma.days[0].label = 'Maandag';
+  assert.deepEqual(M.kampFitRow(ma, '2026-11-13', '2026-11-15').date, '2026-11-13', 'weekdag buiten de oude rij: datum blijft');
+  assert.equal(M.kampMismatch(zz, '2026-11-14', '2026-11-15'), null, 'daarna past het');
+});
+test('copyKampDay: een weekdag krijgt als kopie de volgende weekdag', () => {
+  const k = M.newKamp(S(), 3); // Vrijdag, Zaterdag, Zondag (zonder datum)
+  k.days[1].blocks.push(blk('hike', 600, 60));
+  const at = M.copyKampDay(k, 1, null);
+  assert.equal(at, 2);
+  assert.deepEqual(k.days.map(d => d.label), ['Vrijdag', 'Zaterdag', 'Zondag', 'Maandag'], 'geen twee tabs Zondag');
+  assert.equal(k.days[2].blocks.length, 1, 'onderdelen gaan mee');
+  assert.notEqual(k.days[2].blocks[0].id, 'hike', 'met nieuwe ids'); assert.notEqual(k.days[2].id, k.days[1].id);
+  const d = M.newKamp(S(), 2, '2026-11-14'); // za 14 – zo 15
+  M.copyKampDay(d, 0, '2026-11-14');
+  assert.deepEqual(d.days.map(x => x.label), ['Zaterdag', 'Zondag', 'Maandag'], 'met datum: de weekdag van de datum');
+  assert.equal(M.dayTitle(d, 1, '2026-11-15'), 'Zondag 15 nov', 'kopie heet niet "Zaterdag (kopie) 15 november"');
+  const e = M.newKamp(S(), 2); e.days[0].label = 'Hikedag';
+  M.copyKampDay(e, 0, null);
+  assert.deepEqual(e.days.map(x => x.label), ['Hikedag', 'Hikedag (kopie)', 'Zaterdag'], 'andere naam: (kopie), weekdagen erna blijven');
+});
+test('dayShort bij taken per leiding: unieke korte dagnaam', () => {
+  const k = M.normOpk({ id: 'k', kind: 'kamp', days: [{ label: 'Dag 1' }, { label: 'Dag 2' }] });
+  assert.deepEqual([M.dayShort(k, 0, null), M.dayShort(k, 1, null)], ['dag 1', 'dag 2'], 'niet twee keer "da"');
+  assert.equal(M.dayShort(k, 1, '2026-11-15'), 'zo 15', 'met datum');
+});
+test('progBlocks: vaste blokken tellen niet als onderdeel', () => {
+  const o = M.newOpk(S());
+  assert.ok(o.blocks.length >= 3 && M.progBlocks(o).length === 0 && M.progEmpty(o), 'nieuwe opkomst: 0 onderdelen');
+  o.blocks.push(blk('spel', 900, 30));
+  assert.deepEqual(M.progBlocks(o).map(b => b.id), ['spel']);
+  assert.equal(M.progEmpty(o), false);
 });
 test('kampMismatch: kamp past qua lengte niet bij de rij', () => {
   const k = M.newKamp(S(), 3); // vr–zo
@@ -326,6 +380,15 @@ test('parseRange: datum en "tot en met", met duidelijke meldingen', () => {
   assert.deepEqual(parseRange('', '08-11-2026', T), { error: 'Typ de datum als dd-mm-jjjj.' });
   assert.deepEqual(parseRange('07-11-2026', '31-02-2026', T), { error: 'Typ "tot en met" als dd-mm-jjjj, of laat het leeg.' });
   assert.deepEqual(parseRange('07-11-2026', '06-11-2026', T), { error: '"Tot en met" moet na de datum liggen.' });
+});
+test('parseRange: "tot en met" zonder jaartal telt vanaf de datum, niet vanaf vandaag', () => {
+  assert.deepEqual(parseRange('20-10-2026', '22-10', '2026-10-26'), { iso: '2026-10-20', endIso: '2026-10-22' }, 'datum in het verleden: geen periode van ruim een jaar');
+  assert.deepEqual(parseRange('17-10-2026', '25-10', '2026-10-26'), { iso: '2026-10-17', endIso: '2026-10-25' }, 'Geen opkomst over een periode die al voorbij is');
+  // allebei zonder jaartal in een periode die al loopt: de datum is de eerstvolgende keer (volgend jaar), het einde volgt die datum
+  assert.deepEqual(parseRange('17-10', '25-10', '2026-10-20'), { iso: '2027-10-17', endIso: '2027-10-25' }, 'geen foutmelding, dezelfde periode volgend jaar');
+  assert.deepEqual(parseRange('28-12-2026', '03-01', '2026-10-20'), { iso: '2026-12-28', endIso: '2027-01-03' }, 'over de jaarwisseling');
+  assert.equal(tidyNL('22-10', '2026-10-20'), '22-10-2026', 'veld netjes zetten met de datum als referentie');
+  assert.equal(tidyNL('22-10', null), tidyNL('22-10'), 'zonder referentie: vanaf vandaag');
 });
 test('tidyNL', () => {
   assert.equal(tidyNL('07112026'), '07-11-2026');

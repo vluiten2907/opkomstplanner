@@ -44,11 +44,17 @@ export function parseNL(s: string, today = todayISO()): string | null {
   if (y < 2000 || y > 2100) return null;
   return at(y);
 }
-/** Een getypte datum netjes als dd-mm-jjjj zetten (bij wegklikken); klopt hij niet, dan blijft hij staan zoals hij is. */
-export const tidyNL = (s: string) => { const iso = s.trim() ? parseNL(s) : null; return iso ? fmtNL(iso) : s; };
-/** Datum en "tot en met" (dd-mm-jjjj) als ISO, of de foutmelding. Leeg "tot en met" = één dag (endIso ''). */
+/**
+ * Een getypte datum netjes als dd-mm-jjjj zetten (bij wegklikken); klopt hij niet, dan blijft hij staan zoals hij is.
+ * `ref`: zonder jaartal de eerstvolgende keer vanaf deze datum (bijv. "tot en met" vanaf de begindatum), anders vanaf vandaag.
+ */
+export const tidyNL = (s: string, ref?: string | null) => { const iso = s.trim() ? parseNL(s, ref || undefined) : null; return iso ? fmtNL(iso) : s; };
+/**
+ * Datum en "tot en met" (dd-mm-jjjj) als ISO, of de foutmelding. Leeg "tot en met" = één dag (endIso '').
+ * "Tot en met" zonder jaartal is de eerstvolgende keer vanaf de datum (niet vanaf vandaag: dan werd het een periode van ruim een jaar).
+ */
 export function parseRange(date: string, end: string, today = todayISO()): { iso: string; endIso: string } | { error: string } {
-  const iso = parseNL(date, today), endIso = end.trim() ? parseNL(end, today) : '';
+  const iso = parseNL(date, today), endIso = end.trim() ? parseNL(end, iso || today) : '';
   if (!iso) return { error: 'Typ de datum als dd-mm-jjjj.' };
   if (endIso === null) return { error: 'Typ "tot en met" als dd-mm-jjjj, of laat het leeg.' };
   if (endIso && endIso < iso) return { error: '"Tot en met" moet na de datum liggen.' };

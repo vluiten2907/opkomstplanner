@@ -8,7 +8,7 @@ import { openModal, withFreeName } from '../store/modal';
 import { BankCard, Strip, CatTags, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, useEscapeClose, useSheetDialog } from '../components/ui';
 import { fmtDur, fmtT, plural } from '../lib/time';
-import { allBlocks, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, newOpk, opkCatList, opkCatOf, opkSearchText, toBank, type Cat, type Opk } from '../lib/model';
+import { progBlocks, isFixed, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, newOpk, opkCatList, opkCatOf, opkSearchText, toBank, type Cat, type Opk } from '../lib/model';
 import { markFresh } from '../store/fresh';
 import type { Gedeeld } from '../store/groepsbank';
 
@@ -115,7 +115,7 @@ export default function Opkomstenbank() {
             : !total ? <div className="empty"><span>{can('bank') ? 'Nog leeg. Bewaar een opkomst met "In bank".' : 'Nog leeg. In de bank zetten kan met het recht Banken.'}</span></div>
               : !drafts.length && <div className="empty"><span>Niets gevonden.</span></div>}
           {drafts.length > 0 && <section className="stack"><h2>Concepten</h2>
-            <div className="picklist">{drafts.map(o => <div key={o.id} className="pick"><div className="info"><b>{o.title || 'Naamloze opkomst'}</b><span className="hint">{isKamp(o) ? 'Weekendkamp · ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(allBlocks(o).length, 'onderdeel', 'onderdelen')}</span></div>
+            <div className="picklist">{drafts.map(o => <div key={o.id} className="pick"><div className="info"><b>{o.title || 'Naamloze opkomst'}</b><span className="hint">{isKamp(o) ? 'Weekendkamp · ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(progBlocks(o).length, 'onderdeel', 'onderdelen')}</span></div>
               <div className="row"><button className="btn sm primary" onClick={() => nav(`/s/${sid}/bouwer/${o.id}`)}>Openen</button>
                 {can('bank') && <button className="btn sm" onClick={() => draftToBank(o)}>In bank zetten</button>}
                 {can('build') && <ConfirmBtn className="btn sm ghost" label="Verwijderen" confirm="Klik nogmaals" onConfirm={() => remove(o)} />}</div></div>)}</div></section>}
@@ -131,14 +131,14 @@ export default function Opkomstenbank() {
 }
 
 function CardMeta({ o, noGroup }: { o: Opk; noGroup?: boolean }) {
-  return <span className="bm">{isKamp(o) ? <span className="pill kamp">Kamp · {plural(o.days.length, 'dag', 'dagen')}</span> : <span className="mono">{fmtT(o.start)}–{fmtT(o.end)}</span>}<span>{plural(allBlocks(o).length, 'onderdeel', 'onderdelen')}</span>{minNeed(o) ? <span>min. {minNeed(o)} leiding</span> : null}{!noGroup && o.group && <span>{o.group}</span>}</span>;
+  return <span className="bm">{isKamp(o) ? <span className="pill kamp">Kamp · {plural(o.days.length, 'dag', 'dagen')}</span> : <span className="mono">{fmtT(o.start)}–{fmtT(o.end)}</span>}<span>{plural(progBlocks(o).length, 'onderdeel', 'onderdelen')}</span>{minNeed(o) ? <span>min. {minNeed(o)} leiding</span> : null}{!noGroup && o.group && <span>{o.group}</span>}</span>;
 }
 
 function BlockList({ o, cats }: { o: Opk; cats?: Cat[] }) {
   const { settings } = useSpeltak();
   const bl = isKamp(o) ? o.days.flatMap(d => [...d.blocks].sort((a, b) => a.start - b.start).map(b => ({ ...b, _dl: d.label }))) : [...o.blocks].sort((a, b) => a.start - b.start).map(b => ({ ...b, _dl: '' }));
   return <>
-    <h3 className="gap-lg">{isKamp(o) ? 'Weekendkamp, ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(bl.length, 'onderdeel', 'onderdelen')}</h3>
+    <h3 className="gap-lg">{isKamp(o) ? 'Weekendkamp, ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(bl.filter(b => !isFixed(b)).length, 'onderdeel', 'onderdelen')}</h3>
     <ul className="tblocks">{bl.map(b => <li key={b.id}><span className="mono">{fmtT(b.start)}</span><Dot color={(cats?.find(c => c.id === b.cat) || catOf(settings, b.cat)).color} />
       <span><b>{b.title || 'Naamloos'}</b><small>{b._dl ? b._dl + ' · ' : ''}{fmtDur(b.dur)}{b.minLeaders > 0 ? ` · min. ${b.minLeaders} leiding` : ''}{b.location ? ' · ' + b.location : ''}</small></span></li>)}</ul>
   </>;

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Bookmark, CalendarDays, ChevronRight, Copy, Download, GraduationCap, Plus, Tent, Trash2, X } from 'lucide-react';
+import { Bookmark, CalendarDays, ChevronRight, Copy, Download, GraduationCap, Plus, Tent, Trash2, TriangleAlert, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal, withFreeName } from '../store/modal';
@@ -11,7 +11,7 @@ import { Chip, ConfirmBtn, Dot, Field, TimePicker, useMedia, useSheetDialog } fr
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, todayISO, uid, DAYS } from '../lib/time';
-import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, fitsTopic, rowDate, rowsIn, catOf, changeOpkTime, copyOpk, firstFree, freeName, nameTaken, dayTitle, isBlankOpk, isFixed, isKamp, lanesLayout, libSearchText, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, fitsTopic, rowDate, rowsIn, catOf, changeOpkTime, copyKampDay, copyOpk, dayShort, firstFree, freeName, kampFitRow, kampMismatchNote, nameTaken, dayTitle, isBlankOpk, relabelDays, isFixed, isKamp, lanesLayout, libSearchText, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /** Titel van de opkomst: loopt door op een volgende regel in plaats van af te breken (smal scherm), zonder echte regeleinden. */
 function TitleArea({ value, readOnly, onChange, placeholder, autoFocus }: { value: string; readOnly: boolean; onChange: (v: string) => void; placeholder: string; autoFocus?: boolean }) {
@@ -276,6 +276,19 @@ function Builder({ o: stored }: { o: Opk }) {
     : o.state === 'bank' ? <>{can('build') && <button className="btn" onClick={dup} title="Kopie als concept"><Copy size={16} />Kopie</button>}{planBtn}{pdfBtn}{can('bank') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Uit de opkomstenbank verwijderen" onConfirm={() => { setUnsaved(false); nav(`/s/${sid}/bouwer`); removeOpk(stored); }} />}</>
       : <>{bankBtn}<button className="btn" onClick={() => go(`/s/${sid}/jaarplanning?focus=${e ? e.id : ''}`)}><CalendarDays size={16} />Jaarplanning</button>{pdfBtn}</>;
   const w = whole.warn;
+  // Kamp past (na een dag toevoegen, kopiëren of weghalen) niet meer bij de rij in de jaarplanning: melden, niet stil laten schuiven.
+  // Met het recht Jaarplanning trek je de rij gelijk met het kamp (Ongedaan maken zet de oude data terug).
+  const misfit = kamp && e ? kampMismatchNote(o, e.date, e.endDate) : '';
+  const fitPlan = () => {
+    if (!e || !can('plan')) return;
+    const was = { date: e.date, endDate: e.endDate }, fit = kampFitRow(o, e.date, e.endDate);
+    savePlan({ ...e, ...fit });
+    if (!readOnly && relabelDays(clone(o), fit.date)) upd(() => { relabelDays(o, fit.date); });
+    toast(`Jaarplanning aangepast: ${fmtRange(fit.date, fit.endDate, true)}`, { label: 'Ongedaan maken', fn: () => {
+      const L = latest(), row = L.plans.find(p => p.id === e.id);
+      if (row && row.date === fit.date && row.endDate === fit.endDate) L.savePlan({ ...row, ...was });
+    } });
+  };
   return <div className="stack pt-5 md:pt-7" style={{ gap: 16 }}>
     <section className="plan-head">
       <div className="row between" style={{ alignItems: 'flex-end' }}>
@@ -288,7 +301,8 @@ function Builder({ o: stored }: { o: Opk }) {
         <div className="row">{actions}<button className="btn ghost" onClick={() => go(`/s/${sid}/bouwer`)} title="Nieuwe opkomst of weekendkamp"><Plus size={16} />Nieuw</button></div>
       </div>
       {o.state === 'planned' && e && <div className="ctx">{!readOnly && <button className="btn sm" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })}>Leiding indelen</button>}<span>Ingepland op <b>{fmtRange(e.date, e.endDate, true)}</b></span><span>week {isoWeek(e.date)}</span><span>planning door: <b>{plannersOf(e, o).join(', ') || 'nog niemand'}</b></span>
-        {src && can('bank') && <span>uit de opkomstenbank: {src.title || 'naamloos'} · <ConfirmBtn className="linkbtn" label="bank bijwerken met deze versie" confirm="Klik nogmaals: bank overschrijven" onConfirm={updBank} /></span>}</div>}
+        {src && can('bank') && <span>uit de opkomstenbank: {src.title || 'naamloos'} · <ConfirmBtn className="linkbtn" label="bank bijwerken met deze versie" confirm="Klik nogmaals: bank overschrijven" onConfirm={updBank} /></span>}
+        {misfit && <div className="ctx-misfit" role="status"><TriangleAlert size={16} aria-hidden="true" /><span>{misfit}</span>{can('plan') && <button className="btn sm" onClick={fitPlan}>Jaarplanning aanpassen</button>}</div>}</div>}
       <div className="card">
         <button className="metatoggle" aria-expanded={metaOpen} aria-controls="om-meta" onClick={toggleMeta}>
           <ChevronRight size={18} className="chev" aria-hidden="true" /><b>Details</b>
@@ -358,7 +372,8 @@ function DaysBar({ o, di, setDayIdx, upd, date, readOnly }: { o: Opk; di: number
     const nd = normDay({ label: li >= 0 ? cap(DAYS[(li + 1) % 7]) : 'Dag ' + (o.days.length + 1), start: 480, end: 1380 }, o.days.length);
     upd(() => { o.days.push(nd); }); setDayIdx(o.days.length - 1);
   };
-  const copyDay = () => { const nd = normDay(clone(d), di); nd.id = uid(); nd.label = d.label + ' (kopie)'; nd.blocks.forEach(b => b.id = uid()); upd(() => { o.days.splice(di + 1, 0, nd); }); setDayIdx(di + 1); toast('Dag gekopieerd met alle onderdelen'); };
+  // een weekdag ("Zaterdag") krijgt als kopie de volgende weekdag, de dagen erna schuiven mee; een andere naam krijgt " (kopie)"
+  const copyDay = () => { let at = di + 1; upd(() => { at = copyKampDay(o, di, date); }); setDayIdx(at); toast('Dag gekopieerd met alle onderdelen'); };
   const delDay = () => {
     if (o.days.length < 2) return; const [rm] = o.days.splice(di, 1); const at = di;
     setDayIdx(Math.max(0, di - 1)); upd(() => {});
@@ -465,8 +480,11 @@ function Timeline({ ctx, A, selId, flashId, lanesRef, onSelect, onDelete, onAdd,
 
 /* ============ Zijpaneel: bank en controle ============ */
 function SidePanel({ tab, setTab, ctx, A, lanesRef, onSelect, onPlan, onDrop }: { tab: 'bank' | 'check'; setTab: (t: 'bank' | 'check') => void; ctx: Ctx; A: Analysis; lanesRef: React.RefObject<HTMLDivElement | null>; onSelect: (id: string, kb?: boolean) => void; onPlan: (l: Lib) => void; onDrop: (l: Lib, m: number) => void }) {
-  const { settings, lib, leaders } = useSpeltak();
+  const { settings, lib, leaders, entryOfOpk } = useSpeltak();
   const { o, T0, T1, row, nn, readOnly } = ctx;
+  // kampdag bij een taak: "za 14" (met datum) of een korte unieke naam ("dag 2"), zoals in de pdf
+  const pe = isKamp(o) && o.state === 'planned' ? entryOfOpk(o) : null;
+  const dayOf = (i: number) => dayShort(o, i, pe ? addDays(pe.date, i) : null);
   const [q, setQ] = useState(''); const [cat, setCat] = useState('');
   const [float, setFloat] = useState<{ l: Lib; x: number; y: number } | null>(null);
   const ld = useRef<{ l: Lib; x0: number; y0: number; started: boolean; m: number | null } | null>(null);
@@ -517,7 +535,7 @@ function SidePanel({ tab, setTab, ctx, A, lanesRef, onSelect, onPlan, onDrop }: 
     {nn ? <p className="hint">Minimaal {minNeed(o)} leiding nodig: het onderdeel dat de meeste leiding vraagt bepaalt dit.</p> : <>
       <h3 className="gap-lg">Taken per leiding</h3>
       {people.length ? <ul className="who-list">{people.map(([n, arr]) => <li key={n}><b>{n}{A.present.includes(n) || !leaders.includes(n) ? '' : <> <span className="pill warn">afwezig</span></>}</b>
-        <span className="what">{[...arr].sort((a, b) => (a._di || 0) - (b._di || 0) || a.start - b.start).map((x, k) => <span key={k}>{x._day ? x._day.slice(0, 2).toLowerCase() + ' ' : ''}{fmtT(x.start)}–{fmtT(x.start + x.dur)} {x.title || 'naamloos'}<br /></span>)}</span></li>)}</ul> : <p className="hint">Nog niemand ingedeeld.</p>}
+        <span className="what">{[...arr].sort((a, b) => (a._di || 0) - (b._di || 0) || a.start - b.start).map((x, k) => <span key={k}>{isKamp(o) && o.days[x._di] ? dayOf(x._di) + ' ' : ''}{fmtT(x.start)}–{fmtT(x.start + x.dur)} {x.title || 'naamloos'}<br /></span>)}</span></li>)}</ul> : <p className="hint">Nog niemand ingedeeld.</p>}
       {free.length > 0 && <p className="hint">Zonder taak: {free.join(', ')}</p>}
     </>}
   </div></>;

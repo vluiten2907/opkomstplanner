@@ -471,16 +471,26 @@ with sync_playwright() as p:
     seen_old = lambda: (lambda g: g and g['speltakName'] == 'Scouts' and any(c['label'] == cat0 for c in g['catDefs']))(shared_sluip())
     check(soon(seen_old, 6000), 'groepsbank: en weer terug (geen oude stand blijven hangen)')
 
-    # --- speltak openen zonder verbinding: Firestore meldt eerst "bestaat niet" uit een lege cache → Geen verbinding, niet Geen toegang
-    pg.evaluate("localStorage.setItem('fake.offlineFirst', '4000')"); pg.reload()
+    # --- speltak openen zonder verbinding: Firestore meldt eerst "bestaat niet" uit een lege cache → Geen verbinding, niet Geen toegang.
+    # De lijsten (opkomsten, planning, …) komen eerst leeg uit de cache en na de verbinding pas 2,5 s ná de speltak zelf (trage verbinding):
+    # dan nog niet de pagina met lege lijsten tonen (typen in de jaarplanning maakte zo een tweede rij voor dezelfde datum).
+    pg.goto(BASE + f'/s/{scouts}/jaarplanning'); w(900)
+    n_rows0, n_links0 = pg.locator('.prow:not(.head)').count(), pg.locator('.prow .plink').count()
+    pg.evaluate("localStorage.setItem('fake.offlineFirst', '4000'); localStorage.setItem('fake.offlineSlow', '2500')"); pg.reload()
     check(soon(lambda: pg.locator('.auth-card h2:text-is("Geen verbinding")').count() == 1, 2500) and pg.locator('text=Geen toegang').count() == 0
           and pg.evaluate("localStorage.getItem('opk.sid')") == scouts, 'speltak openen zonder verbinding: melding Geen verbinding, niet Geen toegang; de laatste speltak blijft onthouden')
     shot('40-geen-verbinding', False)
     pg.set_viewport_size({'width': 390, 'height': 800}); w(150)
     check(pg.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'melding Geen verbinding mobiel: geen horizontale scroll'); shot('40b-geen-verbinding-mobiel', False)
     pg.set_viewport_size({'width': 1360, 'height': 900})
+    check(soon(lambda: pg.locator('.auth-card').count() == 0, 6000) and pg.locator('.loading:has-text("Speltak laden")').count() == 1
+          and pg.locator('header.bar').count() == 0 and pg.locator('.prow').count() == 0,
+          'verbinding terug, de lijsten nog onderweg: Speltak laden…, geen jaarplanning met lege rijen')
     check(soon(lambda: pg.locator('header.bar').count() == 1 and pg.locator('.auth-card').count() == 0, 6000), 'verbinding terug: de speltak laadt vanzelf (geen Geen toegang die blijft staan)')
-    pg.evaluate("localStorage.removeItem('fake.offlineFirst')")
+    w(300)
+    check(n_links0 > 0 and pg.locator('.prow:not(.head)').count() == n_rows0 and pg.locator('.prow .plink').count() == n_links0,
+          f'verbinding terug: de jaarplanning verschijnt pas met alle rijen en gekoppelde opkomsten ({n_rows0}/{n_links0})')
+    pg.evaluate("localStorage.removeItem('fake.offlineFirst'); localStorage.removeItem('fake.offlineSlow')")
     pg.goto(BASE + '/s/bestaatniet/dashboard'); w(800)
     check(pg.locator('.auth-card h2:text-is("Geen toegang")').count() == 1, 'speltak die niet bestaat: Geen toegang')
     pg.goto(BASE + f'/s/{scouts}/dashboard'); w(900)
@@ -517,6 +527,11 @@ with sync_playwright() as p:
     t30 = date.today() + timedelta(days=30)
     pg.fill('#md-date', f'{t30.day}-{t30.month}'); pg.press('#md-date', 'Tab'); w(150)
     check(pg.input_value('#md-date') == t30.strftime('%d-%m-%Y'), f'datum typen als d-m zonder jaartal (bijv. 7-11): de eerstvolgende keer ({t30.day}-{t30.month} → {pg.input_value("#md-date")})')
+    # "tot en met" zonder jaartal: de eerstvolgende keer vanaf de datum, niet vanaf vandaag (anders een rij van ruim een jaar)
+    tm10, tm8 = date.today() - timedelta(days=10), date.today() - timedelta(days=8)
+    pg.fill('#md-date', tm10.strftime('%d-%m-%Y')); pg.fill('#md-end', f'{tm8.day}-{tm8.month}'); pg.press('#md-end', 'Tab'); w(150)
+    check(pg.input_value('#md-end') == tm8.strftime('%d-%m-%Y'), f'"tot en met" als d-m zonder jaartal: vanaf de datum, niet volgend jaar ({tm8.day}-{tm8.month} → {pg.input_value("#md-end")})')
+    pg.fill('#md-end', '')
     pg.fill('#md-date', d_ok); tp('Begintijd / vertrek', 10, 0); tp('Eindtijd / terug', 12, 0); pg.click('.modal >> text=Opslaan'); w(400)
     check('10:00–12:00' in prow(3).locator('.pdate').inner_text(), 'jaarplanning: eigen tijden opgeslagen')
     prow(3).locator('.btn:has-text("Koppelen")').click(); w(300); pg.click('.modal >> text=Nieuwe opkomst'); w(800)
@@ -1751,7 +1766,7 @@ with sync_playwright() as p:
     check(ok and sheet.count() == 0 and pg.evaluate("document.activeElement.classList.contains('bcard')"), 'opkomstenbank mobiel: paneel is een venster, Esc sluit en de focus gaat terug')
     pg.goto(BASE + '/s/oefen/dashboard'); w(1200)
     cal_lbl = pg.eval_on_selector_all('.cal button.cday', 'els => els.map(e => e.getAttribute("aria-label"))')
-    check(pg.locator('.cal [aria-current=date]').count() == 1 and cal_lbl and all(re.search(r' · (programma klaar|aandachtspunten|alleen onderwerp|nog open|kamp|geen opkomst)', x or '') for x in cal_lbl),
+    check(pg.locator('.cal [aria-current=date]').count() == 1 and cal_lbl and all(re.search(r' · (programma klaar|aandachtspunten|programma nog leeg|alleen onderwerp|nog open|kamp|geen opkomst)', x or '') for x in cal_lbl),
           'kalender: vandaag heeft aria-current, elke dag noemt zijn status')
     pg.evaluate("document.querySelector('.cal').scrollIntoView({ block: 'center' })"); w(200); shot('16c-kalender-mobiel', False)
     check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'kalender mobiel: geen horizontale scroll')
@@ -2218,7 +2233,11 @@ with sync_playwright() as p:
             q.click('.cal-head [aria-label="Volgende maand"]'); q.wait_for_timeout(150)
         return [], ''
     cc, cl = cal_mark('Lege opkomst')
-    check('warn' in cc and 'ok' not in cc and 'programma klaar' not in cl, f'agenda: opkomst met alleen de vaste blokken is niet groen/programma klaar ({cl})')
+    check('leeg' in cc and 'warn' not in cc and 'ok' not in cc and 'programma nog leeg' in cl and 'aandachtspunten' not in cl,
+          f'agenda: opkomst met alleen de vaste blokken heet programma nog leeg (zoals de pil Nog leeg), niet klaar of aandachtspunten ({cl})')
+    nl = q.locator('.counts li:has-text("Programma nog leeg")')
+    check(nl.count() == 1 and int(nl.locator('b').inner_text()) >= 1 and nl.locator('.legend-dot.cday.leeg').count() == 1,
+          'seizoen: opkomsten met een leeg programma apart geteld als Programma nog leeg')
     q.goto(BASE + '/s/oefen/dashboard'); q.wait_for_timeout(1000)
     q.locator('.nextlist').scroll_into_view_if_needed(); q.screenshot(path=f'{OUT}/38-dashboard-daarna-status.png')
     q.set_viewport_size({'width': 390, 'height': 844}); q.wait_for_timeout(300)
@@ -2273,10 +2292,36 @@ with sync_playwright() as p:
     q.goto(BASE + '/s/oefen/jaarplanning'); q.wait_for_timeout(1000)
     lp = q.locator('.prow:has(.plink:has-text("Lege opkomst")) .pill').all_inner_texts()
     check('Nog leeg' in lp, f'jaarplanning: opkomst met alleen de vaste blokken heeft de pil Nog leeg ({lp})')
+    lh = q.locator('.prow .plink:has-text("Lege opkomst") .hint').inner_text()
+    check('0 onderdelen' in lh, f'jaarplanning: de vaste blokken tellen niet als onderdelen ({lh!r})')
+    # pdf van een programma met alleen de vaste blokken: eerst een onderdeel toevoegen, geen pdf met alleen openen en sluiten
+    q.goto(BASE + '/s/oefen/bouwer/opk-leeg'); q.wait_for_timeout(1000)
+    got = []; on_dl = lambda d: got.append(d); q.on('download', on_dl)
+    q.click('button:has-text("PDF maken")'); q.wait_for_timeout(1200); q.remove_listener('download', on_dl)
+    check(not got and 'Voeg eerst een onderdeel toe' in q.locator('.toast').inner_text(), 'pdf van een programma met alleen de vaste blokken: melding, geen lege pdf')
+    q.goto(BASE + '/s/oefen/jaarplanning'); q.wait_for_timeout(1000)
     q.locator('.prow:has(.plink:has-text("Testkamp")) .pdate').click(); q.wait_for_timeout(300)
     q.click('.modal >> text=Opslaan'); q.wait_for_timeout(400)
     tt = q.locator('.toast').inner_text()
     check('Het kamp heeft 3 dagen, de jaarplanning 2' in tt, f'datum van een kamp opslaan terwijl de lengte niet past: melding ({tt})')
+    # in de bouwer staat het ook (contextbalk), met de knop om de rij gelijk te trekken met het kamp
+    oget = lambda js: q.evaluate("(() => { const s = JSON.parse(localStorage.getItem('opk.oefen.v1')), P = 'speltakken/oefen/'; return " + js + "; })()")
+    tk_row = lambda: oget("(() => { const o = Object.keys(s).find(k => k.startsWith(P + 'opkomsten/') && s[k].title === 'Testkamp'), id = o && o.split('/').pop(), r = Object.values(s).find(x => x && x.opkId === id && 'slot' in x); return r ? [r.date, r.endDate] : null; })()")
+    q.locator('.prow .plink:has-text("Testkamp")').click(); q.wait_for_timeout(1000)
+    mf = q.locator('.ctx .ctx-misfit')
+    mt = mf.inner_text() if mf.count() else ''
+    check('Het kamp heeft 3 dagen, de jaarplanning 2' in mt and mf.locator('button:has-text("Jaarplanning aanpassen")').count() == 1,
+          f'bouwer: kamp dat niet bij de jaarplanning past → melding in de contextbalk met Jaarplanning aanpassen ({mt!r})')
+    q.screenshot(path=f'{OUT}/45-kamp-past-niet-bouwer.png')
+    q.set_viewport_size({'width': 390, 'height': 844}); q.wait_for_timeout(300)
+    mf.scroll_into_view_if_needed(); q.screenshot(path=f'{OUT}/45b-kamp-past-niet-bouwer-mobiel.png')
+    check(q.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'melding kamp past niet in de bouwer mobiel: geen horizontale scroll')
+    q.set_viewport_size({'width': 1360, 'height': 900}); q.wait_for_timeout(200)
+    r0 = tk_row(); mf.locator('button:has-text("Jaarplanning aanpassen")').click(); q.wait_for_timeout(700); r1 = tk_row()
+    d0 = date.fromisoformat(r0[0])
+    check(r1 == [r0[0], (d0 + timedelta(days=2)).isoformat()] and q.locator('.ctx .ctx-misfit').count() == 0 and 'Jaarplanning aangepast' in q.locator('.toast').inner_text(),
+          f'Jaarplanning aanpassen: de rij loopt nu t/m de laatste kampdag, de melding is weg ({r0} → {r1})')
+    q.goto(BASE + '/s/oefen/jaarplanning'); q.wait_for_timeout(1000)
     # kamp-rij zonder eigen tijden: vertrek en terug volgen de soort (zoals een nieuw weekendkamp), niet de opkomsttijden
     q.click('.presets >> text=Komende 3 maanden'); q.wait_for_timeout(300)
     brow = q.locator('.prow:not(.head)').nth(q.evaluate("[...document.querySelectorAll('.prow:not(.head)')].findIndex(r => r.querySelector('.ptopic')?.value === 'Bosspel met de Scouts')"))
@@ -2291,11 +2336,68 @@ with sync_playwright() as p:
     check(q.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'datum en soort (kamp) mobiel: geen horizontale scroll'); q.screenshot(path=f'{OUT}/43b-kamp-tijden-mobiel.png')
     q.set_viewport_size({'width': 1360, 'height': 900}); q.wait_for_timeout(200)
     q.click('.modal >> text=Opslaan'); q.wait_for_timeout(900)
-    oget = lambda js: q.evaluate("(() => { const s = JSON.parse(localStorage.getItem('opk.oefen.v1')), P = 'speltakken/oefen/'; return " + js + "; })()")
-    check(oget("[s[P + 'planning/pl-7'].type, s[P + 'planning/pl-7'].start, s[P + 'planning/pl-7'].end]") == ['kamp', 1140, 900], 'kamp-rij opgeslagen met vertrek 19:00 en terug 15:00')
+    p7 = lambda: oget("[s[P + 'planning/pl-7'].type, s[P + 'planning/pl-7'].start, s[P + 'planning/pl-7'].end]")
+    # de standaardtijden worden niet als eigen tijden opgeslagen: ze blijven de soort (en de standaard) volgen
+    check(p7() == ['kamp', None, None] and 'kamp / weekend' in brow.locator('.pdate').inner_text(), f'kamp-rij opgeslagen zonder eigen tijden: volgt de kamptijden (de standaard is niet bevroren) ({p7()})')
+    bidx = "[...document.querySelectorAll('.prow:not(.head)')].findIndex(r => r.querySelector('.ptopic')?.value === 'Bosspel met de Scouts')"
+    brow_now = lambda: q.locator('.prow:not(.head)').nth(q.evaluate(bidx))
+    # terug naar Opkomst op één dag: gewoon de opkomsttijden, geen foutmelding "eindtijd moet na de begintijd" (19:00–15:00)
+    brow_now().locator('.pdate').click(); q.wait_for_timeout(300); kt4 = md_times()
+    q.click('.modal .seg .chip:text-is("Opkomst")'); q.click('.modal .chip:text-is("Zaterdag")'); q.wait_for_timeout(150); kt5 = md_times()
+    q.click('.modal >> text=Opslaan'); q.wait_for_timeout(500)
+    check(kt4 == ['19', '0', '15', '0'] and kt5 == kt0 and q.locator('.modal').count() == 0 and 'eindtijd moet na' not in (q.locator('.toast').inner_text() if q.locator('.toast').count() else '')
+          and p7() == ['opkomst', None, None], f'kamp-rij terug naar Opkomst op één dag: opkomsttijden, geen foutmelding ({kt4}, {kt5}, {p7()})')
+    # oude rij met de standaardtijden opgeslagen (van vóór deze versie): Kamp / weekend stelt toch de kamptijden voor
+    q.evaluate("(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)), P = 'speltakken/oefen/', st = s[P.slice(0, -1)].settings || {};"
+               " s[P + 'planning/pl-7'].start = st.defStart ?? 840; s[P + 'planning/pl-7'].end = st.defEnd ?? 990; localStorage.setItem(k, JSON.stringify(s)); })()")
+    q.reload(); q.wait_for_timeout(1000); q.click('.presets >> text=Komende 3 maanden'); q.wait_for_timeout(300)
+    brow_now().locator('.pdate').click(); q.wait_for_timeout(300)
+    q.click('.modal .chip:has-text("Weekend vr–zo")'); q.wait_for_timeout(150); kt6 = md_times()
+    q.click('.modal >> text=Opslaan'); q.wait_for_timeout(600)
+    check(kt6 == ['19', '0', '15', '0'] and p7() == ['kamp', None, None], f'rij met opgeslagen standaardtijden → Kamp / weekend: vertrek 19:00, terug 15:00 ({kt6}, {p7()})')
+    brow = brow_now()
     brow.locator('.btn:has-text("Koppelen")').click(); q.wait_for_timeout(300); q.click('.modal >> text=Weekendkamp'); q.wait_for_timeout(1200)
     kd = oget("(id => id && s[P + 'opkomsten/' + id] ? [s[P + 'opkomsten/' + id].days[0].start, s[P + 'opkomsten/' + id].days.at(-1).end, s[P + 'opkomsten/' + id].days.length] : null)(s[P + 'planning/pl-7'].opkId)")
     check(kd == [1140, 900, 3], f'koppelen → Weekendkamp: vrijdag vanaf 19:00 tot zondag 15:00, net als de rij ({kd})')
+    # ingepland kamp in de bouwer: dag erbij → melding en de pdf telt de dagen vanaf de datum (kop en dagkoppen kloppen met elkaar);
+    # Jaarplanning aanpassen trekt de rij gelijk. Eerste dag eraf → de rij begint op de nieuwe eerste dag (Ongedaan maken zet hem terug).
+    q.goto(BASE + '/s/oefen/bouwer/opk-kamp'); q.wait_for_timeout(1200)
+    kr = lambda: oget("[s[P + 'planning/pl-kamp'].date, s[P + 'planning/pl-kamp'].endDate]")
+    k0 = kr(); kf = date.fromisoformat(k0[0]); iso = lambda n: (kf + timedelta(days=n)).isoformat()
+    ktab = lambda i: q.locator('.daytab:not(.add)').nth(i).inner_text()
+    mf = q.locator('.ctx .ctx-misfit'); mft = lambda: mf.inner_text() if mf.count() else ''
+    check(k0 == [iso(0), iso(2)] and mf.count() == 0, f'kamp vr–zo op een rij vr–zo: geen melding ({k0})')
+    q.click('.daytab.add'); q.wait_for_timeout(600)
+    check('Het kamp heeft 4 dagen, de jaarplanning 3' in mft(), f'bouwer: dag toegevoegd aan een ingepland kamp → melding ({mft()!r})')
+    with q.expect_download() as dl: q.click('button:has-text("PDF maken")')
+    dl.value.save_as(f'{OUT}/kamp-dag-erbij.pdf'); T = [t for _, _, t in pdf_texts(f'{OUT}/kamp-dag-erbij.pdf')]
+    mon = kf + timedelta(days=3)
+    check(any(f't/m maandag {mon.day} ' in t for t in T) and not any('t/m zondag' in t for t in T) and any(t.startswith(f'Maandag {mon.day} ') for t in T),
+          f'kamp-pdf met een dag erbij: kop en voettekst t/m maandag {mon.day}, net als de dagkoppen (niet t/m zondag)')
+    mf.locator('button:has-text("Jaarplanning aanpassen")').click(); q.wait_for_timeout(700)
+    check(kr() == [iso(0), iso(3)] and mf.count() == 0, f'Jaarplanning aanpassen: rij t/m maandag ({kr()})')
+    q.locator('.daytab:not(.add)').nth(0).click(); q.wait_for_timeout(200)
+    q.click('.dayacts >> text=Dag verwijderen'); q.wait_for_timeout(150); q.click('.dayacts >> text=Klik nogmaals: dag verwijderen'); q.wait_for_timeout(700)
+    check('Het kamp heeft 3 dagen, de jaarplanning 4' in mft(), f'eerste dag weggehaald: melding, de dagen schuiven niet stil op ({mft()!r}, {ktab(0)!r})')
+    mf.locator('button:has-text("Jaarplanning aanpassen")').click(); q.wait_for_timeout(700)
+    sat = kf + timedelta(days=1)
+    check(kr() == [iso(1), iso(3)] and ktab(0).startswith(f'Zaterdag {sat.day} ') and mf.count() == 0,
+          f'Jaarplanning aanpassen na het weghalen van de vrijdag: de rij begint op zaterdag, het zaterdagprogramma heet weer zaterdag ({kr()}, {ktab(0)!r})')
+    q.click('.toast button:has-text("Ongedaan maken")'); q.wait_for_timeout(600)
+    check(kr() == [iso(0), iso(3)] and 'Het kamp heeft 3 dagen, de jaarplanning 4' in mft(), f'Ongedaan maken: de oude data van de rij terug ({kr()})')
+    mf.locator('button:has-text("Jaarplanning aanpassen")').click(); q.wait_for_timeout(700)
+    # taken per leiding: dag met datum ("za 14"), niet de eerste twee letters van de naam
+    q.click('.side .tabs button:has-text("Controle")'); q.wait_for_timeout(300)
+    wl = [x.strip() for x in q.locator('.who-list .what span').all_inner_texts() if x.strip()]
+    check(wl and all(re.match(r'(ma|di|wo|do|vr|za|zo) \d{1,2} \d\d:\d\d–', x) for x in wl) and any(x.startswith(f'za {sat.day} ') for x in wl),
+          f'bouwer, taken per leiding: kampdag met datum ({wl[:3]})')
+    # dag kopiëren: de kopie van zaterdag heet zondag (de datum), de dagen erna schuiven mee; geen "Zaterdag (kopie)" op een zondag
+    q.locator('.daytab:not(.add)').nth(0).click(); q.wait_for_timeout(200)
+    q.click('.dayacts >> text=Dag kopiëren'); q.wait_for_timeout(600)
+    tabs_k = [ktab(i).split('\n')[0] for i in range(q.locator('.daytab:not(.add)').count())]
+    labels_k = oget("s[P + 'opkomsten/opk-kamp'].days.map(d => d.label)")
+    check(tabs_k[1].startswith(f'Zondag {(sat + timedelta(days=1)).day} ') and not any('kopie' in t for t in tabs_k) and len(set(labels_k)) == len(labels_k) == 4
+          and labels_k == ['Zaterdag', 'Zondag', 'Maandag', 'Dinsdag'], f'dag kopiëren in een kamp: de kopie krijgt de volgende weekdag ({tabs_k}, {labels_k})')
     q.goto(BASE + '/s/oefen/jaarplanning'); q.wait_for_timeout(1000)
     q.evaluate("(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)); s['speltakken/oefen'].groupName = 'Scouting De Voorbeeldgroep'; localStorage.setItem(k, JSON.stringify(s)); })()")
     # nog niets ingevuld voor de komende data

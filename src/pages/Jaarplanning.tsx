@@ -7,7 +7,7 @@ import { openModal } from '../store/modal';
 import { StatusPill, PeopleChips, PageTitle } from '../components/shared';
 import { Chip, ConfirmBtn, Dot } from '../components/ui';
 import { addDays, dayDiff, fmtLong, fmtNL, fmtRange, fmtShort, fmtT, isoWeek, parseNL, plural, todayISO, DAYS, MONTHS } from '../lib/time';
-import { allBlocks, plannersOf, entryStatus, entryTimes, isKamp, letterDue, minNeed, opkCatOf, opkDaysIn, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Row, type Settings } from '../lib/model';
+import { progBlocks, plannersOf, entryStatus, entryTimes, isKamp, letterDue, minNeed, opkCatOf, opkDaysIn, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Row, type Settings } from '../lib/model';
 
 type Range = { from: string; to: string };
 function presetRange(s: Settings, p: string): Range {
@@ -119,7 +119,7 @@ function PlanRow({ r, today }: { r: Row; today: string }) {
   return <div className={cls} id={rowDomId(r.key)}>{dateBtn}
     <div className="pf f-topic"><span className="plabel">Onderwerp</span>{topic}</div>
     <div className="pf f-opk"><span className="plabel">Opkomst</span>{o ? <div className="pcell">
-      <button className="plink" onClick={() => nav(`/s/${sid}/bouwer/${o.id}`)} title="Opkomst openen"><b>{o.title || 'Naamloze opkomst'}</b><span className="hint">{isKamp(o) ? 'kamp · ' : ''}{plural(allBlocks(o).length, 'onderdeel', 'onderdelen')}{minNeed(o) ? ' · min. ' + minNeed(o) : ''}</span>
+      <button className="plink" onClick={() => nav(`/s/${sid}/bouwer/${o.id}`)} title="Opkomst openen"><b>{o.title || 'Naamloze opkomst'}</b><span className="hint">{isKamp(o) ? 'kamp · ' : ''}{plural(progBlocks(o).length, 'onderdeel', 'onderdelen')}{minNeed(o) ? ' · min. ' + minNeed(o) : ''}</span>
         {o.cats.length > 0 && <span className="cdots">{o.cats.map(c => opkCatOf(settings, c)).filter(Boolean).map(c => <Dot key={c!.id} color={c!.color} />)}</span>}</button>
       <StatusPill o={o} />
       {can('build') && <button className="iconbtn" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })} title="Leiding indelen" aria-label={`Leiding indelen ${fmtShort(d)}`}><Users size={15} /></button>}
