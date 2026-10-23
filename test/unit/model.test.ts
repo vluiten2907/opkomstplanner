@@ -201,6 +201,17 @@ test('kampDaysFor en kampLength', () => {
   assert.equal(M.kampLength('2026-10-16', '2026-10-20'), 5);
   assert.equal(M.kampLength('2026-10-01', '2026-12-01'), 14, 'hooguit 14 dagen');
 });
+test('entryTimes: een kamp-rij zonder eigen tijden krijgt de kamptijden, net als een nieuw weekendkamp', () => {
+  const s = S();
+  assert.deepEqual(M.entryTimes(s, plan({ date: '2026-10-16', endDate: '2026-10-18', type: 'kamp' }), null), [M.KAMP_START, M.KAMP_END], 'kamp vr–zo: 19:00 en 15:00');
+  assert.deepEqual(M.entryTimes(s, plan({ date: '2026-10-18', type: 'kamp' }), null), [M.KAMPDAG_START, M.KAMPDAG_END], 'kamp van één dag (zondag): 09:00–17:00');
+  assert.deepEqual(M.entryTimes(s, plan({ date: '2026-10-17', type: 'opkomst' }), null), [s.defStart, s.defEnd], 'gewone opkomst: standaardtijden');
+  assert.deepEqual(M.entryTimes(s, plan({ date: '2026-10-16', type: 'kamp', start: 1080, end: 960 }), null), [1080, 960], 'eigen tijden blijven');
+  assert.deepEqual(M.entryTimes(s, null, null), [s.defStart, s.defEnd]);
+  // de rij en het kamp dat eraan gekoppeld wordt hebben dezelfde tijden
+  const [st, en] = M.defaultTimes(s, 'kamp', '2026-10-16', '2026-10-18'), k = M.kampDaysFor(3, '2026-10-16');
+  assert.deepEqual([k[0].start, k[2].end], [st, en]);
+});
 test('kampStart: een kamp vr–zo op de vaste zaterdag begint op de vrijdag ervoor', () => {
   const k = M.newKamp(S(), 3); // Vrijdag, Zaterdag, Zondag
   assert.equal(M.kampStart(k, '2026-11-07'), '2026-11-06', 'zaterdag → vrijdag ervoor');

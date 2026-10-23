@@ -8,11 +8,13 @@ import { useRoles } from './roles';
 import { createInvite as mkInvite } from './beheer';
 import { addDays, clone, fmtT } from '../lib/time';
 import { toast } from './toast';
-import { hasUnsaved, markQueued, settle, track } from './saving';
-import { ensureLid, normGedeeld, snapshotOf, writeShared, removeShared, sharedId, copyFromShared, countCopy, type Gedeeld } from './groepsbank';
+import { markQueued, settle, track } from './saving';
+import { ensureLid, normGedeeld, snapshotOf, sharedSig, writeShared, removeShared, sharedId, copyFromShared, countCopy, type Gedeeld } from './groepsbank';
 
 type Ctx = {
   sid: string; sp: Speltak | null; loading: boolean; denied: boolean;
+  /** Nog geen antwoord van de server en de speltak staat niet in de cache (offline of slechte verbinding): opnieuw proberen, niet "Geen toegang". */
+  offline: boolean;
   /** Laden mislukt om een andere reden dan rechten (bijv. de daglimiet van de database). */
   loadError: boolean;
   settings: Settings; opks: Opk[]; lib: Lib[]; plans: Plan[];
@@ -94,9 +96,14 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
   // Per bron: nog bezig, binnen, of mislukt. Pagina's tonen pas iets als alle vier klaar zijn (bij echte Firestore komen ze los binnen).
   const [ready, setReady] = useState<Ready>(WAIT);
   const loading = Object.values(ready).includes('wait');
-  // opkomsten echt binnen (niet mislukt): pas dan de groepsbank bijwerken, anders zou alles daar verdwijnen
-  const opksReady = ready.opkomsten === 'ok';
+  // opkomsten echt binnen van de server (niet mislukt, niet alleen een mogelijk onvolledige cache):
+  // pas dan de groepsbank bijwerken, anders zou daar verdwijnen wat (nog) niet in de cache staat
+  const [opksServer, setOpksServer] = useState(false);
+  const opksReady = ready.opkomsten === 'ok' && opksServer;
+  // geen toegang (fout van de server) of de speltak bestaat niet (bevestigd door de server)
   const [denied, setDenied] = useState(false);
+  const [missing, setMissing] = useState(false);
+  const [offline, setOffline] = useState(false);
   const [loadError, setLoadError] = useState(false);
   // lokale, optimistische kopie: wijzigingen tonen direct, opslaan gebeurt met een korte vertraging
   const pending = useRef(new Map<string, { sid: string; kind: string; obj: any; t: any }>());
@@ -107,23 +114,42 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
 
   useEffect(() => {
     if (!user) return;
-    setReady(WAIT); setDenied(false); setLoadError(false);
+    setReady(WAIT); setDenied(false); setMissing(false); setOffline(false); setOpksServer(false);
     const mark = (k: keyof Ready, v: 'ok' | 'fail') => setReady(r => r[k] === v ? r : { ...r, [k]: v });
     // ook bij een fout klaar, anders blijft de pagina eeuwig laden
     const err = (k: keyof Ready) => (e: any) => { if (e?.code === 'permission-denied') setDenied(true); else setLoadError(true); mark(k, 'fail'); };
-    const u1 = onSnapshot(doc(db, 'speltakken', sid), s => {
-      if (!s.exists()) { setSp(null); setDenied(true); mark('sp', 'fail'); return; }
-      setSp(normSpeltak(s.id, s.data()));
+    // Met includeMetadataChanges komt er ook een melding als de server alleen bevestigt wat de cache al zei
+    // (bijv. "bestaat niet"), anders bleef het scherm na "Geen verbinding" hangen.
+    let lastRaw = '';
+    const u1 = onSnapshot(doc(db, 'speltakken', sid), { includeMetadataChanges: true }, s => {
+      if (!s.exists()) {
+        // Offline of slechte verbinding: Firestore meldt eerst "bestaat niet" uit een lege cache. Wachten op de server.
+        if (s.metadata?.fromCache) { setOffline(true); return; }
+        lastRaw = ''; setSp(null); setMissing(true); setOffline(false); mark('sp', 'fail'); return;
+      }
+      setOffline(false); setMissing(false);
+      // alleen de status veranderd (bijv. bevestigd door de server): niets opnieuw tekenen
+      const raw = JSON.stringify(s.data());
+      if (raw !== lastRaw) { lastRaw = raw; setSp(normSpeltak(s.id, s.data())); }
       mark('sp', 'ok');
     }, err('sp'));
-    const sub = (name: 'opkomsten' | 'activiteiten' | 'planning', norm: (x: any) => any, set: (v: any[]) => void) =>
-      onSnapshot(collection(db, 'speltakken', sid, name), s => {
+    const sub = (name: 'opkomsten' | 'activiteiten' | 'planning', norm: (x: any) => any, set: (v: any[]) => void) => {
+      const ref = collection(db, 'speltakken', sid, name);
+      let first = true;
+      const next = (s: F.QuerySnapshot) => {
+        // opkomsten: onthouden wanneer de server ze heeft bevestigd (zie opksReady)
+        if (name === 'opkomsten' && !s.metadata?.fromCache) setOpksServer(true);
+        // alleen de status veranderd: de lijst is hetzelfde gebleven
+        if (!first && typeof s.docChanges === 'function' && s.docChanges().length === 0) return;
+        first = false;
         const map = new Map<string, any>();
         s.docs.forEach(d => map.set(d.id, norm({ ...d.data(), id: d.id })));
         pending.current.forEach(p => { if (p.sid === sid && p.kind === name) map.set(p.obj.id, p.obj); });
         set([...map.values()]);
         mark(name, 'ok');
-      }, err(name));
+      };
+      return name === 'opkomsten' ? onSnapshot(ref, { includeMetadataChanges: true }, next, err(name)) : onSnapshot(ref, next, err(name));
+    };
     const u2 = sub('opkomsten', normOpk, setOpks), u3 = sub('activiteiten', normLib, setLib), u4 = sub('planning', normPlan, setPlans);
     return () => { u1(); u2(); u3(); u4(); };
   }, [sid, user]);
@@ -165,12 +191,11 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
   const flushNow = () => { [...pending.current.keys()].forEach(k => { flush(k); }); };
   const flushAll = () => { flushNow(); return settle(); };
   // Tabblad naar de achtergrond (telefoon: andere app), sluiten of herladen: direct wegschrijven, niet op de vertraging wachten.
-  // Is er dan nog iets onderweg, dan vraagt de browser of je echt weg wilt.
+  // Is er dan nog iets onderweg, dan vraagt de browser of je echt weg wilt (dat regelt saving.ts, ook buiten de speltak).
   useEffect(() => {
     const vis = () => { if (document.visibilityState === 'hidden') flushNow(); };
-    const before = (ev: BeforeUnloadEvent) => { flushNow(); if (hasUnsaved()) { ev.preventDefault(); ev.returnValue = ''; } };
-    window.addEventListener('pagehide', flushNow); document.addEventListener('visibilitychange', vis); window.addEventListener('beforeunload', before);
-    return () => { window.removeEventListener('pagehide', flushNow); document.removeEventListener('visibilitychange', vis); window.removeEventListener('beforeunload', before); };
+    window.addEventListener('pagehide', flushNow); document.addEventListener('visibilitychange', vis); window.addEventListener('beforeunload', flushNow);
+    return () => { window.removeEventListener('pagehide', flushNow); document.removeEventListener('visibilitychange', vis); window.removeEventListener('beforeunload', flushNow); };
   }, []);
 
   const saveOpk = (o: Opk) => { setOpks(a => a.some(x => x.id === o.id) ? a.map(x => x.id === o.id ? o : x) : [...a, o]); queue('opkomsten', o); };
@@ -323,21 +348,23 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
 
   // Eigen bank en groepsbank gelijk houden: gedeelde bank-opkomsten erin, de rest eruit.
   const mayShare = isMemberNow && (can('bank') || can('build'));
-  const inflight = useRef(new Map<string, number>());
+  // wat nu onderweg is naar de groepsbank: handtekening per gedeelde opkomst, of 'del' bij weghalen
+  const inflight = useRef(new Map<string, string>());
   useEffect(() => {
     if (!gid || !shared || !mayShare || loading || !opksReady) return;
     const t = setTimeout(() => {
       const mine = new Map(shared.filter(g => g.sid === sid).map(g => [g.id, g]));
       const want = opks.filter(o => o.state === 'bank' && o.shared);
       want.forEach(o => {
-        const id = sharedId(sid, o.id), cur = mine.get(id);
-        if (cur && cur.updatedAt === o.updatedAt && cur.speltakName === (sp?.name || '')) return;
-        if (inflight.current.get(id) === o.updatedAt) return;
-        inflight.current.set(id, o.updatedAt);
-        writeShared(gid, snapshotOf(o, settings, sid, sp?.name || '')).catch(() => inflight.current.delete(id));
+        // opnieuw delen als de opkomst, de speltaknaam of een gebruikte categorie (naam, kleur) anders is dan in de groepsbank
+        const id = sharedId(sid, o.id), cur = mine.get(id), snap = snapshotOf(o, settings, sid, sp?.name || ''), sig = sharedSig(snap);
+        if (cur && sharedSig(cur) === sig) return;
+        if (inflight.current.get(id) === sig) return;
+        inflight.current.set(id, sig);
+        writeShared(gid, snap).catch(() => {}).finally(() => { if (inflight.current.get(id) === sig) inflight.current.delete(id); });
       });
       const keep = new Set(want.map(o => sharedId(sid, o.id)));
-      mine.forEach((_, id) => { if (!keep.has(id) && !inflight.current.has('del:' + id)) { inflight.current.set('del:' + id, 1); removeShared(gid, id).finally(() => inflight.current.delete('del:' + id)); } });
+      mine.forEach((_, id) => { if (!keep.has(id) && !inflight.current.has('del:' + id)) { inflight.current.set('del:' + id, 'del'); removeShared(gid, id).catch(() => {}).finally(() => inflight.current.delete('del:' + id)); } });
     }, 800);
     return () => clearTimeout(t);
   }, [gid, shared, opks, mayShare, loading, opksReady, sp?.name, settings]);
@@ -352,7 +379,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
   };
 
   const latestRef = useRef<Ctx>(null as any);
-  const value: Ctx = { sid, sp, loading, denied, loadError, flushAll, canLink, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
+  const value: Ctx = { sid, sp, loading, denied: denied || missing, offline, loadError, flushAll, canLink, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
     saveOpk, deleteOpk, removeOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
     getO, latestO, opkOf, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null, practiceFrom,
     latest: () => latestRef.current };

@@ -39,7 +39,8 @@ export function createLocalFs(key: string) {
     db: { local: true } as any,
     doc: (parent: any, ...seg: string[]): any => ({ kind: 'doc', path: join(parent, seg) }),
     collection: (parent: any, ...seg: string[]): any => ({ kind: 'coll', path: join(parent, seg) }),
-    onSnapshot: (ref: any, cb: (s: any) => void, _err?: any) => { const l = () => cb(snap(ref)); listeners.add(l); setTimeout(l, 0); return () => { listeners.delete(l); }; },
+    // zoals Firestore: (ref, cb, fout) of (ref, opties, cb, fout)
+    onSnapshot: (ref: any, a: any, b?: any) => { const cb: (s: any) => void = typeof a === 'function' ? a : b; const l = () => cb(snap(ref)); listeners.add(l); setTimeout(l, 0); return () => { listeners.delete(l); }; },
     setDoc: async (ref: any, data: any) => { const next = {}; Object.entries(data).forEach(([k, v]) => applyKey(next, k, v)); store[ref.path] = next; touch(); persist(); },
     updateDoc: async (ref: any, patch: any) => { if (!(ref.path in store)) throw Object.assign(new Error('not-found'), { code: 'not-found' }); const next = clone(store[ref.path]); Object.entries(patch).forEach(([k, v]) => applyKey(next, k, v)); store[ref.path] = next; touch(); persist(); },
     deleteDoc: async (ref: any) => { delete store[ref.path]; touch(); persist(); },

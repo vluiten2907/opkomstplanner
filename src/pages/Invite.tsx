@@ -7,6 +7,7 @@ import { acceptInvite, alreadyJoined, claimName, forgetInvite, markInviteUsed, n
 import { Field } from '../components/ui';
 import VerifyNote from '../components/VerifyNote';
 import { applyAccent } from '../components/Layout';
+import { safeLogout } from '../store/saving';
 import { auth } from '../lib/firebase';
 import { inviteExpired, inviteWhere, KIND_LABELS, PERM_LABELS, type Invite } from '../lib/types';
 
@@ -165,13 +166,13 @@ export default function InvitePage() {
   if (mine && !verified) return box(<>{intro}
     <VerifyNote box onVerified={join} />
     {errLine}
-    <div className="row"><button className="btn ghost sm" onClick={() => logout()}>Uitloggen</button></div>
+    <div className="row"><button className="btn ghost sm" onClick={() => safeLogout(logout)}>Uitloggen</button></div>
   </>);
   return box(<>{intro}
     {!mine && <p className="hint err">Je bent ingelogd als {user.email}, maar de uitnodiging is voor {inv.email}.</p>}
     {mine && pickField}
     {errLine}
     <div className="row">{mine ? <button className="btn primary" disabled={busy} onClick={join}>Toetreden</button>
-      : <button className="btn primary" onClick={() => logout()}>Uitloggen en opnieuw</button>}<Link className="btn ghost" to="/">Niet nu</Link></div>
+      : <button className="btn primary" onClick={() => safeLogout(logout)}>Uitloggen en opnieuw</button>}<Link className="btn ghost" to="/">Niet nu</Link></div>
   </>);
 }

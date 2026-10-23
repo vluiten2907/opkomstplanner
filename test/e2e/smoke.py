@@ -358,6 +358,52 @@ with sync_playwright() as p:
     pg.click('.side >> text=Inplannen'); w(400); pg.click('.modal >> text=Hier inplannen >> nth=0'); w(600)
     check(pg.locator('.modal h2:has-text("Opkomst overnemen")').count() == 1, 'overnemen uit bank opent overneemvenster')
     pg.click('.modal >> text=Klaar'); w(300)
+    scouts = re.search(r'/s/([^/]+)/', pg.url).group(1)
+
+    # --- groepsbank volgt ook een andere categorienaam en speltaknaam (de opkomst zelf blijft gelijk)
+    shared_sluip = lambda: pg.evaluate("""() => { const s = JSON.parse(localStorage.getItem('fake.firestore'));
+      const k = Object.keys(s).find(k => k.includes('/gedeeld/') && s[k].opk && s[k].opk.title === 'Sluipspel'); return k ? s[k] : null; }""")
+    g0 = shared_sluip()
+    check(g0 is not None and len(g0['catDefs']) >= 1 and g0['speltakName'] == 'Scouts', 'gedeelde opkomst staat in de groepsbank, met speltaknaam en categorie')
+    pg.click('nav >> text=Team & instellingen'); w(500)
+    cat0 = g0['catDefs'][0]['label']
+    cat_in = pg.locator('.catrow input[aria-label="Naam categorie"]').nth(pg.evaluate("l => [...document.querySelectorAll('.catrow input[aria-label=\"Naam categorie\"]')].findIndex(i => i.value === l)", cat0))
+    cat_in.fill(cat0 + ' anders'); pg.fill('#gs-speltak', 'Scouts anders'); pg.locator('#gs-speltak').blur()
+    seen_new = lambda: (lambda g: g and g['speltakName'] == 'Scouts anders' and any(c['label'] == cat0 + ' anders' for c in g['catDefs']))(shared_sluip())
+    check(soon(seen_new, 6000), 'groepsbank: andere categorienaam en speltaknaam komen ook in de gedeelde opkomst')
+    cat_in.fill(cat0); pg.fill('#gs-speltak', 'Scouts'); pg.locator('#gs-speltak').blur()
+    seen_old = lambda: (lambda g: g and g['speltakName'] == 'Scouts' and any(c['label'] == cat0 for c in g['catDefs']))(shared_sluip())
+    check(soon(seen_old, 6000), 'groepsbank: en weer terug (geen oude stand blijven hangen)')
+
+    # --- speltak openen zonder verbinding: Firestore meldt eerst "bestaat niet" uit een lege cache → Geen verbinding, niet Geen toegang
+    pg.evaluate("localStorage.setItem('fake.offlineFirst', '4000')"); pg.reload()
+    check(soon(lambda: pg.locator('.auth-card h2:text-is("Geen verbinding")').count() == 1, 2500) and pg.locator('text=Geen toegang').count() == 0
+          and pg.evaluate("localStorage.getItem('opk.sid')") == scouts, 'speltak openen zonder verbinding: melding Geen verbinding, niet Geen toegang; de laatste speltak blijft onthouden')
+    shot('40-geen-verbinding', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(150)
+    check(pg.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'melding Geen verbinding mobiel: geen horizontale scroll'); shot('40b-geen-verbinding-mobiel', False)
+    pg.set_viewport_size({'width': 1360, 'height': 900})
+    check(soon(lambda: pg.locator('header.bar').count() == 1 and pg.locator('.auth-card').count() == 0, 6000), 'verbinding terug: de speltak laadt vanzelf (geen Geen toegang die blijft staan)')
+    pg.evaluate("localStorage.removeItem('fake.offlineFirst')")
+    pg.goto(BASE + '/s/bestaatniet/dashboard'); w(800)
+    check(pg.locator('.auth-card h2:text-is("Geen toegang")').count() == 1, 'speltak die niet bestaat: Geen toegang')
+    pg.goto(BASE + f'/s/{scouts}/dashboard'); w(900)
+
+    # --- opslaan duurt lang (trage verbinding) en je verlaat de speltak: ook daarbuiten waarschuwt de browser bij sluiten, en Uitloggen wacht
+    leave_warns = "(() => { const e = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; })()"
+    pg.evaluate("localStorage.setItem('fake.holdWrite', '6000')")
+    pg.click('nav >> text=Opkomstbouwer'); w(300); pg.click('text=Nieuwe opkomst'); w(300); pg.fill('#om-title', 'Trage verbinding')
+    pg.click('header.bar .acct .btn'); pg.click('.menu >> text=Andere speltak'); w(200)
+    check('/speltakken' in pg.url and pg.evaluate(leave_warns), 'speltak verlaten terwijl er nog iets wordt opgeslagen: ook op Mijn speltakken waarschuwt de browser bij sluiten')
+    pg.click('.page-head button:has-text("Uitloggen")')
+    check(soon(lambda: pg.locator('.toast button:has-text("Toch uitloggen")').count() == 1, 5000) and '/speltakken' in pg.url,
+          'uitloggen op Mijn speltakken terwijl er nog iets wordt opgeslagen: eerst een melding met Toch uitloggen')
+    shot('41-uitloggen-wacht', False)
+    check(soon(lambda: not pg.evaluate(leave_warns), 9000) and pg.evaluate("Object.values(JSON.parse(localStorage.getItem('fake.firestore'))).some(d => d && d.title === 'Trage verbinding')"),
+          'daarna alsnog opgeslagen: geen waarschuwing meer')
+    pg.evaluate("localStorage.removeItem('fake.holdWrite')")
+    pg.goto(BASE + f'/s/{scouts}/bouwer'); w(900)
+    pg.click('.pick:has-text("Trage verbinding") >> button:has-text("Verwijderen")'); w(200); pg.click('.pick:has-text("Trage verbinding") >> text=Klik nogmaals'); w(700)
 
     # --- jaarplanning: datum controleren, eigen tijden bij koppelen, iedereen afwezig, weekendkamp op zaterdag
     prow = lambda i: pg.locator('.prow:not(.head)').nth(i)
@@ -954,6 +1000,11 @@ with sync_playwright() as p:
     with pg.expect_download() as dl: pg.click('button:has-text("PDF maken")')
     dl.value.save_as(f'{OUT}/tekens.pdf')
     check(any('Lukasz en Sükrü -> v spel' in t for _, _, t in pdf_texts(f'{OUT}/tekens.pdf')), 'pdf: Ł, Ş, → en ✔ blijven leesbaar (Lukasz en Sükrü -> v spel)')
+    # ontbonden accent (e + losse ´, bijv. geplakt of van een Mac): blijft é, niet e
+    pg.fill('#om-title', 'Spel met Rene\u0301e'); w(700)
+    with pg.expect_download() as dl: pg.click('button:has-text("PDF maken")')
+    dl.value.save_as(f'{OUT}/accent.pdf')
+    check(any('Spel met Renée' in t for _, _, t in pdf_texts(f'{OUT}/accent.pdf')), 'pdf: ontbonden accent blijft staan (Renée, niet Renee)')
     pg.fill('#om-title', 'Mijn oefenopkomst'); w(700)
     oefen_set = lambda js: pg.evaluate("(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)); " + js + "; localStorage.setItem(k, JSON.stringify(s)); })()")
     oefen_get = lambda js: pg.evaluate("(() => { const s = JSON.parse(localStorage.getItem('opk.oefen.v1')); return " + js + "; })()")
@@ -1099,9 +1150,40 @@ with sync_playwright() as p:
     backup = json.dumps({'version': 4, 'opks': [], 'plans': [], 'lib': [{'id': 'lib-backup', 'title': 'Uit de back-up'}],
                          'settings': {'defStart': st0 + 60, 'categories': [{'id': 'cat-backup', 'label': 'Uit de back-up', 'color': '#2D7A4F'}]}}).encode()
     pg.set_input_files('input[type=file][accept=".json,application/json"]', files=[{'name': 'backup.json', 'mimeType': 'application/json', 'buffer': backup}])
-    check(soon(lambda: oefen_get("!!s['speltakken/oefen/activiteiten/lib-backup']")) and 'Back-up teruggezet: 1 items toegevoegd.' in pg.locator('.toast').inner_text(), 'back-up terugzetten: activiteit toegevoegd')
+    check(soon(lambda: oefen_get("!!s['speltakken/oefen/activiteiten/lib-backup']")) and 'Back-up teruggezet: 1 nieuw.' in pg.locator('.toast').inner_text(), 'back-up terugzetten: activiteit toegevoegd')
     check(soon(lambda: oefen_get("s['speltakken/oefen'].settings.categories.some(c => c.id === 'cat-backup')")) and oefen_get("s['speltakken/oefen'].settings.defStart") == st0
           and oefen_get("Object.keys(s).filter(k => k.startsWith('speltakken/oefen/opkomsten/')).length") == n_opk, 'back-up terugzetten: categorie erbij, eigen tijden en opkomsten blijven')
+    # dezelfde back-up terugzetten nadat een opkomst is aangepast: de nieuwe versie blijft staan, de melding zegt wat er al was
+    pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(1000)
+    jt0 = pg.input_value('#om-title'); pg.fill('#om-title', 'Nieuwe titel na back-up'); w(900)
+    pg.goto(BASE + '/s/oefen/instellingen'); w(1000)
+    restore_file = lambda data: pg.set_input_files('input[type=file][accept=".json,application/json"]', files=[{'name': 'backup.json', 'mimeType': 'application/json', 'buffer': json.dumps(data).encode()}])
+    restore_file(bk)
+    check(soon(lambda: 'Back-up teruggezet: 0 nieuw' in pg.locator('.toast').inner_text()) and re.search(r'\d+ al aanwezig \(overgeslagen\)', pg.locator('.toast').inner_text())
+          and 'toegevoegd' not in pg.locator('.toast').inner_text(), f'back-up terugzetten over bestaande gegevens: 0 nieuw, de rest al aanwezig ({pg.locator(".toast").inner_text()})')
+    w(900)
+    check(oefen_get("s['speltakken/oefen/opkomsten/opk-jungle'].title") == 'Nieuwe titel na back-up', 'back-up terugzetten: een opkomst die daarna is aangepast blijft zoals hij nu is')
+    shot('42-backup-teruggezet', False)
+    # dezelfde back-up met andere ids (bijv. uit een andere speltak) op een gevulde planning: de data zijn bezet,
+    # dus de ingeplande opkomsten komen bij de concepten in plaats van onzichtbaar te worden
+    bk2 = json.loads(json.dumps(bk)); bk2['lib'] = []
+    for o_ in bk2['opks']: o_['id'] = 'x-' + o_['id']
+    for p_ in bk2['plans']: p_['id'] = 'x-' + p_['id']; p_['opkId'] = 'x-' + p_['opkId'] if p_.get('opkId') else None
+    loose = [p_ for p_ in bk2['plans'] if not p_.get('slot')]
+    linked_x = {p_['opkId'] for p_ in loose if p_.get('opkId')}
+    exp_new, exp_taken = len(bk2['opks']) + len(loose), len(bk2['plans']) - len(loose)
+    exp_drafts = sum(1 for o_ in bk2['opks'] if o_.get('state') == 'planned' and o_['id'] not in linked_x)
+    restore_file(bk2)
+    soon(lambda: 'Back-up teruggezet' in pg.locator('.toast').inner_text()); rt = pg.locator('.toast').inner_text()
+    check(rt.startswith(f'Back-up teruggezet: {exp_new} nieuw, {exp_taken} data al bezet (overgeslagen).') and f'{exp_drafts} opkomsten zonder datum bij de concepten gezet' in rt and exp_drafts >= 3,
+          f'back-up op bezette data: melding met nieuw, bezet en concepten ({rt})')
+    w(900)
+    check(oefen_get("s['speltakken/oefen/opkomsten/x-opk-jungle'].state") == 'draft' and oefen_get("s['speltakken/oefen/opkomsten/x-opk-kamp'].state") == 'draft'
+          and oefen_get("Object.keys(s).filter(k => k.startsWith('speltakken/oefen/planning/x-')).length") == len(loose), 'back-up op bezette data: ingeplande opkomsten staan bij de concepten, geen dubbele rijen')
+    pg.goto(BASE + '/s/oefen/bouwer'); w(1000)
+    check(pg.locator('.pick:has-text("Winterweekend")').count() >= 1, 'back-up op bezette data: het kamp is te zien bij de concepten')
+    oefen_set("Object.keys(s).filter(k => k.includes('/x-')).forEach(k => delete s[k])")
+    pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(1000); pg.fill('#om-title', jt0); w(900)
     # extra datum toevoegen en de rij weer leegmaken
     pg.goto(BASE + '/s/oefen/jaarplanning'); w(1000); pg.click('.presets >> text=Komende 3 maanden'); w(300)
     pg.click('button:has-text("Extra datum")')
@@ -1630,6 +1712,13 @@ with sync_playwright() as p:
     with q.expect_download() as dl: q.click('button:has-text("PDF maken")')
     dl.value.save_as(f'{OUT}/kamp-1-dag.pdf'); T = pdf_texts(f'{OUT}/kamp-1-dag.pdf')
     check(any(t.startswith('1 dag  ·') for _, _, t in T) and not any('1 dagen' in t for _, _, t in T), 'kamp-pdf van één dag: "1 dag", niet "1 dagen"')
+    # pdf van een bank-opkomst: de bank heeft nooit namen, dus geen regel "Verantwoordelijk: nog niemand ingevuld"; Minimaal leiding blijft
+    check(any(t == 'VERANTWOORDELIJK' for _, _, t in pdf_texts(f'{OUT}/voettekst.pdf')), 'pdf van een ingeplande opkomst: regel Verantwoordelijk staat er')
+    q.goto(BASE + '/s/oefen/bouwer/opk-bank-knopen'); q.wait_for_timeout(1200)
+    with q.expect_download() as dl: q.click('button:has-text("PDF maken")')
+    dl.value.save_as(f'{OUT}/bank.pdf'); T = pdf_texts(f'{OUT}/bank.pdf')
+    check(not any('VERANTWOORDELIJK' in t or 'nog niemand ingevuld' in t for _, _, t in T) and sum(1 for _, _, t in T if t == 'MINIMAAL LEIDING') >= 2,
+          'pdf van een bank-opkomst: geen regel Verantwoordelijk, wel Minimaal leiding')
     # eerste vrije moment: de opkomst is vol en er staat een onderdeel na het einde → geen moment na de eindtijd
     q.goto(BASE + '/s/oefen/bouwer/opk-vol'); q.wait_for_timeout(1200)
     q.click('.lib:has-text("Trefbal") button:has-text("Inplannen")'); q.wait_for_timeout(400)
@@ -1657,6 +1746,26 @@ with sync_playwright() as p:
     q.click('.modal >> text=Opslaan'); q.wait_for_timeout(400)
     tt = q.locator('.toast').inner_text()
     check('Het kamp heeft 3 dagen, de jaarplanning 2' in tt, f'datum van een kamp opslaan terwijl de lengte niet past: melding ({tt})')
+    # kamp-rij zonder eigen tijden: vertrek en terug volgen de soort (zoals een nieuw weekendkamp), niet de opkomsttijden
+    q.click('.presets >> text=Komende 3 maanden'); q.wait_for_timeout(300)
+    brow = q.locator('.prow:not(.head)').nth(q.evaluate("[...document.querySelectorAll('.prow:not(.head)')].findIndex(r => r.querySelector('.ptopic')?.value === 'Bosspel met de Scouts')"))
+    md_times = lambda: [q.locator(f'.modal .field:has(> label:text-is("{l}")) {c}').input_value() for l in ('Begintijd / vertrek', 'Eindtijd / terug') for c in ('.tp-h', '.tp-m')]
+    brow.locator('.pdate').click(); q.wait_for_timeout(300); kt0 = md_times()
+    q.click('.modal .seg .chip:has-text("Kamp / weekend")'); q.wait_for_timeout(150); kt1 = md_times()
+    q.click('.modal .seg .chip:text-is("Opkomst")'); q.wait_for_timeout(150); kt2 = md_times()
+    q.click('.modal .chip:has-text("Weekend vr–zo")'); q.wait_for_timeout(150); kt3 = md_times()
+    check(kt1 == ['19', '0', '15', '0'] and kt2 == kt0 and kt3 == kt1, f'datum en soort: Kamp / weekend stelt vertrek 19:00 en terug 15:00 voor, terug naar Opkomst weer de opkomsttijden ({kt0}, {kt1}, {kt2}, {kt3})')
+    q.screenshot(path=f'{OUT}/43-kamp-tijden.png')
+    q.set_viewport_size({'width': 390, 'height': 844}); q.wait_for_timeout(200)
+    check(q.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'datum en soort (kamp) mobiel: geen horizontale scroll'); q.screenshot(path=f'{OUT}/43b-kamp-tijden-mobiel.png')
+    q.set_viewport_size({'width': 1360, 'height': 900}); q.wait_for_timeout(200)
+    q.click('.modal >> text=Opslaan'); q.wait_for_timeout(900)
+    oget = lambda js: q.evaluate("(() => { const s = JSON.parse(localStorage.getItem('opk.oefen.v1')), P = 'speltakken/oefen/'; return " + js + "; })()")
+    check(oget("[s[P + 'planning/pl-7'].type, s[P + 'planning/pl-7'].start, s[P + 'planning/pl-7'].end]") == ['kamp', 1140, 900], 'kamp-rij opgeslagen met vertrek 19:00 en terug 15:00')
+    brow.locator('.btn:has-text("Koppelen")').click(); q.wait_for_timeout(300); q.click('.modal >> text=Weekendkamp'); q.wait_for_timeout(1200)
+    kd = oget("(id => id && s[P + 'opkomsten/' + id] ? [s[P + 'opkomsten/' + id].days[0].start, s[P + 'opkomsten/' + id].days.at(-1).end, s[P + 'opkomsten/' + id].days.length] : null)(s[P + 'planning/pl-7'].opkId)")
+    check(kd == [1140, 900, 3], f'koppelen → Weekendkamp: vrijdag vanaf 19:00 tot zondag 15:00, net als de rij ({kd})')
+    q.goto(BASE + '/s/oefen/jaarplanning'); q.wait_for_timeout(1000)
     q.evaluate("(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)); s['speltakken/oefen'].groupName = 'Scouting De Voorbeeldgroep'; localStorage.setItem(k, JSON.stringify(s)); })()")
     # nog niets ingevuld voor de komende data
     q.goto(BASE + '/s/oefen/dashboard'); q.wait_for_timeout(1000)

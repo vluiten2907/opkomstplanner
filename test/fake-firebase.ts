@@ -99,7 +99,12 @@ function invitesDenied(ref: Ref) {
   return !(sp && (sp.memberIds || []).includes(u) && (Array.isArray(sp.tlIds) ? sp.tlIds.includes(u) : sp.members?.[u]?.role === 'teamleider'));
 }
 const rootDenied = (ref: Ref) => ref.kind === 'doc' && ref.path === 'beheer/totaal' && ref.path in store && !(current && inRoot(current.uid));
-export function onSnapshot(ref: Ref, cb: (s: any) => void, onErr?: (e: any) => void) {
+// Testhaak 'fake.offlineFirst' = ms: een speltak komt eerst als "bestaat niet" uit een lege cache (zoals Firestore offline doet),
+// pas na ms het echte document (de verbinding is terug). Alleen voor de rooktest.
+const offlineFirst = (ref: Ref) => ref.kind === 'doc' && /^speltakken\/[^/]+$/.test(ref.path) ? Number(localStorage.getItem('fake.offlineFirst')) || 0 : 0;
+// Zoals Firestore: onSnapshot(ref, cb, onErr) of onSnapshot(ref, opties, cb, onErr).
+export function onSnapshot(ref: Ref, a: any, b?: any, c?: any) {
+  const [cb, onErr]: [(s: any) => void, ((e: any) => void) | undefined] = typeof a === 'function' ? [a, b] : [b, c];
   const f = failCode('fake.failListen', ref.path);
   if (f) { const t = setTimeout(() => onErr?.(failErr(f)), 0); return () => clearTimeout(t); }
   if (invitesDenied(ref)) { const t = setTimeout(() => onErr?.(err('permission-denied')), 0); return () => clearTimeout(t); }
@@ -108,6 +113,12 @@ export function onSnapshot(ref: Ref, cb: (s: any) => void, onErr?: (e: any) => v
     listeners.add(g); setTimeout(() => { if (listeners.has(g)) g(); }, 0); return () => listeners.delete(g);
   }
   const l = () => cb(snap(ref));
+  const off = offlineFirst(ref);
+  if (off) {
+    const t0 = setTimeout(() => cb({ id: ref.path.split('/').pop(), exists: () => false, data: () => undefined, metadata: { fromCache: true } }), 0);
+    const t = setTimeout(() => { listeners.add(l); l(); }, off);
+    return () => { clearTimeout(t0); clearTimeout(t); listeners.delete(l); };
+  }
   // Testhaak 'fake.delayListen' = ms: lijsten in een speltak komen later binnen, zoals bij echte Firestore (los van het speltakdocument).
   const d = ref.kind === 'coll' ? Number(failCode('fake.delayListen', ref.path)) || 0 : 0;
   if (d) { const t = setTimeout(() => { listeners.add(l); l(); }, d); return () => { clearTimeout(t); listeners.delete(l); }; }
@@ -115,12 +126,15 @@ export function onSnapshot(ref: Ref, cb: (s: any) => void, onErr?: (e: any) => v
 }
 export async function getDoc(ref: Ref) { return snap(ref); }
 export async function getDocs(ref: Ref) { if (invitesDenied(ref)) throw err('permission-denied'); return snap(ref); }
+// Testhaak 'fake.holdWrite' = ms: schrijven in een speltak duurt zo lang (trage of geen verbinding). Alleen voor de rooktest.
+const hold = async (path: string) => { const ms = Number(failCode('fake.holdWrite', path)) || 0; if (ms) await new Promise(r => setTimeout(r, ms)); };
 export async function setDoc(ref: Ref, data: any, opts?: { merge?: boolean }) {
   const f = failCode('fake.failWrite', ref.path); if (f) throw failErr(f);
+  await hold(ref.path);
   const cur = opts?.merge && store[ref.path] ? store[ref.path] : {};
   const next = clone(cur); Object.entries(data).forEach(([k, v]) => applyKey(next, k, v)); store[ref.path] = next; persist();
 }
-export async function updateDoc(ref: Ref, patch: any) { const f = failCode('fake.failWrite', ref.path); if (f) throw failErr(f); if (!(ref.path in store)) throw err('not-found'); const next = clone(store[ref.path]); Object.entries(patch).forEach(([k, v]) => applyKey(next, k, v)); store[ref.path] = next; persist(); }
+export async function updateDoc(ref: Ref, patch: any) { const f = failCode('fake.failWrite', ref.path); if (f) throw failErr(f); await hold(ref.path); if (!(ref.path in store)) throw err('not-found'); const next = clone(store[ref.path]); Object.entries(patch).forEach(([k, v]) => applyKey(next, k, v)); store[ref.path] = next; persist(); }
 export async function deleteDoc(ref: Ref) { delete store[ref.path]; persist(); }
 export function writeBatch() {
   const ops: (() => Promise<void>)[] = [];

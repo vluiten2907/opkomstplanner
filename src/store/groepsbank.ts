@@ -38,6 +38,13 @@ export function snapshotOf(o: Opk, s: Settings, sid: string, speltakName: string
   return { sid, oid: o.id, speltakName, catDefs, opk, updatedAt: o.updatedAt };
 }
 
+/**
+ * Handtekening van wat er gedeeld wordt: versie, speltaknaam en de gebruikte categorieën (naam en kleur).
+ * Zelf opgebouwd (niet JSON van het hele object), zodat wat Firestore teruggeeft hetzelfde oplevert als wat we schreven.
+ */
+export const sharedSig = (x: { updatedAt: number; speltakName: string; catDefs: Cat[] }) =>
+  [x.updatedAt, x.speltakName || '', ...(x.catDefs || []).map(c => c.id + '|' + c.label + '|' + c.color)].join('\n');
+
 export async function writeShared(gid: string, data: ReturnType<typeof snapshotOf>) {
   const ref = doc(db, 'groepen', gid, 'gedeeld', sharedId(data.sid, data.oid));
   await setDoc(ref, clone(data), { merge: true });

@@ -8,7 +8,7 @@ import { PageTitle } from '../components/shared';
 import { Chip, ConfirmBtn, Field, TimePicker, useDebouncedInput } from '../components/ui';
 import { download, slugify } from '../lib/export';
 import { fmtNL, fmtT, plural, todayISO, uid, DAYS, MONTHS } from '../lib/time';
-import { ACCENTS, normLib, normOpk, normPlan, normSettings, prepLabel, PREP_OPTS, SPELTAKKEN, SWATCHES, type Settings } from '../lib/model';
+import { ACCENTS, normLib, normOpk, normPlan, normSettings, prepLabel, PREP_OPTS, SPELTAKKEN, SWATCHES, type Opk, type Plan, type Settings } from '../lib/model';
 import { ALL_PERMS, DEFAULT_LEIDING_PERMS, PERM_HELP, PERM_LABELS, isTeamleider, type Invite, type Member, type PermKey, type Perms } from '../lib/types';
 import { ensureTlIds, inviteOnce, isEmail, releaseOwnName, removeGroupAdmin, renewInvite, setGroupAdmin, setTeamleider, stepDownTeamleider, transferJoiners, transferTeamleider } from '../store/beheer';
 import { useRoles } from '../store/roles';
@@ -93,7 +93,7 @@ export default function Instellingen() {
           download('opkomstplanner-' + (settings.groupName ? slugify(settings.groupName).slice(0, 40) + '-' : '') + 'backup-' + fmtNL(todayISO()) + '.json', new Blob([data], { type: 'application/json' }), 'Back-up gedownload');
         }}><Download size={16} />Back-up maken</button>{edit && can('build') && <Restore />}</div>
         <p className="hint">{plural(opks.length, 'opkomst', 'opkomsten')} · {plural(lib.length, 'activiteit', 'activiteiten')} · {plural(plans.length, 'datum in de planning', 'data in de planning')}</p>
-        {edit && <p className="hint">Een back-up uit de losse (offline) Opkomstplanner kun je hier ook terugzetten: alles wordt aan deze speltak toegevoegd.</p>}
+        {edit && <p className="hint">Terugzetten vult alleen aan: wat al in deze speltak staat, blijft zoals het is. Ook een back-up uit de losse (offline) Opkomstplanner kan.</p>}
         {!isTL && S.isMember && <Leave />}
       </section>
     </div>
@@ -149,8 +149,13 @@ function AddRow({ placeholder, onAdd }: { placeholder: string; onAdd: (v: string
 }
 
 /* ---------- Back-up terugzetten (ook uit de losse versie) ---------- */
+/**
+ * Terugzetten vult alleen aan: wat er al is (zelfde id) blijft zoals het nu is, ook als het in de back-up anders staat,
+ * en een vaste opkomstdag die al een eigen rij heeft ook. Een ingeplande opkomst waarvan de datum zo niet terugkomt,
+ * komt bij de concepten (anders stond hij nergens).
+ */
 function Restore() {
-  const { settings, saveSettings, saveLib, saveOpk, savePlan, opks, plans, can } = useSpeltak();
+  const { saveSettings, saveLib, saveOpk, savePlan, can, latest } = useSpeltak();
   const ref = useRef<HTMLInputElement>(null);
   const restore = (f: File | undefined) => {
     if (!f) return; const rd = new FileReader();
@@ -158,7 +163,9 @@ function Restore() {
       try {
         const d = JSON.parse(String(rd.result));
         if (!(d && d.version === 4 && Array.isArray(d.opks) && Array.isArray(d.plans))) { toast('Dit is geen back-up van de Opkomstplanner.'); return; }
-        const s = normSettings(d.settings || {}), fresh = !opks.length && !plans.length;
+        // de nieuwste stand van de speltak (het bestand lezen duurt even)
+        const L = latest(), settings = L.settings;
+        const s = normSettings(d.settings || {}), fresh = !L.opks.length && !L.plans.length;
         saveSettings(cur => {
           const merged: Partial<Settings> = {
             categories: [...cur.categories, ...s.categories.filter(c => !cur.categories.some(x => x.id === c.id))],
@@ -168,12 +175,40 @@ function Restore() {
           if (fresh && s.logo) Object.assign(merged, { logo: s.logo, logoW: s.logoW, logoH: s.logoH });
           return merged;
         });
+        let added = 0, present = 0, taken = 0, drafts = 0;
         // de activiteitenbank alleen met het recht Banken (zo staat het ook in de regels)
         const libs: any[] = Array.isArray(d.lib) ? d.lib : [], skipLib = libs.length > 0 && !can('bank');
-        if (!skipLib) libs.forEach((x: any) => saveLib(normLib(x)));
-        d.opks.forEach((x: any) => saveOpk(normOpk(x, settings)));
-        d.plans.forEach((x: any) => { const p = normPlan(x); if (!plans.some(q => q.id !== p.id && (q.slot && q.slot === p.slot))) savePlan(p); });
-        toast(`Back-up teruggezet: ${(skipLib ? 0 : libs.length) + d.opks.length + d.plans.length} items toegevoegd.` + (skipLib ? ' Activiteiten overgeslagen: daarvoor heb je het recht Banken nodig.' : ''));
+        const haveL = new Set(L.lib.map(l => l.id)), haveO = new Set(L.opks.map(o => o.id)), haveP = new Set(L.plans.map(p => p.id));
+        if (!skipLib) libs.forEach((x: any) => { const l = normLib(x); if (haveL.has(l.id)) { present++; return; } haveL.add(l.id); saveLib(l); added++; });
+        // planning: eerst bepalen welke rijen er echt bij komen
+        const slots = new Set(L.plans.map(p => p.slot).filter(Boolean)), rows: Plan[] = [];
+        d.plans.forEach((x: any) => {
+          const p = normPlan(x);
+          if (haveP.has(p.id)) { present++; return; }
+          if (p.slot && slots.has(p.slot)) { taken++; return; }
+          haveP.add(p.id); if (p.slot) slots.add(p.slot); rows.push(p);
+        });
+        // opkomsten: een ingeplande opkomst hoort bij een rij; is die er niet (overgeslagen of nooit), dan wordt het een concept
+        const linked = new Set([...L.plans, ...rows].map(p => p.opkId).filter(Boolean));
+        const newOpks = new Map<string, Opk>();
+        d.opks.forEach((x: any) => {
+          const o = normOpk(x, settings);
+          if (haveO.has(o.id)) { present++; return; }
+          haveO.add(o.id);
+          if (o.state === 'planned' && !linked.has(o.id)) { o.state = 'draft'; drafts++; }
+          newOpks.set(o.id, o); saveOpk(o); added++;
+        });
+        // een nieuwe rij wijst alleen naar een opkomst die ingepland is en nog bij geen andere rij hoort
+        rows.forEach(p => {
+          if (p.opkId) {
+            const o = newOpks.get(p.opkId) || L.opks.find(x => x.id === p.opkId);
+            if (!o || o.state !== 'planned' || L.plans.some(q => q.opkId === p.opkId)) p.opkId = null;
+          }
+          savePlan(p); added++;
+        });
+        const parts = [`${added} nieuw`, ...(present ? [`${present} al aanwezig (overgeslagen)`] : []), ...(taken ? [`${plural(taken, 'datum', 'data')} al bezet (overgeslagen)`] : [])];
+        toast(`Back-up teruggezet: ${parts.join(', ')}.` + (drafts ? ` ${plural(drafts, 'opkomst', 'opkomsten')} zonder datum bij de concepten gezet.` : '')
+          + (skipLib ? ' Activiteiten overgeslagen: daarvoor heb je het recht Banken nodig.' : ''), undefined, present || taken || drafts || skipLib ? 9000 : undefined);
       } catch { toast('Dit bestand kan niet worden gelezen.'); }
     };
     rd.readAsText(f);

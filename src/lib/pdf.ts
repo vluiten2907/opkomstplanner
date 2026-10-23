@@ -12,7 +12,7 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
   // Tekens buiten Latin-1 kent het standaardfont niet: terugvallen op de basisletter (Ş → S, ğ → g), anders weglaten (emoji).
   const ALT = { 'Ł': 'L', 'ł': 'l', 'ı': 'i', 'İ': 'I', 'Đ': 'D', 'đ': 'd', '→': '->', '←': '<-', '✓': 'v', '✔': 'v' };
   const base = ch => { if (ALT[ch]) return ALT[ch]; const b = ch.normalize('NFD')[0]; return b && b.charCodeAt(0) <= 255 ? b : ''; };
-  const clean = s => Array.from(String(s == null ? '' : s).replace(/\t/g, ' ')).map(ch => ch.charCodeAt(0) <= 255 || keep.includes(ch) ? ch : base(ch)).join('');
+  const clean = s => Array.from(String(s == null ? '' : s).normalize('NFC').replace(/\t/g, ' ')).map(ch => ch.charCodeAt(0) <= 255 || keep.includes(ch) ? ch : base(ch)).join('');
   const lh = pt => pt * 0.3528 * 1.28;
   const font = (style, size, rgb) => { doc.setFont('helvetica', style); doc.setFontSize(size); doc.setTextColor(...(rgb || INK)); };
   const wrap = (text, width, max) => {
@@ -247,7 +247,8 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
     };
     metaRow('Categorie', c.label);
     metaRow('Locatie', b.location || 'niet ingevuld');
-    metaRow('Verantwoordelijk', splitNames(b.names).join(', ') || 'nog niemand ingevuld');
+    // de opkomstenbank heeft nooit namen: daar geen lege regel 'Verantwoordelijk'
+    if (!O.noNames) metaRow('Verantwoordelijk', splitNames(b.names).join(', ') || 'nog niemand ingevuld');
     metaRow('Minimaal leiding', String(b.minLeaders || 0));
     y += 4;
     const cont = () => { newPage(); font('italic', 8.5, MUTED); doc.text('vervolg ' + clean(b.title || ''), M, y + 3); y += 7; };

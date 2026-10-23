@@ -169,12 +169,19 @@ export function fitsTopic(o: Pick<Opk, 'title' | 'short'>, topic: string) {
   const t = (topic || '').toLowerCase(), own = (o.title + ' ' + o.short).toLowerCase();
   return topicWords(t, 3).some(w => own.includes(w)) || (!!t.trim() && topicWords(o.title, 4).some(w => t.includes(w)));
 }
+/** Standaardtijden van een kamp zonder eigen tijden: meer dagen vertrek 19:00 en terug 15:00, één dag 09:00–17:00. */
+export const KAMP_START = 19 * 60, KAMP_END = 15 * 60, KAMPDAG_START = 9 * 60, KAMPDAG_END = 17 * 60;
+export const kampTimes = (n: number): [number, number] => n > 1 ? [KAMP_START, KAMP_END] : [KAMPDAG_START, KAMPDAG_END];
+/** Tijden van een rij in de jaarplanning zonder eigen tijden: een kamp de kamptijden, anders de standaard opkomsttijden. */
+export function defaultTimes(s: Settings, type: Plan['type'], date: string, endDate?: string | null): [number, number] {
+  return type === 'kamp' ? kampTimes(kampLength(date, endDate)) : [s.defStart, s.defEnd];
+}
 export function kampDaysFor(n: number, firstISO: string | null, st?: number | null, en?: number | null): Day[] {
-  const out: Day[] = [];
+  const out: Day[] = [], [dSt, dEn] = kampTimes(n);
   for (let i = 0; i < n; i++) {
     const lbl = firstISO ? cap(DAYS[fromISO(addDays(firstISO, i)).getDay()]) : ['Vrijdag', 'Zaterdag', 'Zondag', 'Maandag', 'Dinsdag', 'Woensdag', 'Donderdag'][i % 7];
     const first = i === 0, last = i === n - 1;
-    out.push(normDay({ label: lbl, start: first ? (st != null ? st : (n > 1 ? 19 * 60 : 9 * 60)) : 8 * 60, end: last ? (en != null && en > (first ? (st || 0) : 480) ? en : (n > 1 ? 15 * 60 : 17 * 60)) : 23 * 60 }, i));
+    out.push(normDay({ label: lbl, start: first ? (st != null ? st : dSt) : 8 * 60, end: last ? (en != null && en > (first ? (st || 0) : 480) ? en : dEn) : 23 * 60 }, i));
   }
   return out;
 }
@@ -397,7 +404,7 @@ export function rowsIn(s: Settings, plans: Plan[], from: string, to: string): Ro
 export function entryTimes(s: Settings, e: Plan | null, o: Opk | null): [number, number] {
   if (o) return [o.start, o.end];
   if (e && e.start != null && e.end != null) return [e.start, e.end];
-  return [s.defStart, s.defEnd];
+  return e ? defaultTimes(s, e.type, e.date, e.endDate) : [s.defStart, s.defEnd];
 }
 export const letterDue = (s: Settings, e: Plan) => e.letter.due || addDays(e.date, -s.letterDays);
 /**
