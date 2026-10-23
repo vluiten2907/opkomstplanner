@@ -8,7 +8,7 @@ import { openModal, withFreeName } from '../store/modal';
 import { BankCard, Strip, CatTags, PageTitle, SaveBar } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field } from '../components/ui';
 import { fmtDur, fmtT, plural } from '../lib/time';
-import { allBlocks, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, newOpk, opkCatList, opkCatOf, toBank, type Cat, type Opk } from '../lib/model';
+import { allBlocks, byTitle, catOf, copyOpk, freeName, isFixed, isKamp, nameTaken, minNeed, newOpk, opkCatList, opkCatOf, toBank, type Cat, type Opk } from '../lib/model';
 import type { Gedeeld } from '../store/groepsbank';
 
 type Tab = 'own' | 'group';
@@ -25,9 +25,10 @@ export default function Opkomstenbank() {
   const g = groupOn && tab === 'group';
   const catLabel = cat ? opkCatOf(settings, cat)?.label || '' : '';
 
-  // eigen bank
-  const bank = opks.filter(o => o.state === 'bank' && (!cat || o.cats.includes(cat)) && (!ql || (o.title + ' ' + o.short).toLowerCase().includes(ql))).sort(byTitle);
-  const drafts = opks.filter(o => o.state === 'draft').sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  // eigen bank: zoeken in titel, beschrijving, locatie en onderdelen; concepten volgen zoeken en filter ook
+  const hit = (o: Opk) => (!cat || o.cats.includes(cat)) && (!ql || searchText(o).includes(ql));
+  const bank = opks.filter(o => o.state === 'bank' && hit(o)).sort(byTitle);
+  const drafts = opks.filter(o => o.state === 'draft' && hit(o)).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   const uses: Record<string, number> = {};
   opks.forEach(o => { if (o.state === 'planned' && o.srcId) uses[o.srcId] = (uses[o.srcId] || 0) + 1; });
   const own = opks.filter(o => o.state === 'bank');
@@ -40,7 +41,7 @@ export default function Opkomstenbank() {
   const speltakken = [...new Map(others.map(x => [x.sid, x.speltakName || 'Speltak'])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'nl'));
   const labelsOf = (x: Gedeeld) => x.opk.cats.map(id => (x.catDefs.find(c => c.id === id) || opkCatOf(settings, id))?.label?.toLowerCase());
   const groupList = others.filter(x => (!from || x.sid === from) && (!cat || labelsOf(x).includes(catLabel.toLowerCase()))
-    && (!ql || (x.opk.title + ' ' + x.opk.short + ' ' + x.speltakName).toLowerCase().includes(ql)))
+    && (!ql || (searchText(x.opk) + ' ' + x.speltakName.toLowerCase()).includes(ql)))
     .sort((a, b) => byTitle(a.opk, b.opk));
   // alleen wat nu in de eigen bank staat telt (een ingeplande kopie of een concept houdt fromShared ook)
   const copied = new Set(opks.filter(o => o.state === 'bank' && o.fromShared).map(o => o.fromShared!));
@@ -51,7 +52,14 @@ export default function Opkomstenbank() {
   const doCopy = (x: Gedeeld) => withFreeName(x.opk.title, {
     title: 'Andere naam kiezen', sub: `"${x.opk.title || 'Naamloos'}" staat al in jullie opkomstenbank. Geef de kopie een andere naam.`, label: 'Opkomst titel', okLabel: 'Kopieer naar onze bank',
     suggest: freeName(own, x.opk.title), taken: n => taken(n),
-    ok: name => { const o = importShared(x, name); toast(`"${o.title || 'Opkomst'}" staat nu in jullie opkomstenbank`); setTab('own'); setSelRaw(o.id); },
+    ok: name => {
+      const { opk: o, dropped } = importShared(x, name);
+      const t = `"${o.title || 'Opkomst'}" staat nu in jullie opkomstenbank`;
+      // zonder recht Instellingen komen categorieën die jullie nog niet hebben er niet bij: zeg dat, met de namen
+      if (!dropped.length) toast(t);
+      else toast(t + '. ' + (dropped.length === 1 ? `Categorie ${dropped[0]} bestaat` : `${dropped.length} categorieën (${dropped.join(', ')}) bestaan`) + ' bij jullie nog niet; die onderdelen staan zonder categorie.', undefined, 8000);
+      setTab('own'); setSelRaw(o.id);
+    },
   });
   const draftToBank = (o: Opk) => withFreeName(o.title, {
     title: 'Andere naam kiezen', sub: o.title.trim() ? `"${o.title.trim()}" staat al in de opkomstenbank. Kies een andere naam.` : 'Geef de opkomst een titel voor de bank.', label: 'Opkomst titel', okLabel: 'In bank zetten',
@@ -93,7 +101,8 @@ export default function Opkomstenbank() {
             {t.short && <span className="bs">{t.short}</span>}
             <span className="hint">{uses[t.id] ? `${uses[t.id]}× ingepland` : 'Nog niet ingepland'}</span>
           </button></BankCard>)}</div>
-            : <div className="empty"><span>{total ? 'Niets gevonden.' : 'Nog leeg. Bewaar een opkomst met "In bank".'}</span></div>}
+            : !total ? <div className="empty"><span>Nog leeg. Bewaar een opkomst met "In bank".</span></div>
+              : !drafts.length && <div className="empty"><span>Niets gevonden.</span></div>}
           {drafts.length > 0 && <section className="stack"><h2>Concepten</h2>
             <div className="picklist">{drafts.map(o => <div key={o.id} className="pick"><div className="info"><b>{o.title || 'Naamloze opkomst'}</b><span className="hint">{isKamp(o) ? 'Weekendkamp · ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(allBlocks(o).length, 'onderdeel', 'onderdelen')}</span></div>
               <div className="row"><button className="btn sm primary" onClick={() => nav(`/s/${sid}/bouwer/${o.id}`)}>Openen</button>
@@ -110,6 +119,11 @@ export default function Opkomstenbank() {
   </div>;
 }
 
+/** Waarin gezocht wordt: titel, beschrijving, locatie en de onderdelen (zonder de vaste blokken). */
+function searchText(o: Opk) {
+  return [o.title, o.short, o.location, ...allBlocks(o).filter(b => !isFixed(b)).map(b => b.title)].join(' ').toLowerCase();
+}
+
 function CardMeta({ o, noGroup }: { o: Opk; noGroup?: boolean }) {
   return <span className="bm">{isKamp(o) ? <span className="pill kamp">Kamp · {plural(o.days.length, 'dag', 'dagen')}</span> : <span className="mono">{fmtT(o.start)}–{fmtT(o.end)}</span>}<span>{plural(allBlocks(o).length, 'onderdeel', 'onderdelen')}</span>{minNeed(o) ? <span>min. {minNeed(o)} leiding</span> : null}{!noGroup && o.group && <span>{o.group}</span>}</span>;
 }
@@ -120,7 +134,7 @@ function BlockList({ o, cats }: { o: Opk; cats?: Cat[] }) {
   return <>
     <h3 className="gap-lg">{isKamp(o) ? 'Weekendkamp, ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(bl.length, 'onderdeel', 'onderdelen')}</h3>
     <ul className="tblocks">{bl.map(b => <li key={b.id}><span className="mono">{fmtT(b.start)}</span><Dot color={(cats?.find(c => c.id === b.cat) || catOf(settings, b.cat)).color} />
-      <span><b>{b.title || 'Naamloos'}</b><small>{b._dl ? b._dl + ' · ' : ''}{fmtDur(b.dur)} · min. {b.minLeaders} leiding{b.location ? ' · ' + b.location : ''}</small></span></li>)}</ul>
+      <span><b>{b.title || 'Naamloos'}</b><small>{b._dl ? b._dl + ' · ' : ''}{fmtDur(b.dur)}{b.minLeaders > 0 ? ` · min. ${b.minLeaders} leiding` : ''}{b.location ? ' · ' + b.location : ''}</small></span></li>)}</ul>
   </>;
 }
 

@@ -58,8 +58,10 @@ type Ctx = {
   practice: boolean;
   /** Oefenomgeving: voorbeelddata terugzetten. */
   resetPractice: (() => void) | null;
-  /** Gedeelde opkomst als kopie in de eigen opkomstenbank zetten. */
-  importShared: (g: Gedeeld, title?: string) => Opk;
+  /** Oefenomgeving: datum (ISO) van voorbeelddata die achterloopt, anders null. */
+  practiceFrom: string | null;
+  /** Gedeelde opkomst als kopie in de eigen opkomstenbank zetten; `dropped`: categorieën die je nog niet hebt en niet mag toevoegen. */
+  importShared: (g: Gedeeld, title?: string) => { opk: Opk; dropped: string[] };
 };
 const C = createContext<Ctx>(null as any);
 
@@ -80,7 +82,7 @@ export type Backend = { db: any; collection: typeof F.collection; doc: typeof F.
   deleteDoc: typeof F.deleteDoc; updateDoc: typeof F.updateDoc; arrayRemove: typeof F.arrayRemove; deleteField: typeof F.deleteField };
 const REMOTE: Backend = { db, collection: F.collection, doc: F.doc, onSnapshot: F.onSnapshot, setDoc: F.setDoc, deleteDoc: F.deleteDoc, updateDoc: F.updateDoc, arrayRemove: F.arrayRemove, deleteField: F.deleteField };
 
-export function SpeltakProvider({ sid, children, backend, practice = false, onReset }: { sid: string; children: ReactNode; backend?: Backend; practice?: boolean; onReset?: () => void }) {
+export function SpeltakProvider({ sid, children, backend, practice = false, practiceFrom = null, onReset }: { sid: string; children: ReactNode; backend?: Backend; practice?: boolean; practiceFrom?: string | null; onReset?: () => void }) {
   const { user } = useAuth();
   const { collection, doc, onSnapshot, setDoc, deleteDoc, updateDoc, arrayRemove, deleteField, db } = backend || REMOTE;
   const [sp, setSp] = useState<Speltak | null>(null);
@@ -332,17 +334,17 @@ export function SpeltakProvider({ sid, children, backend, practice = false, onRe
   }, [gid, shared, opks, mayShare, loading, opksReady, sp?.name, settings]);
 
   const importShared = (g: Gedeeld, title?: string) => {
-    const { opk, add } = copyFromShared(g, settings, can('settings'));
+    const { opk, add, dropped } = copyFromShared(g, settings, can('settings'));
     if (title) opk.title = title;
     if (add.length) saveSettings(s => ({ categories: [...s.categories, ...add.filter(a => !s.categories.some(c => c.id === a.id))] }));
     saveOpk(opk);
     if (gid) countCopy(gid, g.id).catch(() => {});
-    return opk;
+    return { opk, dropped };
   };
 
   const value: Ctx = { sid, sp, loading, denied, loadError, flushAll, canLink, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
     saveOpk, deleteOpk, removeOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
-    getO, latestO, opkOf, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null };
+    getO, latestO, opkOf, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null, practiceFrom };
   return <C.Provider value={value}>{children}</C.Provider>;
 }
 export const useSpeltak = () => useContext(C);

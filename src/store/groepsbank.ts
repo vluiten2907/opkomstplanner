@@ -57,15 +57,17 @@ const sameLabel = (a: string, b: string) => a.trim().toLowerCase() === b.trim().
 
 /**
  * Kopie voor de eigen opkomstenbank. Categorieën worden op naam gekoppeld;
- * categorieën die je nog niet hebt komen in `add` (alleen toevoegen als je instellingen mag wijzigen).
+ * categorieën die je nog niet hebt komen in `add` (alleen toevoegen als je instellingen mag wijzigen),
+ * anders vallen ze weg: hun namen staan in `dropped`.
  */
-export function copyFromShared(g: Gedeeld, s: Settings, canAddCats: boolean): { opk: Opk; add: Cat[] } {
+export function copyFromShared(g: Gedeeld, s: Settings, canAddCats: boolean): { opk: Opk; add: Cat[]; dropped: string[] } {
   const add: Cat[] = [];
+  const dropped: string[] = [];
   const map = new Map<string, string>();
   g.catDefs.forEach(c => {
     const mine = [...s.categories, ...OPK_EXTRA].find(x => sameLabel(x.label, c.label));
     if (mine) { map.set(c.id, mine.id); return; }
-    if (!canAddCats) { map.set(c.id, ''); return; }
+    if (!canAddCats) { map.set(c.id, ''); if (c.label && !dropped.includes(c.label)) dropped.push(c.label); return; }
     const id = s.categories.some(x => x.id === c.id) ? mkId() : c.id;
     add.push({ id, label: c.label, color: c.color }); map.set(c.id, id);
   });
@@ -76,5 +78,5 @@ export function copyFromShared(g: Gedeeld, s: Settings, canAddCats: boolean): { 
   o.cats = o.cats.map(conv).filter(Boolean);
   o.days.forEach(d => d.id = mkId());
   allBlocks(o).forEach(b => { b.id = mkId(); b.names = []; b.libId = null; b.cat = conv(b.cat); });
-  return { opk: o, add };
+  return { opk: o, add, dropped };
 }

@@ -597,6 +597,8 @@ with sync_playwright() as p:
     check(pg.locator('.invrow:has-text("lid@test.nl")').count() == 1, 'beheerder van de groep (geen teamleider) ziet in Team de openstaande uitnodigingen')
 
     # --- groepsbank: tweede speltak in dezelfde groep kopieert een gedeelde opkomst
+    def sid_of(name):
+        return pg.evaluate("n => { const s = JSON.parse(localStorage.getItem('fake.firestore')); return Object.keys(s).find(k => k.split('/').length === 2 && k.startsWith('speltakken/') && s[k].name === n).split('/')[1]; }", name)
     pg.goto(BASE + '/beheer'); w(900); open_group()
     open_sp('Welpen')
     pg.fill('input[placeholder="e-mailadres teamleider"]', 'wim@test.nl'); pg.click('text=Teamleider uitnodigen'); w(800)
@@ -608,8 +610,15 @@ with sync_playwright() as p:
     card = pg.locator('.bcard:has-text("Sluipspel")')
     check(card.count() == 1 and 'Scouts' in card.inner_text(), 'groepsbank toont gedeelde opkomst van andere speltak')
     shot('10-groepsbank')
+    pg.fill('.toolbar input[type=search]', 'sluipen'); w(200)
+    check(card.count() == 1 and pg.locator('.empty:has-text("Niets gevonden.")').count() == 0, 'groepsbank: zoeken vindt ook een onderdeel (Sluipen in Sluipspel)')
+    pg.fill('.toolbar input[type=search]', 'xyzzy'); w(200)
+    check(pg.locator('.bcard').count() == 0 and pg.locator('.empty:has-text("Niets gevonden.")').count() == 1, 'groepsbank: zoeken zonder treffer → Niets gevonden.')
+    pg.fill('.toolbar input[type=search]', ''); w(200)
     card.click(); w(300)
     check('Vincent' not in pg.locator('.side').inner_text(), 'groepsbank toont geen namen van leiding')
+    tb = pg.locator('.side .tblocks')
+    check('Openen' in tb.inner_text() and 'min.' not in tb.locator('li:has-text("Openen")').inner_text() and 'min. 0' not in tb.inner_text(), 'groepsbank: onderdelen zonder "min. 0 leiding" bij de vaste blokken')
     pg.click('.side >> text=Kopieer naar onze bank'); w(900)
     check(pg.locator('.tabs.page [aria-selected=true]:has-text("Onze bank")').count() == 1 and pg.locator('.bcard:has-text("Sluipspel")').count() == 1, 'kopie staat in de eigen opkomstenbank')
     check(not pg.locator('#tf-share').is_checked(), 'kopie uit de groep wordt niet opnieuw gedeeld')
@@ -629,11 +638,33 @@ with sync_playwright() as p:
           'groepsbank: kopie uit de eigen bank gehaald (ingeplande kopie blijft) → niet meer "Al in onze bank"')
     pg.click('.bcard:has-text("Sluipspel")'); w(300)
     check(pg.locator('.side button:has-text("Kopieer naar onze bank")').count() == 1 and pg.locator('.side >> text=staat al in jullie opkomstenbank').count() == 0, 'groepsbank: opnieuw kopiëren zonder extra klik')
-    pg.click('.side .closex'); w(200)
+    # zonder recht Instellingen: een categorie die jullie nog niet hebben valt weg, en de melding zegt welke
+    welpen = sid_of('Welpen')
+    fsjs = "JSON.parse(localStorage.getItem('fake.firestore'))"
+    gk = pg.evaluate("() => { const s = " + fsjs + "; return Object.keys(s).find(k => k.includes('/gedeeld/') && s[k].opk && s[k].opk.title === 'Sluipspel'); }")
+    sp0, g0 = pg.evaluate("([sid, gk]) => { const s = " + fsjs + "; return [s['speltakken/' + sid], s[gk]]; }", [welpen, gk])
+    pg.evaluate("""([sid, gk, sp, g]) => {
+      const u = Object.keys(sp.members).find(k => sp.members[k].name === 'Wim Welp');
+      window.__fakeRemote('speltakken/' + sid, { ...sp, tlIds: [], members: { ...sp.members, [u]: { ...sp.members[u], role: 'leiding', perms: { plan: false, build: false, bank: true, settings: false } } } });
+      window.__fakeRemote(gk, { ...g, catDefs: [...g.catDefs, { id: 'cat-sluipen', label: 'Sluipen', color: '#7A4F2D' }],
+        opk: { ...g.opk, blocks: g.opk.blocks.map(b => b.title === 'Sluipen' ? { ...b, cat: 'cat-sluipen' } : b) } }); }""", [welpen, gk, sp0, g0]); w(600)
+    pg.click('.side >> text=Kopieer naar onze bank'); w(900)
+    copy_of = "sid => { const s = " + fsjs + "; return Object.keys(s).find(k => k.startsWith('speltakken/' + sid + '/opkomsten/') && s[k].state === 'bank' && s[k].title === 'Sluipspel'); }"
+    ck = pg.evaluate(copy_of, welpen)
+    check(ck is not None and pg.evaluate("k => " + fsjs + "[k].blocks.find(b => b.title === 'Sluipen').cat", ck) == ''
+          and not pg.evaluate("sid => " + fsjs + "['speltakken/' + sid].settings.categories.some(c => c.label === 'Sluipen')", welpen)
+          and 'Categorie Sluipen bestaat bij jullie nog niet; die onderdelen staan zonder categorie.' in pg.locator('.toast').inner_text(),
+          'kopie uit de groep zonder recht Instellingen: melding welke categorie bij jullie nog niet bestaat')
+    shot('12b-groepsbank-categorie-weg', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'melding categorie weg mobiel: geen horizontale scroll'); shot('12c-groepsbank-categorie-weg-mobiel', False)
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    # terugzetten: Wim weer teamleider, kopie weg, gedeelde opkomst zonder de extra categorie
+    pg.evaluate("""([sid, gk, sp, g, ck]) => { const s = JSON.parse(localStorage.getItem('fake.firestore'));
+      window.__fakeRemote(ck, null); window.__fakeRemote('speltakken/' + sid, sp); window.__fakeRemote(gk, { ...s[gk], catDefs: g.catDefs, opk: g.opk }); }""", [welpen, gk, sp0, g0, ck]); w(600)
+    pg.click('.tabs.page >> text=Groep'); w(400)
 
     # --- rol overdragen: de opvolger komt binnen als leiding met alle rechten, daarna draagt de teamleider zelf over
-    def sid_of(name):
-        return pg.evaluate("n => { const s = JSON.parse(localStorage.getItem('fake.firestore')); return Object.keys(s).find(k => k.split('/').length === 2 && k.startsWith('speltakken/') && s[k].name === n).split('/')[1]; }", name)
     no_hscroll = lambda: pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')
     pg.click('nav >> text=Team & instellingen'); w(500)
     pg.fill('.invite input[type=email]', 'olga@test.nl'); pg.click('.invite .chip:has-text("Mijn rol overdragen")'); w(200)
@@ -947,6 +978,27 @@ with sync_playwright() as p:
     pg.click('.toast.show button:has-text("Ongedaan maken")'); w(900)
     check(gone and pg.locator('.pick:has-text("Sinterklaasopkomst")').count() == 1 and oefen_get("s['speltakken/oefen/opkomsten/opk-sint'].state") == 'draft',
           'concept verwijderd: Ongedaan maken zet hem terug (zelfde opkomst, opgeslagen)')
+    # zoeken in de opkomstenbank: ook in onderdelen en locatie; concepten volgen zoeken en filter
+    srch = pg.locator('.toolbar input[type=search]')
+    nothing = lambda: pg.locator('.empty:has-text("Niets gevonden.")').count()
+    srch.fill('landenquiz'); w(200)
+    check(pg.locator('.bank-grid .bcard').count() == 1 and pg.locator('.bcard:has-text("Rond de wereld")').count() == 1 and pg.locator('h2:text-is("Concepten")').count() == 0 and nothing() == 0,
+          'opkomstenbank: zoeken vindt een onderdeel (Landenquiz in Rond de wereld), concepten zonder treffer weg')
+    srch.fill('pietendiploma'); w(200)
+    check(pg.locator('.bank-grid .bcard').count() == 0 and pg.locator('.pick:has-text("Sinterklaasopkomst")').count() == 1 and nothing() == 0, 'opkomstenbank: zoeken vindt ook concepten, zonder "Niets gevonden." erboven')
+    shot('15d-bank-zoeken-concept', False)
+    srch.fill('xyzzy'); w(200)
+    check(nothing() == 1 and pg.locator('.pick').count() == 0, 'opkomstenbank: niets gevonden, ook geen concepten')
+    srch.fill(''); w(200)
+    intl = oefen_get("s['speltakken/oefen'].settings.categories.find(c => c.id === 'internationaal').label")
+    pg.locator('.catfilter .chip', has_text=intl).first.click(); w(200)
+    check(pg.locator('.bcard:has-text("Rond de wereld")').count() == 1 and pg.locator('.pick').count() == 0, 'opkomstenbank: filter op categorie geldt ook voor concepten')
+    pg.locator('.catfilter .chip:text-is("Alle")').click(); w(200)
+    pg.click('.bcard:has-text("Rond de wereld")'); w(300)
+    tb = pg.locator('.side .tblocks')
+    check('min. 1 leiding' in tb.locator('li:has-text("Landenquiz")').inner_text() and all('min.' not in tb.locator(f'li:has-text("{t}")').inner_text() for t in ('Openen', 'Ranja drinken', 'Sluiten')),
+          'opkomstenbank: onderdelenlijst zonder "min. 0 leiding" bij Openen, Ranja drinken en Sluiten')
+    pg.click('.side .closex'); w(200)
     # back-up maken en terugzetten: wordt aangevuld, bestaande gegevens blijven
     pg.goto(BASE + '/s/oefen/instellingen'); w(1000)
     with pg.expect_download() as dl: pg.click('button:has-text("Back-up maken")')
@@ -1066,6 +1118,35 @@ with sync_playwright() as p:
     pg.click('.toast.show button:has-text("Weggooien")'); w(1800)
     pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(900)
     check(pg.input_value('#om-title') == 'Junglejacht en stratego' and 'Levend stratego XYZ' not in titles() and 'Levend stratego' in ' '.join(titles()), 'oefenomgeving: opnieuw beginnen zet voorbeelddata terug')
+    # voorbeelddata van vorige week: niets aan veranderd → stil vernieuwd; wel veranderd → blijft staan en de oefenbalk meldt het
+    today, old = date.today(), date.today() - timedelta(days=10)
+    oefen_meta = lambda: pg.evaluate("JSON.parse(localStorage.getItem('opk.oefen.v1.meta'))")
+    set_meta = lambda m: pg.evaluate("m => m ? localStorage.setItem('opk.oefen.v1.meta', JSON.stringify(m)) : localStorage.removeItem('opk.oefen.v1.meta')", m)
+    jt = "s['speltakken/oefen/opkomsten/opk-jungle'].title"
+    check(oefen_meta()['made'] == today.isoformat(), 'oefenomgeving: voorbeelddata onthoudt van wanneer hij is')
+    oefen_set(jt + " = 'Oude titel'"); set_meta({'made': old.isoformat(), 'touched': False})
+    pg.goto(BASE + '/s/oefen/dashboard'); w(1200)
+    check(oefen_get(jt) == 'Junglejacht en stratego' and oefen_meta() == {'made': today.isoformat(), 'touched': False} and pg.locator('.oefenbar:has-text("loopt achter")').count() == 0,
+          'oefenomgeving: voorbeelddata van vorige week zonder wijzigingen → stil vernieuwd')
+    MAANDEN = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december']
+    oefen_set(jt + " = 'Mijn eigen titel'"); set_meta({'made': old.isoformat(), 'touched': True})
+    pg.goto(BASE + '/s/oefen/dashboard'); w(1200)
+    bar = pg.locator('.oefenbar')
+    check(oefen_get(jt) == 'Mijn eigen titel' and f'van {old.day} {MAANDEN[old.month - 1]} en loopt achter' in bar.inner_text(),
+          'oefenomgeving: oude voorbeelddata met wijzigingen blijft staan, de oefenbalk zegt van wanneer hij is')
+    shot('13d-oefenen-oud', False)
+    pg.set_viewport_size({'width': 390, 'height': 800}); w(200)
+    check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'oefenbalk met oude voorbeelddata mobiel: geen horizontale scroll'); shot('13e-oefenen-oud-mobiel', False)
+    pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
+    pg.click('.oefenbar button:has-text("Opnieuw beginnen")'); w(200); pg.click('.oefenbar >> text=Klik nogmaals: alles terugzetten'); w(1800)
+    check(oefen_get(jt) == 'Junglejacht en stratego' and pg.locator('.oefenbar:has-text("loopt achter")').count() == 0 and oefen_meta()['made'] == today.isoformat(),
+          'oefenomgeving: opnieuw beginnen zet verse voorbeelddata neer, melding weg')
+    # oudere opslag zonder datum: niets weggooien, wel melden als de speltak al een week oud is
+    set_meta(None); oefen_set("s['speltakken/oefen'].createdAt = Date.now() - 10 * 864e5; " + jt + " = 'Van vroeger'")
+    pg.goto(BASE + '/s/oefen/dashboard'); w(1200)
+    check(oefen_get(jt) == 'Van vroeger' and pg.locator('.oefenbar:has-text("loopt achter")').count() == 1, 'oefenomgeving: oudere opslag zonder datum blijft staan, met de melding')
+    pg.click('.oefenbar button:has-text("Opnieuw beginnen")'); w(200); pg.click('.oefenbar >> text=Klik nogmaals: alles terugzetten'); w(1800)
+    pg.goto(BASE + '/s/oefen/bouwer/opk-jungle'); w(900)
     pg.click('button[aria-label="Account"]'); w(200); pg.click('.menu >> text=Opnieuw beginnen'); w(200)
     check(pg.locator('.menu button:has-text("Klik nogmaals: alles terugzetten")').count() == 1 and pg.locator('.loading').count() == 0, 'accountmenu: opnieuw beginnen vraagt eerst bevestiging')
     pg.click('button[aria-label="Account"]'); w(200)

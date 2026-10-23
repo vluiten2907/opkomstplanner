@@ -5,6 +5,7 @@ import { useRoles } from '../store/roles';
 import { useAuth } from '../store/auth';
 import { useSpeltak } from '../store/speltak';
 import { ACCENTS } from '../lib/model';
+import { fromISO, MONTHS } from '../lib/time';
 import ModalHost from './ModalHost';
 import { ConfirmBtn } from './ui';
 import VerifyNote from './VerifyNote';
@@ -33,7 +34,7 @@ export function applyAccent(accent: string) {
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
-  const { sp, sid, loading, denied, loadError, settings, isTL, isAdmin, isMember, myName, practice, resetPractice, flushAll } = useSpeltak();
+  const { sp, sid, loading, denied, loadError, settings, isTL, isAdmin, isMember, myName, practice, resetPractice, practiceFrom, flushAll } = useSpeltak();
   const { online, queued, busy } = useSaving();
   const roles = useRoles();
   const team = isTL || isAdmin;
@@ -82,7 +83,9 @@ export default function Layout({ children }: { children: ReactNode }) {
         </div>}
       </div>
     </header>
-    {practice && <div className="demobar oefenbar"><span><GraduationCap size={16} style={{ verticalAlign: -3, marginRight: 6 }} /><b>Oefenomgeving.</b> Dit is voorbeelddata. Probeer gerust alles uit: wat je verandert, blijft alleen in deze browser.</span>
+    {practice && <div className="demobar oefenbar"><span><GraduationCap size={16} style={{ verticalAlign: -3, marginRight: 6 }} /><b>Oefenomgeving.</b> {practiceFrom
+      ? <>Deze voorbeelddata is van {fromISO(practiceFrom).getDate()} {MONTHS[fromISO(practiceFrom).getMonth()]} en loopt achter. Opnieuw beginnen zet alles weer rond vandaag; je wijzigingen gaan dan weg.</>
+      : 'Dit is voorbeelddata. Probeer gerust alles uit: wat je verandert, blijft alleen in deze browser.'}</span>
       <div className="row"><ConfirmBtn className="btn sm" label={<><RotateCcw size={14} />Opnieuw beginnen</>} confirm="Klik nogmaals: alles terugzetten" onConfirm={reset} /><button className="btn sm primary" onClick={() => guardLeave(() => nav('/'))}>Stoppen</button></div></div>}
     {practice && <div className="watermark on" aria-hidden="true"><div><b>OEFENEN</b><span>voorbeelddata · niet echt</span></div></div>}
     {!online && <div className="banknote offnote" role="status"><span><CloudOff size={15} style={{ verticalAlign: -3, marginRight: 6 }} /><b>Geen verbinding.</b> {queued + busy > 0 ? 'Je wijzigingen worden opgeslagen zodra je weer online bent. Sluit dit tabblad nog niet.' : 'Wat je verandert, wordt opgeslagen zodra je weer online bent.'}</span></div>}
