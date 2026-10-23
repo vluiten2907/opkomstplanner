@@ -6,7 +6,7 @@ import { toast } from '../store/toast';
 import { Modal, TimePicker, Field, Chip, ConfirmBtn, useMedia } from './ui';
 import { PickOpk } from './shared';
 import { addDays, clone, fmtLong, fmtNL, fmtRange, parseNL, tidyNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, plural, todayISO } from '../lib/time';
-import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, entryTimes, firstFree, fitsTopic, fixedBlocks, isKamp, kampLength, kampStart, lanesLayout, minNeed, newEntry, newKamp, newOpk, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
+import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, entryTimes, firstFree, fitsTopic, fixedBlocks, isKamp, kampLength, kampMismatch, kampMismatchNote, kampStart, lanesLayout, minNeed, newEntry, newKamp, newOpk, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
 import { Ticks, PrepZones, blkGeom, blkLabel, lanesStyle } from './timeline';
 import type { NameSpec } from '../store/modal';
 
@@ -40,9 +40,11 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
       if (!canOpk) { toast(NO_UNLINK); return; }
       unlinkEntry(en2); en2.opkId = null; toast('De gekoppelde opkomst staat nu bij de concepten.');
     }
-    // verzet kamp: dagen die een weekdag heten volgen de nieuwe datum
+    // verzet kamp: dagen die een weekdag heten volgen de nieuwe datum; past de lengte niet meer bij de rij, dan een melding
+    const misfit = linked && en2.opkId && isKamp(linked) ? kampMismatchNote(linked, en2.date, en2.endDate) : '';
     if (linked && en2.opkId && isKamp(linked) && can('build')) { const c = clone(linked); if (relabelDays(c, iso)) saveOpk(c); }
     savePlan(en2); onSaved?.(en2); onClose();
+    if (misfit) toast(misfit, undefined, 8000);
   };
   const clear = () => { if (!e) { onClose(); return; } if (e.opkId && !canOpk) { toast(NO_UNLINK); return; } if (e.opkId) unlinkEntry(e); deletePlan(e.id); onClose(); toast('Rij leeggemaakt'); };
   return <Modal title="Datum en soort" sub={slot ? 'Vaste ' + DAYS[settings.opkDay] + ': ' + fmtLong(slot) : 'Extra datum'} onClose={onClose}>
@@ -175,7 +177,8 @@ export function LinkModal({ keyId, onClose, onTakeover }: { keyId: string; onClo
     <h3 className="gap-lg">Uit de opkomstenbank</h3>
     {bank.length ? <div className="picklist">{bank.map(o => <PickOpk key={o.id} o={o} label="Kiezen" kicker={fitTag(o)} onPick={() => { const en = { ...entryFor(keyId) }; const linked = linkOpk(o, en, true, false); onClose(); onTakeover(linked.id, true); offerPlanTimes(linked, en); }} />)}</div>
       : <div className="empty">{allBank.length ? 'Niets gevonden in de opkomstenbank.' : 'De opkomstenbank is nog leeg.'}</div>}
-    {(drafts.length > 0 || (ql && allDrafts.length > 0)) && <><h3 className="gap-lg">Concepten</h3>{drafts.length ? <div className="picklist">{drafts.map(o => <PickOpk key={o.id} o={o} label="Kiezen" kicker={fitTag(o)} onPick={() => { const en = { ...entryFor(keyId) }; linkOpk(o, en, false, true); onClose(); if (!offerPlanTimes(o, en, 'Gekoppeld.')) toast('Gekoppeld', { label: 'Opkomst openen', fn: () => nav(`/s/${sid}/bouwer/${o.id}`) }); }} />)}</div>
+    {(drafts.length > 0 || (ql && allDrafts.length > 0)) && <><h3 className="gap-lg">Concepten</h3>{drafts.length ? <div className="picklist">{drafts.map(o => <PickOpk key={o.id} o={o} label="Kiezen" kicker={fitTag(o)} onPick={() => { const en = { ...entryFor(keyId) }; linkOpk(o, en, false, true); onClose(); const note = kampMismatchNote(o, en.date, en.endDate);
+        if (!offerPlanTimes(o, en, 'Gekoppeld.')) toast(note ? 'Gekoppeld. ' + note : 'Gekoppeld', { label: 'Opkomst openen', fn: () => nav(`/s/${sid}/bouwer/${o.id}`) }, note ? 9000 : undefined); }} />)}</div>
       : <p className="hint">Geen concepten gevonden.</p>}</>}
   </Modal>;
 }
@@ -189,10 +192,11 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
   const [custom, setCustom] = useState('');
   // Vanuit de bouwer blijft de ingedeelde leiding staan; alleen uit de bank komt een kopie zonder namen.
   const keep = o.state !== 'bank';
-  // een kamp loopt over meer dagen: toon het bereik zoals het wordt ingepland (vr–zo op de vaste zaterdag, zie linkOpk)
+  // een kamp loopt over meer dagen: toon het bereik zoals het wordt ingepland (vr–zo op de vaste zaterdag, zie linkOpk).
+  // Met "tot en met" tellen de dagen vanaf de datum, ook als de rij korter of langer is dan het kamp (dat staat er dan bij).
   const shown = (d: string, end: string | null | undefined) => {
-    if (!isKamp(o) || end) return fmtRange(d, end, true);
-    const s = kampStart(o, d); return fmtRange(s, o.days.length > 1 ? addDays(s, o.days.length - 1) : '', true);
+    if (!isKamp(o)) return fmtRange(d, end, true);
+    const s = end ? d : kampStart(o, d); return fmtRange(s, o.days.length > 1 ? addDays(s, o.days.length - 1) : '', true);
   };
   const go = (e: Plan) => {
     if (e.opkId) { toast('Op die datum staat al een opkomst. Ontkoppel die eerst in de jaarplanning.'); return; }
@@ -202,13 +206,14 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
     const linked = linkOpk(o, en, o.state !== 'draft', keep);
     onClose();
     if (fromBank) { onTakeover(linked.id, true); offerPlanTimes(linked, en); return; }
-    const msg = 'Ingepland op ' + fmtRange(en.date, en.endDate, true);
+    const msg = 'Ingepland op ' + fmtRange(en.date, en.endDate, true), note = kampMismatchNote(linked, en.date, en.endDate);
     if (offerPlanTimes(linked, en, msg + '.')) return;
-    if (linked !== o) toast(msg + '. Er is een kopie gemaakt.', { label: 'Kopie openen', fn: () => nav(`/s/${sid}/bouwer/${linked.id}`) }); else toast(msg);
+    if (linked !== o) toast(msg + '. Er is een kopie gemaakt.' + (note ? ' ' + note : ''), { label: 'Kopie openen', fn: () => nav(`/s/${sid}/bouwer/${linked.id}`) }, note ? 9000 : undefined);
+    else toast(note ? msg + '. ' + note : msg, undefined, note ? 8000 : undefined);
   };
   return <Modal title="Inplannen" sub={o.state === 'bank' ? 'Er wordt een kopie ingepland zonder namen; de opkomst in de bank blijft zoals hij is.' : 'Kies een datum waar nog geen opkomst aan gekoppeld is. De ingedeelde leiding gaat mee.'} onClose={onClose}>
-    {rows.length ? <div className="picklist">{rows.map(r => { const e = r.e, d = rowDate(r); return <div key={r.key} className="pick"><div className="info"><b>{shown(d, e && e.endDate)}</b>
-      <span className="hint">{e && e.topic ? e.topic + ' · ' : ''}{e && e.planners.length ? 'planning: ' + e.planners.join(', ') : 'nog niemand toegewezen'}</span></div>
+    {rows.length ? <div className="picklist">{rows.map(r => { const e = r.e, d = rowDate(r), off = e && e.endDate ? kampMismatch(o, d, e.endDate) : null; return <div key={r.key} className="pick"><div className="info"><b>{shown(d, e && e.endDate)}</b>
+      <span className="hint">{off && <><span className="err">Jaarplanning {plural(off.row, 'dag', 'dagen')} ({fmtRange(d, e!.endDate)})</span> · </>}{e && e.topic ? e.topic + ' · ' : ''}{e && e.planners.length ? 'planning: ' + e.planners.join(', ') : 'nog niemand toegewezen'}</span></div>
       <button className="btn sm primary" onClick={() => go(entryFor(r.key))}>Hier inplannen</button></div>; })}</div> : <p className="hint">Geen vrije data gevonden in de komende maanden.</p>}
     <div className="row"><input className="inp" value={custom} onChange={e => setCustom(e.target.value)} onBlur={() => setCustom(tidyNL(custom))} placeholder="Andere datum: dd-mm-jjjj" aria-label="Andere datum" inputMode="numeric" style={{ flex: '1 1 180px' }} /><button className="btn" onClick={() => { const iso = parseNL(custom); if (!iso) { toast('Typ de datum als dd-mm-jjjj.'); return; } go(entryForDate(iso)); }}>Op deze datum</button></div>
   </Modal>;

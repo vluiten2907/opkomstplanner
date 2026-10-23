@@ -1,7 +1,7 @@
 // @ts-nocheck
 // PDF-opbouw met jsPDF: pagina 1 tijdlijn, pagina 2 materiaallijst, daarna uitlegpagina's.
 /* eslint-disable */
-import { fmtT, fmtDur, splitNames, splitLines, fmtLong } from './time';
+import { fmtT, fmtDur, splitNames, splitLines, fmtLong, plural } from './time';
 const fmtDate = (iso: string) => (iso ? fmtLong(iso) : '');
 const hexRgb = (h: string) => { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); const n = m ? parseInt(m[1], 16) : 0x55635A; return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
 export function buildPdf(jsPDF: any, O: any, cats: any[]) {
@@ -45,7 +45,7 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
   font('bold', 20); const tl = wrap(title, CW - LOGO);
   doc.text(tl, M, y + 6); y += 6 + (tl.length - 1) * lh(20) + 3;
   font('normal', 10, MUTED);
-  const timeTxt = MULTI ? DAYSX.length + ' dagen' : fmtT(O.start) + ' – ' + fmtT(O.end) + ((O.prep || O.post) ? '  (leiding ' + fmtT(O.start - (O.prep || 0)) + ' – ' + fmtT(O.end + (O.post || 0)) + ')' : '');
+  const timeTxt = MULTI ? plural(DAYSX.length, 'dag', 'dagen') : fmtT(O.start) + ' – ' + fmtT(O.end) + ((O.prep || O.post) ? '  (leiding ' + fmtT(O.start - (O.prep || 0)) + ' – ' + fmtT(O.end + (O.post || 0)) + ')' : '');
   const sub = wrap([(O.dateLabel || fmtDate(O.date)), timeTxt, O.group, O.location].filter(Boolean).map(clean).join('  ·  '), CW - LOGO);
   doc.text(sub, M, y + 3); y += 3 + sub.length * lh(10);
   if (O.catsLabel) { font('normal', 9.5, MUTED); const cl = wrap('Categorieën: ' + O.catsLabel, CW - LOGO); doc.text(cl, M, y + 2.5); y += cl.length * lh(9.5) + 0.5; }
@@ -63,6 +63,13 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
     doc.text('LEIDING', X.n, y + 3); doc.text('VOORBEREIDING', X.p, y + 3);
     doc.setCharSpace(0);
     y += 5; doc.setDrawColor(...INK); doc.setLineWidth(0.4); doc.line(M, y, M + CW, y); y += 0.5;
+  };
+  // kamp: een dag die op een nieuwe pagina doorloopt krijgt daar een kleine kop met de dagnaam
+  let curDay = '';
+  const contHead = () => {
+    newPage();
+    if (MULTI && curDay) { font('bold', 10, MUTED); doc.text(curDay + ' (vervolg)', M, y + 4); y += 7; }
+    tableHead();
   };
   const refs = [];
   const drawBar = D => {
@@ -89,7 +96,7 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
   };
   const bandRow = (time, text, sub) => {
     const h = 8;
-    if (y + h > BOTTOM) { newPage(); tableHead(); }
+    if (y + h > BOTTOM) contHead();
     doc.setFillColor(...SOFT); doc.rect(M, y + 0.5, CW, h - 1, 'F');
     font('bold', 9.5); doc.text(fmtT(time), X.t, y + 5.2);
     font('bold', 9.5); doc.text(clean(text), X.o, y + 5.2);
@@ -98,7 +105,7 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
   };
   const gapRow = (s0, e0) => {
     const h = 7.5;
-    if (y + h > BOTTOM) { newPage(); tableHead(); }
+    if (y + h > BOTTOM) contHead();
     font('normal', 9, MUTED); doc.text(fmtT(s0), X.t, y + 4.8);
     font('italic', 8.5, MUTED); doc.text('niet ingepland  (' + fmtDur(e0 - s0) + ', tot ' + fmtT(e0) + ')', X.o, y + 4.8);
     y += h; doc.setDrawColor(...LINE); doc.setLineWidth(0.2); doc.line(M, y, M + CW, y);
@@ -116,7 +123,7 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
     const hT = lh(10) + lh(8) * 2;
     const hP = prepL.length * lh(8.5);
     const h = Math.max(hT, hO, hN, lLines.length * lh(9), hP || lh(8.5)) + 2 * P;
-    if (y + h > BOTTOM) { newPage(); tableHead(); }
+    if (y + h > BOTTOM) contHead();
     const top = y + P + 3.2;
     doc.setFillColor(...hexRgb(c.color)); doc.rect(X.s, y + 1.2, 1.4, h - 2.4, 'F');
     font('bold', 10); doc.text(fmtT(b.start), X.t, top);
@@ -159,7 +166,7 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
   if (!MULTI) { drawBar(DAYSX[0]); tableHead(); renderDay(DAYSX[0]); }
   else DAYSX.forEach((D, i) => {
     if (i && y + 45 > BOTTOM) newPage(); else if (i) y += 7;
-    font('bold', 13); const dl = clean(D.label || 'Dag ' + (i + 1)); doc.text(dl, M, y + 5);
+    font('bold', 13); const dl = clean(D.label || 'Dag ' + (i + 1)); doc.text(dl, M, y + 5); curDay = dl;
     const w = doc.getTextWidth(dl);
     font('normal', 10, MUTED); doc.text(fmtT(D.start) + ' – ' + fmtT(D.end) + '   ·   ' + D.blocks.length + (D.blocks.length === 1 ? ' onderdeel' : ' onderdelen'), M + w + 4, y + 5);
     y += 9; drawBar(D); tableHead(); renderDay(D);
@@ -276,12 +283,21 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
   });
 
   refs.forEach(r => { if (!pageOf[r.id]) return; doc.setPage(r.page); font('normal', 8, ACC); doc.text('Uitleg op pagina ' + pageOf[r.id], r.x, r.y); });
+  // voettekst: groep · titel · datum. De datum blijft altijd heel; past het niet, dan wordt de titel ingekort (met …),
+  // en bij een heel lange groepsnaam ook die.
+  font('normal', 7.5, MUTED);
+  const SEP = '  ·  ', FW = CW - 30, dateTxt = clean(O.dateLabel || fmtDate(O.date));
+  const dateW = dateTxt ? doc.getTextWidth(SEP + dateTxt) : 0;
+  let grp = O.groupName ? clean(O.groupName) : '';
+  if (grp && FW - dateW - doc.getTextWidth(grp + SEP) < 20) grp = wrap(grp, (FW - dateW) / 2, 1)[0];
+  const rest = FW - dateW - (grp ? doc.getTextWidth(grp + SEP) : 0);
+  const footer = [grp, wrap(title, rest, 1)[0], dateTxt].filter(Boolean).join(SEP);
   const N = doc.getNumberOfPages();
   for (let p = 1; p <= N; p++) {
     doc.setPage(p);
     doc.setDrawColor(...LINE); doc.setLineWidth(0.2); doc.line(M, H - 13, M + CW, H - 13);
     font('normal', 7.5, MUTED);
-    doc.text(wrap([O.groupName ? clean(O.groupName) : '', title, (O.dateLabel || fmtDate(O.date))].filter(Boolean).join('  ·  '), CW - 30)[0], M, H - 9);
+    doc.text(footer, M, H - 9);
     doc.text('pagina ' + p + ' van ' + N, M + CW, H - 9, { align: 'right' });
   }
   return doc;

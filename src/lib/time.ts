@@ -25,12 +25,13 @@ export function fmtRange(d: string, end?: string | null, long?: boolean) {
 }
 /**
  * Datum zoals je hem typt: dd-mm-jjjj (ook met . / of spatie, jaartal 2 of 4 cijfers), of alleen cijfers
- * (een iPhone geeft bij een cijferveld geen streepje): ddmmjjjj, ddmmjj, of ddmm = de eerstvolgende keer vanaf `today`.
+ * (een iPhone geeft bij een cijferveld geen streepje): ddmmjjjj, ddmmjj.
+ * Zonder jaartal (7-11, 07-11, 7/11 of 0711) = de eerstvolgende keer vanaf `today`.
  */
 export function parseNL(s: string, today = todayISO()): string | null {
   const t = (s || '').trim();
-  // jaartal: 2 of 4 cijfers (een tikfout als 202 geeft anders een rij in het jaar 202)
-  const m = /^(\d{1,2})[-./ ](\d{1,2})[-./ ](\d{2}|\d{4})$/.exec(t) || /^(\d{2})(\d{2})(\d{2}|\d{4})?$/.exec(t);
+  // jaartal: 2 of 4 cijfers (een tikfout als 202 geeft anders een rij in het jaar 202), of helemaal geen
+  const m = /^(\d{1,2})[-./ ](\d{1,2})(?:[-./ ](\d{2}|\d{4}))?$/.exec(t) || /^(\d{2})(\d{2})(\d{2}|\d{4})?$/.exec(t);
   if (!m) return null;
   const day = +m[1], mon = +m[2];
   const at = (y: number) => { const d = new Date(y, mon - 1, day, 12); return d.getMonth() === mon - 1 && d.getDate() === day ? toISO(d) : null; };

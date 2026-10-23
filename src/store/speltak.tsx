@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import * as F from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './auth';
-import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, copyOpk, isKamp, presentNames, relabelDays, kampStart, planTimesDiffer, applyPlanTimes } from '../lib/model';
+import { normOpk, normLib, normPlan, normSettings, type Opk, type Lib, type Plan, type Settings, allBlocks, copyOpk, isKamp, presentNames, relabelDays, kampStart, kampMismatchNote, planTimesDiffer, applyPlanTimes } from '../lib/model';
 import { isTeamleider, normPerms, normSpeltak, type Member, type PermKey, type Speltak, type Invite, type Perms } from '../lib/types';
 import { useRoles } from './roles';
 import { createInvite as mkInvite } from './beheer';
@@ -284,6 +284,8 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
     if (o.title) e.topic = o.title; else o.title = e.topic;
     saveOpk({ ...o }); savePlan({ ...e });
     dropAbsent(e, true);
+    // kamp dat niet bij de rij past (bijv. vr–zo op een rij za–zo): de dagen tellen vanaf de datum, dus melden in plaats van stil laten schuiven
+    const note = kampMismatchNote(o, e.date, e.endDate); if (note) toast(note, undefined, 8000);
     return o;
   };
   const offerPlanTimes = (o: Opk, e: Plan, prefix = '') => {

@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from 'react';
 import { useSpeltak } from '../store/speltak';
-import { allBlocks, analyze, catOf, isKamp, minNeed, opkCatOf, type Cat, type Opk, type Day } from '../lib/model';
+import { allBlocks, analyze, catOf, isKamp, minNeed, opkCatOf, progEmpty, type Cat, type Opk, type Day } from '../lib/model';
 import { fmtDur, fmtT, plural } from '../lib/time';
 import { makePdf } from '../lib/export';
 import { Trash2 } from 'lucide-react';
@@ -37,8 +37,9 @@ export function Strip({ o, cats }: { o: Opk | Day; cats?: Cat[] }) {
 
 export function StatusPill({ o }: { o: Opk }) {
   const { leaders, presentFor } = useSpeltak();
+  // alleen de vaste blokken (openen, ranja, sluiten) is nog geen programma
+  if (progEmpty(o)) return <span className="pill neutral">Nog leeg</span>;
   const a = analyze(o, presentFor(o), leaders);
-  if (!allBlocks(o).length) return <span className="pill neutral">Nog leeg</span>;
   if (a.warn) return <span className="pill warn">{plural(a.warn, 'aandachtspunt', 'aandachtspunten')}</span>;
   if (a.free) return <span className="pill neutral">{fmtDur(a.free)} vrij</span>;
   return <span className="pill good">Klaar</span>;

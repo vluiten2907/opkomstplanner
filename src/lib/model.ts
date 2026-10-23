@@ -1,4 +1,4 @@
-import { addDays, clone, dayDiff, fmtDur, fmtT, fromISO, num, splitNames, todayISO, toISO, uid, wd2, DAYS, MONTHS, cap, mon3 } from './time.ts';
+import { addDays, clone, dayDiff, fmtDur, fmtRange, fmtT, fromISO, num, plural, splitNames, todayISO, toISO, uid, wd2, DAYS, MONTHS, cap, mon3 } from './time.ts';
 
 /* ---------- Types ---------- */
 export type Cat = { id: string; label: string; color: string };
@@ -156,8 +156,10 @@ export function newOpk(s: Settings): Opk {
   return { id: uid(), state: 'draft', srcId: null, kind: 'opkomst', cats: [], lead: '', title: '', short: '', group: s.speltak || '', location: '',
     start: s.defStart, end: s.defEnd, prep: s.prepMin, post: s.postMin, days: [], blocks: fixedBlocks(s, s.defStart, s.defEnd), createdAt: Date.now(), updatedAt: Date.now(), shared: true, fromShared: null };
 }
+/** Programma nog leeg: alleen de vaste blokken, of helemaal niets (kamp: dagen zonder onderdelen). */
+export const progEmpty = (o: Opk) => allBlocks(o).every(isFixed);
 /** Nog niets ingevuld: geen titel, beschrijving, locatie of categorie, en alleen de vaste blokken (kamp: dagen zonder onderdelen). */
-export const isBlankOpk = (o: Opk) => !o.title.trim() && !o.short.trim() && !o.location.trim() && !o.cats.length && allBlocks(o).every(isFixed);
+export const isBlankOpk = (o: Opk) => !o.title.trim() && !o.short.trim() && !o.location.trim() && !o.cats.length && progEmpty(o);
 /** Zoektekst van een opkomst: titel, beschrijving, locatie en de onderdelen (zonder de vaste blokken). */
 export const opkSearchText = (o: Opk) => [o.title, o.short, o.location, ...allBlocks(o).filter(b => !isFixed(b)).map(b => b.title)].join(' ').toLowerCase();
 const TOPIC_SKIP = new Set(['opkomst', 'opkomsten', 'spel', 'spellen', 'avond', 'middag', 'ochtend', 'weekend', 'kamp', 'voor', 'naar', 'met', 'van', 'het', 'een', 'and', 'de', 'en', 'in', 'op']);
@@ -201,6 +203,21 @@ export function kampStart(o: Opk, date: string) {
   const back = (fromISO(date).getDay() - w + 7) % 7;
   return back > 0 && back < o.days.length ? addDays(date, -back) : date;
 }
+/**
+ * Past een kamp qua lengte bij een rij in de jaarplanning (datum t/m "tot en met"; zonder einddatum één dag)?
+ * Null als het klopt, anders het aantal dagen van het programma en van de rij. De jaarplanning gaat voor:
+ * de kampdagen tellen altijd vanaf de datum, dus bij een verschil schuiven ze (een kamp vr–zo op een rij za–zo loopt za–ma).
+ */
+export function kampMismatch(o: Opk, date: string, endDate?: string | null): { prog: number; row: number } | null {
+  if (!isKamp(o) || isNaN(fromISO(date).getTime())) return null;
+  const row = endDate && endDate > date ? dayDiff(date, endDate) + 1 : 1;
+  return row === o.days.length ? null : { prog: o.days.length, row };
+}
+/** Melding als het kamp niet bij de rij past (zie kampMismatch), anders ''. */
+export function kampMismatchNote(o: Opk, date: string, endDate?: string | null) {
+  const m = kampMismatch(o, date, endDate);
+  return m ? `Het kamp heeft ${plural(m.prog, 'dag', 'dagen')}, de jaarplanning ${m.row} (${fmtRange(date, endDate)}). Controleer de data.` : '';
+}
 /** Kampdagen die een weekdag heten krijgen de weekdag van hun datum (vanaf firstISO). Geeft true als er iets veranderde. */
 export function relabelDays(o: Opk, firstISO: string) {
   if (!isKamp(o) || isNaN(fromISO(firstISO).getTime())) return false;
@@ -234,7 +251,12 @@ export function toBank(o: Opk, title: string, copy = o.state === 'planned'): Opk
 export function firstFree(day: { start: number; end: number; blocks: Block[] }, dur: number): number | null {
   const bl = [...day.blocks].sort((a, b) => a.start - b.start);
   let t = day.start;
-  for (const b of bl) { if (b.start - t >= dur) return t; t = Math.max(t, b.start + b.dur); }
+  for (const b of bl) {
+    // een onderdeel na het einde (bijv. na een vroegere eindtijd) telt niet als grens: het gat loopt hooguit tot het einde
+    if (b.start >= day.end) break;
+    if (b.start - t >= dur) return t;
+    t = Math.max(t, b.start + b.dur);
+  }
   return day.end - t >= dur ? t : null;
 }
 /** Vaste blokken schuiven mee met begin en eind (alleen als ze nog op hun eigen plek stonden). */
@@ -378,12 +400,20 @@ export function entryTimes(s: Settings, e: Plan | null, o: Opk | null): [number,
   return [s.defStart, s.defEnd];
 }
 export const letterDue = (s: Settings, e: Plan) => e.letter.due || addDays(e.date, -s.letterDays);
-/** Status van een rij in de jaarplanning. Met een gekoppelde opkomst telt de analyse mee (afwezige leiding, te weinig leiding, enz.). */
+/**
+ * Stand van een programma: nog leeg (alleen vaste blokken), met aandachtspunten, of klaar.
+ * Eén bron voor de statuspil, het dashboard en de jaarplanning; grote vrije stukken zijn geen aandachtspunt.
+ */
+export function progStatus(o: Opk, present: string[], leaders: string[]): 'leeg' | 'warn' | 'ok' {
+  if (progEmpty(o)) return 'leeg';
+  return analyze(o, present, leaders).warn ? 'warn' : 'ok';
+}
+/** Status van een rij in de jaarplanning. Met een gekoppelde opkomst telt de analyse mee (afwezige leiding, te weinig leiding, enz.); een leeg programma is niet klaar. */
 export function entryStatus(e: Plan | null, o: Opk | null, leaders: string[] = []): 'open' | 'off' | 'kamp' | 'warn' | 'ok' | 'topic' {
   if (!e) return 'open';
   if (e.type === 'geen') return 'off';
   if (e.type === 'kamp') return 'kamp';
-  if (o) return (!allBlocks(o).length || analyze(o, presentNames(leaders, e.absent, o), leaders).warn) ? 'warn' : 'ok';
+  if (o) return progStatus(o, presentNames(leaders, e.absent, o), leaders) === 'ok' ? 'ok' : 'warn';
   return e.topic ? 'topic' : 'open';
 }
 export function dayTitle(o: Opk, i: number, date: string | null, long?: boolean) {

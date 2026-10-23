@@ -8,7 +8,7 @@ import { markFresh } from '../store/fresh';
 import { Strip, StatusPill, CatTags, PeopleChips, usePdf, PageTitle } from '../components/shared';
 import { Dot, TimePicker } from '../components/ui';
 import { addDays, cap, dayDiff, fmtLong, fmtRange, fmtShort, fmtT, fromISO, isoWeek, mon3, plural, todayISO, toISO, DAYS, MONTHS } from '../lib/time';
-import { catOf, dayTitle, entryStatus, entryTimes, isKamp, letterDue, minNeed, newKamp, newOpk, opkCatList, plannersOf, changeOpkTime, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Opk, type Plan, type Row } from '../lib/model';
+import { catOf, dayTitle, entryStatus, entryTimes, isKamp, letterDue, minNeed, newKamp, newOpk, opkCatList, plannersOf, changeOpkTime, progStatus, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Opk, type Plan, type Row } from '../lib/model';
 
 export default function Dashboard() {
   const S = useSpeltak();
@@ -197,9 +197,11 @@ export function ProgList({ o, date }: { o: Opk; date: string | null }) {
 }
 
 function NextItem({ r }: { r: Row }) {
-  const { opkOf, leaders, sid } = useSpeltak();
+  const { opkOf, leaders, sid, presentForEntry } = useSpeltak();
   const nav = useNavigate();
   const e = r.e, d = rowDate(r), o = opkOf(e), st = entryStatus(e, o, leaders);
+  // stand van het programma los van de soort rij: ook een kamp kan nog leeg zijn of aandachtspunten hebben
+  const ps = o ? progStatus(o, presentForEntry(e, o), leaders) : null;
   const title = (o && o.title) || (e && e.topic) || (st === 'off' ? 'Geen opkomst' : 'Nog geen onderwerp');
   const planners = plannersOf(e, o);
   const tags: React.ReactNode[] = [];
@@ -208,7 +210,7 @@ function NextItem({ r }: { r: Row }) {
     if (st === 'kamp') tags.push(<span key="k" className="pill kamp">Kamp</span>);
     if (!planners.length) tags.push(<span key="p" className="pill warn">Nog geen planner</span>);
     if (!o) tags.push(<span key="np" className="pill neutral">Geen programma</span>);
-    else tags.push(st === 'warn' ? <span key="w" className="pill warn">Aandachtspunten</span> : <span key="g" className="pill good">Programma klaar</span>);
+    else tags.push(ps === 'leeg' ? <span key="g" className="pill neutral">Nog leeg</span> : ps === 'warn' ? <span key="g" className="pill warn">Aandachtspunten</span> : <span key="g" className="pill good">Programma klaar</span>);
     if (e && e.letter.needed) tags.push(<span key="l" className={'pill ' + (e.letter.sent ? 'good' : 'warn')}>{e.letter.sent ? 'Brief verstuurd' : 'Brief'}</span>);
   }
   const sub = st === 'off' ? fmtRange(d, e && e.endDate) : `${fmtRange(d, e && e.endDate)} · ${planners.length ? 'planning: ' + planners.join(', ') : 'nog niemand toegewezen'}`;

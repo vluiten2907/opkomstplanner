@@ -24,6 +24,8 @@ test('firstFree', () => {
   assert.equal(M.firstFree(day, 90), null, 'nergens plek');
   assert.equal(M.firstFree({ start: 480, end: 1380, blocks: [] }, 60), 480, 'lege dag: begin');
   assert.equal(M.firstFree({ start: 0, end: 100, blocks: [blk('x', 0, 40), blk('y', 10, 10)] }, 20), 40, 'overlappende onderdelen tellen samen');
+  assert.equal(M.firstFree({ start: 840, end: 990, blocks: [blk('a', 840, 150), blk('x', 1080, 30)] }, 30), null, 'vol, met een onderdeel na het einde: geen moment na het einde');
+  assert.equal(M.firstFree({ start: 840, end: 990, blocks: [blk('a', 840, 90), blk('x', 1080, 30)] }, 30), 930, 'gat tot het einde, onderdeel erna telt niet');
 });
 
 /* ---------- opkomstenbank: zonder namen ---------- */
@@ -157,6 +159,23 @@ test('entryStatus', () => {
   assert.equal(M.entryStatus(plan({ type: 'kamp' }), null), 'kamp');
   assert.equal(M.entryStatus(plan({ topic: 'Bosspel' }), null), 'topic');
   assert.equal(M.entryStatus(plan({ absent: ['Baloe'] }), o, ['Baloe']), 'warn', 'afwezige leiding ingedeeld');
+  assert.equal(M.entryStatus(plan({}), o, ['Baloe']), 'ok');
+  const leeg = { ...M.newOpk(S()), state: 'planned' as const };
+  assert.ok(leeg.blocks.length > 0 && M.progEmpty(leeg), 'nieuwe opkomst: alleen vaste blokken');
+  assert.equal(M.entryStatus(plan({}), leeg, ['Baloe']), 'warn', 'alleen vaste blokken is geen programma klaar');
+  const kort = opk({ state: 'planned', blocks: [blk('a', 840, 10, { names: ['Baloe'], short: 'x', location: 'Bos' })] });
+  assert.equal(M.entryStatus(plan({}), kort, ['Baloe']), 'ok', 'veel vrije tijd is geen aandachtspunt');
+});
+test('progStatus: leeg, aandachtspunten of klaar (ook bij een kamp)', () => {
+  const o = opk({ state: 'planned', blocks: [blk('a', 840, 30, { names: ['Baloe'], short: 'x', location: 'Bos' })] });
+  assert.equal(M.progStatus(o, ['Baloe'], ['Baloe']), 'ok');
+  assert.equal(M.progStatus({ ...M.newOpk(S()), state: 'planned' }, ['Baloe'], ['Baloe']), 'leeg', 'alleen vaste blokken');
+  const leegKamp = { ...M.newKamp(S(), 3), state: 'planned' as const };
+  assert.equal(M.progStatus(leegKamp, ['Baloe'], ['Baloe']), 'leeg', 'leeg kamp');
+  assert.equal(M.entryStatus(plan({ type: 'kamp' }), leegKamp, ['Baloe']), 'kamp', 'kalender en telling blijven kamp');
+  const kamp = M.normOpk({ id: 'k', state: 'planned', kind: 'kamp', days: [{ label: 'Zaterdag', start: 480, end: 600, blocks: [blk('hike', 480, 120, { names: ['Baloe'], short: 'x', location: 'Bos' })] }] });
+  assert.equal(M.progStatus(kamp, M.presentNames(['Baloe', 'Akela'], [], kamp), ['Baloe', 'Akela']), 'ok');
+  assert.equal(M.progStatus(kamp, M.presentNames(['Baloe', 'Akela'], ['Baloe'], kamp), ['Baloe', 'Akela']), 'warn', 'afwezige leiding ingedeeld bij een kamp');
 });
 
 /* ---------- tijdlijn ---------- */
@@ -191,6 +210,17 @@ test('kampStart: een kamp vr–zo op de vaste zaterdag begint op de vrijdag ervo
   const eigen = M.newKamp(S(), 3); eigen.days[0].label = 'Aankomst';
   assert.equal(M.kampStart(eigen, '2026-11-07'), '2026-11-07', 'eerste dag zonder weekdagnaam: datum blijft');
   assert.equal(M.kampStart(opk(), '2026-11-07'), '2026-11-07', 'gewone opkomst: datum blijft');
+});
+test('kampMismatch: kamp past qua lengte niet bij de rij', () => {
+  const k = M.newKamp(S(), 3); // vr–zo
+  assert.deepEqual(M.kampMismatch(k, '2026-11-07', '2026-11-08'), { prog: 3, row: 2 }, 'rij za–zo, kamp vr–zo');
+  assert.equal(M.kampMismatchNote(k, '2026-11-07', '2026-11-08'), 'Het kamp heeft 3 dagen, de jaarplanning 2 (za 7 – zo 8 nov). Controleer de data.');
+  assert.equal(M.kampMismatch(k, '2026-11-06', '2026-11-08'), null, 'rij vr–zo past');
+  assert.deepEqual(M.kampMismatch(M.newKamp(S(), 2), '2026-11-06', '2026-11-08'), { prog: 2, row: 3 }, 'kamp za–zo op een rij vr–zo');
+  assert.deepEqual(M.kampMismatch(k, '2026-11-07', ''), { prog: 3, row: 1 }, 'zonder einddatum is de rij één dag');
+  assert.equal(M.kampMismatch(M.newKamp(S(), 1), '2026-11-08', ''), null, 'kamp van één dag zonder einddatum');
+  assert.equal(M.kampMismatch(opk(), '2026-11-07', '2026-11-08'), null, 'gewone opkomst: niets');
+  assert.equal(M.kampMismatchNote(k, '2026-11-06', '2026-11-08'), '');
 });
 test('kampdag mag doorlopen tot na middernacht (26:00)', () => {
   const d = M.normDay({ label: 'Zaterdag', start: 1200, end: 1560, blocks: [blk('nacht', 1440, 60)] });
@@ -255,6 +285,13 @@ test('parseNL', () => {
   assert.equal(parseNL('31022026'), null, 'bestaat niet');
   assert.equal(parseNL('7112026'), null, '7 cijfers is niet eenduidig');
   assert.equal(parseNL('07-11-2026', '2030-01-01'), '2026-11-07', 'met jaartal telt vandaag niet');
+  assert.equal(parseNL('7-11', '2026-10-22'), '2026-11-07', 'dd-mm zonder jaartal: eerstvolgende');
+  assert.equal(parseNL('07-11', '2026-10-22'), '2026-11-07');
+  assert.equal(parseNL('7/11', '2026-10-22'), '2026-11-07');
+  assert.equal(parseNL('7 11', '2026-10-22'), '2026-11-07');
+  assert.equal(parseNL('7-10', '2026-10-22'), '2027-10-07', 'al geweest: volgend jaar');
+  assert.equal(parseNL('31-2', '2026-10-22'), null, 'bestaat niet');
+  assert.equal(parseNL('7-11-'), null);
 });
 test('tidyNL', () => {
   assert.equal(tidyNL('07112026'), '07-11-2026');

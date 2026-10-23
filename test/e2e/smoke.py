@@ -372,6 +372,9 @@ with sync_playwright() as p:
     prow(3).locator('.pdate').click(); w(300)
     d_ok = pg.input_value('#md-date'); pg.fill('#md-date', d_ok[:-1]); pg.click('.modal >> text=Opslaan'); w(300)
     check(pg.locator('.modal #md-date').count() == 1 and 'dd-mm-jjjj' in pg.locator('.toast').inner_text(), 'datum met een jaartal van 3 cijfers wordt geweigerd')
+    t30 = date.today() + timedelta(days=30)
+    pg.fill('#md-date', f'{t30.day}-{t30.month}'); pg.press('#md-date', 'Tab'); w(150)
+    check(pg.input_value('#md-date') == t30.strftime('%d-%m-%Y'), f'datum typen als d-m zonder jaartal (bijv. 7-11): de eerstvolgende keer ({t30.day}-{t30.month} → {pg.input_value("#md-date")})')
     pg.fill('#md-date', d_ok); tp('Begintijd / vertrek', 10, 0); tp('Eindtijd / terug', 12, 0); pg.click('.modal >> text=Opslaan'); w(400)
     check('10:00–12:00' in prow(3).locator('.pdate').inner_text(), 'jaarplanning: eigen tijden opgeslagen')
     prow(3).locator('.btn:has-text("Koppelen")').click(); w(300); pg.click('.modal >> text=Nieuwe opkomst'); w(800)
@@ -1574,6 +1577,87 @@ with sync_playwright() as p:
     check(mf.get('name') == 'Opkomstplanner' and mf.get('theme_color') == '#1E3A5F' and ic.get('mi') and all(x.startswith('200 image/') for x in ic['mi'])
           and 'AddType application/manifest+json .webmanifest' in open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'public', '.htaccess'), encoding='utf-8').read(),
           f'thuisscherm: naam Opkomstplanner, kleur marine, iconen te laden; Apache kent het type .webmanifest ({ic.get("mi")})')
+    # --- programma-status, kampen en pdf (eigen oefendata): alleen de vaste blokken is nog geen programma, een kamp toont de stand
+    # van zijn programma, een kamp dat qua lengte niet bij de rij past geeft een melding, pdf-voettekst, kamp-pdf, eerste vrije moment
+    q.goto(BASE + '/s/oefen/dashboard'); q.wait_for_timeout(800)
+    q.evaluate("""(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)), P = 'speltakken/oefen/';
+      const sint = s[P + 'opkomsten/opk-sint'], j = s[P + 'opkomsten/opk-jungle'], kamp = s[P + 'opkomsten/opk-kamp'], one = j.blocks.find(b => !b.cat.startsWith('__'));
+      s[P + 'opkomsten/opk-leeg'] = { ...sint, id: 'opk-leeg', state: 'planned', title: 'Lege opkomst', blocks: sint.blocks.filter(b => b.cat.startsWith('__')) };
+      s[P + 'planning/pl-2'].opkId = 'opk-leeg'; s[P + 'planning/pl-2'].topic = 'Lege opkomst';
+      s[P + 'planning/pl-kamp'].absent = ['Baloe'];
+      s[P.slice(0, -1)].groupName = 'Scouting Sint-Jorisgroep Oosterhout-Noord';
+      j.title = 'Grote Sinterklaasspeurtocht door het dorp met de hele groep';
+      s[P + 'opkomsten/opk-dag'] = { ...kamp, id: 'opk-dag', state: 'draft', title: 'Dagtocht', days: [kamp.days[2]] };
+      s[P + 'opkomsten/opk-vol'] = { ...j, id: 'opk-vol', state: 'draft', title: 'Volle opkomst', start: 840, end: 990,
+        blocks: [{ ...one, id: 'vol-a', start: 840, dur: 150 }, { ...one, id: 'vol-x', title: 'Na afloop', start: 1080, dur: 30 }] };
+      const p6 = s[P + 'planning/pl-6'], d = new Date(p6.date + 'T12:00:00'); d.setDate(d.getDate() + 1);
+      p6.type = 'kamp'; p6.endDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      localStorage.setItem(k, JSON.stringify(s)); })()""")
+    q.reload(); q.wait_for_timeout(1200)
+    nt_of = lambda t: q.locator(f'.nextlist li:has-text("{t}") .nt').inner_text() if q.locator(f'.nextlist li:has-text("{t}")').count() else ''
+    lt, kt = nt_of('Lege opkomst'), nt_of('Winterweekend')
+    check('Nog leeg' in lt and 'Programma klaar' not in lt, f'dashboard Daarna: opkomst met alleen de vaste blokken is Nog leeg, niet Programma klaar ({lt!r})')
+    check('Kamp' in kt and 'Aandachtspunten' in kt and 'Programma klaar' not in kt, f'dashboard Daarna: kamp met afwezige leiding ingedeeld toont Kamp en Aandachtspunten ({kt!r})')
+    def cal_mark(name):
+        for _ in range(3):
+            c = q.locator(f'.cal button[aria-label*="{name}"]')
+            if c.count(): return (c.first.get_attribute('class') or '').split(), c.first.get_attribute('aria-label') or ''
+            q.click('.cal-head [aria-label="Volgende maand"]'); q.wait_for_timeout(150)
+        return [], ''
+    cc, cl = cal_mark('Lege opkomst')
+    check('warn' in cc and 'ok' not in cc and 'programma klaar' not in cl, f'agenda: opkomst met alleen de vaste blokken is niet groen/programma klaar ({cl})')
+    q.goto(BASE + '/s/oefen/dashboard'); q.wait_for_timeout(1000)
+    q.locator('.nextlist').scroll_into_view_if_needed(); q.screenshot(path=f'{OUT}/38-dashboard-daarna-status.png')
+    q.set_viewport_size({'width': 390, 'height': 844}); q.wait_for_timeout(300)
+    check(q.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'dashboard Daarna met Nog leeg en Kamp + Aandachtspunten mobiel: geen horizontale scroll')
+    q.locator('.nextlist').scroll_into_view_if_needed(); q.screenshot(path=f'{OUT}/38b-dashboard-daarna-status-mobiel.png')
+    q.set_viewport_size({'width': 1360, 'height': 900}); q.wait_for_timeout(200)
+    # pdf: lange groepsnaam en titel → de titel wordt ingekort, de datum in de voettekst blijft heel
+    q.goto(BASE + '/s/oefen/bouwer/opk-jungle'); q.wait_for_timeout(1200)
+    with q.expect_download() as dl: q.click('button:has-text("PDF maken")')
+    dl.value.save_as(f'{OUT}/voettekst.pdf'); T = pdf_texts(f'{OUT}/voettekst.pdf')
+    ft = sorted({t for x, y, t in T if abs(y - 25.51) < 1 and x < 60})
+    check(len(ft) == 1 and ft[0].startswith('Scouting Sint-Jorisgroep Oosterhout-Noord  ·  Grote Sinterklaas') and 'hele groep' not in ft[0]
+          and re.search(r'  ·  (maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag) \d{1,2} (januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december) \d{4}$', ft[0]),
+          f'pdf-voettekst: lange groep en titel, de titel wordt ingekort en de datum blijft heel ({ft})')
+    # kamp-pdf: een dag die op de volgende pagina doorloopt krijgt daar een kop met de dagnaam; een kamp van één dag heet "1 dag"
+    q.goto(BASE + '/s/oefen/bouwer/opk-kamp'); q.wait_for_timeout(1200)
+    with q.expect_download() as dl: q.click('button:has-text("PDF maken")')
+    dl.value.save_as(f'{OUT}/kamp-vervolg.pdf'); T = pdf_texts(f'{OUT}/kamp-vervolg.pdf')
+    vv = [t for _, _, t in T if re.fullmatch(r'(Vrijdag|Zaterdag|Zondag) \d+ \w+ \\\(vervolg\\\)', t)]
+    check(len(vv) >= 1, f'kamp-pdf: een dag die op een nieuwe pagina doorloopt krijgt daar de dagnaam met (vervolg) ({vv})')
+    q.goto(BASE + '/s/oefen/bouwer/opk-dag'); q.wait_for_timeout(1200)
+    with q.expect_download() as dl: q.click('button:has-text("PDF maken")')
+    dl.value.save_as(f'{OUT}/kamp-1-dag.pdf'); T = pdf_texts(f'{OUT}/kamp-1-dag.pdf')
+    check(any(t.startswith('1 dag  ·') for _, _, t in T) and not any('1 dagen' in t for _, _, t in T), 'kamp-pdf van één dag: "1 dag", niet "1 dagen"')
+    # eerste vrije moment: de opkomst is vol en er staat een onderdeel na het einde → geen moment na de eindtijd
+    q.goto(BASE + '/s/oefen/bouwer/opk-vol'); q.wait_for_timeout(1200)
+    q.click('.lib:has-text("Trefbal") button:has-text("Inplannen")'); q.wait_for_timeout(400)
+    tt = q.locator('.toast').inner_text()
+    check('Geen vrij moment lang genoeg' in tt and '16:30' not in tt, f'bouwer: opkomst vol met een onderdeel na het einde → geen vrij moment, niet in de nabespreking ({tt})')
+    # kamp vr–zo inplannen op een rij za–zo: de lijst toont wat er echt ingepland wordt, met de lengte van de rij erbij, en een melding
+    q.click('nav >> text=Opkomstbouwer'); q.wait_for_timeout(500); q.click('main .btn:has-text("Weekendkamp")'); q.wait_for_timeout(900)
+    q.fill('#om-title', 'Testkamp'); q.wait_for_timeout(700)
+    q.click('.plan-head >> text=Inplannen'); q.wait_for_timeout(400)
+    pk = q.locator('.modal .pick:has-text("Pannenkoekenopkomst")'); pt = pk.locator('.info').inner_text()
+    check(re.match(r'zaterdag \d+ (\w+ )?t/m maandag \d+', pt) and pk.locator('.err:has-text("Jaarplanning 2 dagen")').count() == 1,
+          f'kamp inplannen op een rij za–zo: toont za t/m ma (wat er echt ingepland wordt) en dat de jaarplanning 2 dagen heeft ({pt!r})')
+    q.screenshot(path=f'{OUT}/39-kamp-inplannen-past-niet.png')
+    q.set_viewport_size({'width': 390, 'height': 844}); q.wait_for_timeout(300)
+    pk.scroll_into_view_if_needed(); q.screenshot(path=f'{OUT}/39b-kamp-inplannen-past-niet-mobiel.png')
+    check(q.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'kamp inplannen mobiel: geen horizontale scroll')
+    q.set_viewport_size({'width': 1360, 'height': 900}); q.wait_for_timeout(200)
+    pk.locator('text=Hier inplannen').click(); q.wait_for_timeout(500)
+    tt = q.locator('.toast').inner_text()
+    check('Het kamp heeft 3 dagen, de jaarplanning 2' in tt and 'Controleer de data' in tt, f'kamp op een rij met een andere lengte: melding bij het inplannen ({tt})')
+    q.goto(BASE + '/s/oefen/jaarplanning'); q.wait_for_timeout(1000)
+    lp = q.locator('.prow:has(.plink:has-text("Lege opkomst")) .pill').all_inner_texts()
+    check('Nog leeg' in lp, f'jaarplanning: opkomst met alleen de vaste blokken heeft de pil Nog leeg ({lp})')
+    q.locator('.prow:has(.plink:has-text("Testkamp")) .pdate').click(); q.wait_for_timeout(300)
+    q.click('.modal >> text=Opslaan'); q.wait_for_timeout(400)
+    tt = q.locator('.toast').inner_text()
+    check('Het kamp heeft 3 dagen, de jaarplanning 2' in tt, f'datum van een kamp opslaan terwijl de lengte niet past: melding ({tt})')
+    q.evaluate("(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)); s['speltakken/oefen'].groupName = 'Scouting De Voorbeeldgroep'; localStorage.setItem(k, JSON.stringify(s)); })()")
     # nog niets ingevuld voor de komende data
     q.goto(BASE + '/s/oefen/dashboard'); q.wait_for_timeout(1000)
     drop = "pre => { const s = JSON.parse(localStorage.getItem('opk.oefen.v1')); Object.keys(s).forEach(k => { if (k.startsWith(pre)) delete s[k]; }); localStorage.setItem('opk.oefen.v1', JSON.stringify(s)); }"
