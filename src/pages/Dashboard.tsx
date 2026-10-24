@@ -5,10 +5,11 @@ import { useSpeltak } from '../store/speltak';
 import { toast, undoAction } from '../store/toast';
 import { openModal } from '../store/modal';
 import { createFresh, makeForEntry } from '../store/fresh';
+import { linkBankCopy, linkDraft } from '../components/modals';
 import { Strip, StatusPill, CatTags, PeopleChips, usePdf, PageTitle } from '../components/shared';
 import { Dot, TimePicker } from '../components/ui';
 import { addDays, cap, dayDiff, fmtLong, fmtRange, fmtShort, fmtT, fromISO, isoWeek, mon3, plural, todayISO, toISO, DAYS, MONTHS } from '../lib/time';
-import { catOf, dayTitle, entryStatus, entryTimes, isKamp, kampBase, letterDue, minNeed, opkCatList, plannersOf, changeOpkTime, progStatus, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Opk, type Plan, type Row } from '../lib/model';
+import { catOf, dayTitle, entryStatus, fitFor, entryTimes, isKamp, kampBase, letterDue, minNeed, opkCatList, plannersOf, changeOpkTime, progStatus, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Opk, type Plan, type Row } from '../lib/model';
 
 export default function Dashboard() {
   const S = useSpeltak();
@@ -152,7 +153,8 @@ function Hero({ r, today }: { r: Row; today: string }) {
   const when = d < today ? 'Bezig' : days === 0 ? 'Vandaag' : days === 1 ? 'Morgen' : `Over ${days} dagen`;
   const kamp = !!e && e.type === 'kamp';
   const title = (o && o.title) || (e && e.topic) || '';
-  const short = (o && o.short) || (e && e.note) || '';
+  // de omschrijving hoort bij de opkomst, de opmerking bij de datum in de jaarplanning: twee aparte regels, elk met zijn eigen recht
+  const short = (o && o.short) || '', note = e ? e.note.trim() : '';
   const planners = plannersOf(e, o), absent = e ? e.absent : [], present = presentForEntry(e, o);
   const dt = fromISO(d), need = o ? minNeed(o) : 0;
   // wie wat mag aanpassen: de opkomst zelf = opkomsten bouwen, de regel in de jaarplanning = jaarplanning
@@ -162,7 +164,6 @@ function Hero({ r, today }: { r: Row; today: string }) {
     if (o) { saveOpk({ ...o, title: v }); if (e && can('plan')) savePlan({ ...e, topic: v }); }
     else savePlan({ ...entry(), topic: v });
   };
-  const saveShort = (v: string) => { if (o) saveOpk({ ...o, short: v }); else savePlan({ ...entry(), note: v }); };
   const setTime = (which: 'start' | 'end', v: number) => {
     if (o) { const r = changeOpkTime(o, which, v); if (!r.opk) { toast(r.error); return; } if (r.note) toast(r.note); saveOpk(r.opk); return; }
     const x = entry(), s0 = x.start ?? settings.defStart, e0 = x.end ?? settings.defEnd;
@@ -181,6 +182,10 @@ function Hero({ r, today }: { r: Row; today: string }) {
     // leeg: een echte knop (één klik), gevuld: dubbelklik om aan te passen
     render={(tap, start) => o.location ? <span {...tap}>{o.location}</span> : start && <button className="linkbtn" onClick={start}>Locatie toevoegen</button>} />);
   const gotoRow = () => nav(`/s/${sid}/jaarplanning?focus=${encodeURIComponent(r.key)}`);
+  // nog geen programma: past er een concept of iets uit de bank bij het onderwerp, dan is Gebruiken de hoofdknop (zoals Nog zonder programma in de opkomstbouwer)
+  const build = canLink && can('build'), fit = !o && build && e && e.type !== 'geen' ? fitFor(S.opks, e.topic) : undefined;
+  const use = (x: Opk) => x.state === 'draft' ? linkDraft(S, x, r.key)
+    : linkBankCopy(S, x, r.key, (id, fresh) => openModal({ kind: 'takeover', oid: id, fresh }), id => nav(`/s/${sid}/bouwer/${id}`));
   const plannersTap = useDoubleTap(can('plan') ? () => openModal({ kind: 'people', keyId: r.key, field: 'planners' }) : null);
   const absentTap = useDoubleTap(can('plan') ? () => openModal({ kind: 'people', keyId: r.key, field: 'absent' }) : null);
   const presentTap = useDoubleTap(o && can('build') ? () => openModal({ kind: 'takeover', oid: o.id, fresh: false }) : null);
@@ -196,10 +201,11 @@ function Hero({ r, today }: { r: Row; today: string }) {
             : <div className="hero-notopic"><h2 className="hero-title none" {...tap}>Onderwerp nog kiezen</h2>{start && <button className="btn sm" onClick={start}><SquarePen size={14} />Invullen</button>}</div>} />
         {o && <CatTags o={o} />}
         <div className="facts">{facts}</div>
-        <InlineText value={short} enabled={canEdit} label="Korte omschrijving" className="hero-short" multiline onSave={saveShort}
-          render={(tap, start) => short ? <p className="hero-short" {...tap}>{short}</p> : start ? <button className="hero-short hero-add-short" onClick={start}>Korte omschrijving toevoegen</button> : null} />
-        {/* opmerking uit de jaarplanning naast de omschrijving van de opkomst (zonder omschrijving staat de opmerking al hierboven) */}
-        {o && o.short && e && e.note.trim() && <p className="hero-note"><b>Opmerking:</b> {e.note.trim()}</p>}
+        {o && <InlineText value={short} enabled={canO} label="Korte omschrijving" className="hero-short" multiline onSave={v => saveOpk({ ...o, short: v })}
+          render={(tap, start) => short ? <p className="hero-short" {...tap}>{short}</p> : start ? <button className="hero-short hero-add-short" onClick={start}>Korte omschrijving toevoegen</button> : null} />}
+        {/* opmerking uit de jaarplanning: altijd een eigen regel (recht Jaarplanning); een knop om hem toe te voegen alleen zonder opkomst (één knop per kaart) */}
+        <InlineText value={note} enabled={can('plan')} label="Opmerking" className="hero-note" multiline onSave={v => savePlan({ ...entry(), note: v })}
+          render={(tap, start) => note ? <p className="hero-note" {...tap}><b>Opmerking:</b> {note}</p> : !o && start ? <button className="hero-short hero-add-short" onClick={start}>Opmerking toevoegen</button> : null} />
       </div>
     </div>
     <div className="people">
@@ -214,10 +220,12 @@ function Hero({ r, today }: { r: Row; today: string }) {
         {can('build') && <button className="btn" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })}><Users size={16} />Leiding indelen</button>}
         <button className="btn" onClick={() => pdf(o)}><Download size={16} />PDF maken</button><button className="btn ghost" onClick={gotoRow}>In jaarplanning</button></div>
     </> : <div className="empty"><span>{kamp ? 'Aan dit kamp is nog geen programma gekoppeld.' : 'Aan deze opkomst is nog geen programma gekoppeld.'}</span>
+      {fit && <span className="hint hero-fit">Past bij: {fit.title || 'Naamloze opkomst'} ({fit.state === 'bank' ? 'opkomstenbank' : 'concept'})</span>}
       {/* met het recht Opkomsten meteen een programma maken (zoals Maken in de opkomstbouwer); koppelen aan iets uit de bank of een concept kan ernaast */}
-      <div className="row">{canLink && can('build') ? <><button className="btn primary" onClick={() => makeForEntry(S, r.key, kamp, nav, loc.pathname + loc.search)}><Plus size={16} />Programma maken</button>
+      <div className="row">{build ? <>{fit && <button className="btn primary" onClick={() => use(fit)} aria-label={`Gebruiken: ${fit.title || 'Naamloze opkomst'}`}>Gebruiken</button>}
+        <button className={'btn' + (fit ? '' : ' primary')} onClick={() => makeForEntry(S, r.key, kamp, nav, loc.pathname + loc.search)}><Plus size={16} />Programma maken</button>
         <button className="btn" onClick={() => openModal({ kind: 'link', keyId: r.key })}>Koppelen</button></>
-        : canLink && <button className="btn primary" onClick={() => openModal({ kind: 'link', keyId: r.key })}>Opkomst koppelen</button>}<button className={'btn' + (canLink && can('build') ? ' ghost' : '')} onClick={gotoRow}>In jaarplanning</button></div></div>}
+        : canLink && <button className="btn primary" onClick={() => openModal({ kind: 'link', keyId: r.key })}>Opkomst koppelen</button>}<button className={'btn' + (build ? ' ghost' : '')} onClick={gotoRow}>In jaarplanning</button></div></div>}
   </section>;
 }
 

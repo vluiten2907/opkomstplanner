@@ -198,6 +198,16 @@ export function fitsTopic(o: Pick<Opk, 'title' | 'short'>, topic: string) {
   const t = (topic || '').toLowerCase(), own = (o.title + ' ' + o.short).toLowerCase();
   return topicWords(t, 3).some(w => own.includes(w)) || (!!t.trim() && topicWords(o.title, 4).some(w => t.includes(w)));
 }
+/**
+ * Wat past bij het onderwerp van een datum zonder programma (Nog zonder programma in de opkomstbouwer, Gebruiken op het dashboard):
+ * eerst een concept (het laatst aangepaste eerst), anders iets uit de opkomstenbank (op titel). Ingeplande opkomsten tellen niet mee.
+ */
+export function fitFor(opks: Opk[], topic: string): Opk | undefined {
+  if (!(topic || '').trim()) return undefined;
+  const drafts = opks.filter(x => x.state === 'draft').sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const bank = opks.filter(x => x.state === 'bank').sort(byTitle);
+  return [...drafts, ...bank].find(x => fitsTopic(x, topic));
+}
 /** Standaardtijden van een kamp zonder eigen tijden: meer dagen vertrek 19:00 en terug 15:00, één dag 09:00–17:00. */
 export const KAMP_START = 19 * 60, KAMP_END = 15 * 60, KAMPDAG_START = 9 * 60, KAMPDAG_END = 17 * 60;
 export const kampTimes = (n: number): [number, number] => n > 1 ? [KAMP_START, KAMP_END] : [KAMPDAG_START, KAMPDAG_END];

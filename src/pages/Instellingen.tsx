@@ -250,7 +250,7 @@ function Team() {
   const { user } = useAuth();
   const manage = isTL || isAdmin;
   const [email, setEmail] = useState(''); const [kind, setKind] = useState<'leiding' | 'teamleider' | 'transfer'>('leiding'); const [perms, setPerms] = useState<Perms>(DEFAULT_LEIDING_PERMS);
-  const [inv, setInv] = useState<Invite | null>(null); const [busy, setBusy] = useState(false);
+  const [inv, setInv] = useState<Invite | null>(null); const [busy, setBusy] = useState(false); const busyRef = useRef(false);
   // Teamleider: per speltak (ook oude uitnodigingen van vóór de groep). Beheerder van de groep: met gid erbij, anders weigert Firestore de lijst.
   const open = useOpenInvites(manage && sp && !practice ? [!isTL && sp.gid ? { gid: sp.gid, sid: sp.id } : { sid: sp.id }] : []);
   const roles = useRoles();
@@ -282,10 +282,12 @@ function Team() {
   const eff = needTl ? 'teamleider' : kind;
   const fail = (e: any) => toast(e?.message === 'last' ? 'Er moet minstens één teamleider blijven.' : 'Aanpassen mislukt.');
   const invite = async () => {
+    // Enter kan sneller dan de knop uitgaat: nooit twee keer tegelijk (anders twee uitnodigingen voor dezelfde persoon)
+    if (busyRef.current) return;
     const em = email.trim().toLowerCase();
     if (!isEmail(em)) { toast('Vul een geldig e-mailadres in.'); return; }
     if (members.some(([, m]) => m.email === em)) { toast('Dit e-mailadres zit al in het team.'); return; }
-    setBusy(true);
+    busyRef.current = true; setBusy(true);
     try {
       if (eff === 'teamleider') await ensureTlIds(sp).catch(() => {});
       // Rol overdragen: de ander komt binnen als leiding met alle rechten; daarna draag je zelf je rol over (knop bij die persoon).
@@ -295,7 +297,7 @@ function Team() {
       setInv(r.inv); setEmail('');
       if (r.reused) toast(`Er stond al een uitnodiging voor ${em}. Dit is dezelfde link.`);
     } catch { toast('Uitnodiging maken mislukt.'); }
-    setBusy(false);
+    finally { busyRef.current = false; setBusy(false); }
   };
   return <section className="card pad stack teamcard">
     <div className="row between"><h2>Team</h2><span className="hint">{plural(members.length, 'lid', 'leden')} · {sp.name}</span></div>

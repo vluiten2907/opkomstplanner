@@ -355,41 +355,46 @@ function releaseIfGone(g: Groep, all: Speltak[], exceptSid: string, uid: string,
 
 /** Iemand kiezen: uit de bekende mensen van de groep, of op e-mailadres. Heeft dat e-mailadres (nog) geen account, dan volgt
  *  `onNoAccount` (een uitnodiging maken; true = gelukt, het veld gaat leeg).
- *  Is de naam van die persoon al van iemand anders in de groep (onPick gooit 'name-taken'), dan kies je hier een andere naam. */
+ *  Is de naam van die persoon al van iemand anders in de groep (onPick gooit 'name-taken'), dan kies je hier een andere naam.
+ *  onPick geeft false als toevoegen mislukte: het e-mailadres en de keuze blijven dan staan. */
 function PersonPicker({ pool, exclude, label, emailLabel, button, groupName, onPick, onNoAccount, children }: { pool: Person[]; exclude: string[]; label: string; emailLabel: string; button: string; groupName: string;
   onPick: (p: Person) => Promise<unknown>; onNoAccount: (email: string) => Promise<boolean>; children?: ReactNode }) {
   const [sel, setSel] = useState(''); const [email, setEmail] = useState(''); const [busy, setBusy] = useState(false);
   const [taken, setTaken] = useState<{ p: Person; tried: string; name: string } | null>(null);
+  // Enter in het veld kan sneller dan de knop uitgaat: nooit twee keer tegelijk (anders twee uitnodigingen voor dezelfde persoon)
+  const busyRef = useRef(false);
   const list = pool.filter(p => !exclude.includes(p.uid));
   const go = async () => {
-    let p = list.find(x => x.uid === sel) || null;
-    if (!p) {
-      if (!isEmail(email)) { toast(list.length ? 'Kies iemand of vul een e-mailadres in.' : 'Vul een geldig e-mailadres in.'); return; }
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      let p = list.find(x => x.uid === sel) || null;
+      if (!p) {
+        if (!isEmail(email)) { toast(list.length ? 'Kies iemand of vul een e-mailadres in.' : 'Vul een geldig e-mailadres in.'); return; }
+        setBusy(true);
+        // opzoeken mislukt (bijv. geen verbinding): niet zomaar een uitnodiging maken
+        const found = await findAccount(email).then(x => x, () => undefined);
+        if (found === undefined) { toast('Opzoeken lukt nu niet. Controleer de verbinding en probeer het opnieuw.'); return; }
+        // nog geen (bevestigd) account: meteen een uitnodiging; wie al een account heeft maar nog niet bevestigde, logt met de link in
+        if (!found) { if (await onNoAccount(email)) setEmail(''); return; }
+        p = found;
+        if (exclude.includes(p.uid)) { toast('Deze persoon zit al in het team.'); return; }
+        // al bekend in de groep (bijv. als Akela Welpen): die naam, niet de accountnaam
+        const known = pool.find(x => x.uid === p!.uid);
+        if (known?.name) p = { ...p, name: known.name };
+      }
+      // zelfde persoon als bij de bezette naam: met de nieuw gekozen naam
+      const pickName = taken && taken.p.uid === p.uid;
+      if (pickName && !taken.name.trim()) { toast(`Kies een naam voor ${groupName}.`); return; }
+      const person = pickName ? { ...p, name: taken.name.trim() } : p;
       setBusy(true);
-      // opzoeken mislukt (bijv. geen verbinding): niet zomaar een uitnodiging maken
-      const found = await findAccount(email).then(x => x, () => undefined);
-      if (found === undefined) { setBusy(false); toast('Opzoeken lukt nu niet. Controleer de verbinding en probeer het opnieuw.'); return; }
-      // nog geen (bevestigd) account: meteen een uitnodiging; wie al een account heeft maar nog niet bevestigde, logt met de link in
-      if (!found) { try { if (await onNoAccount(email)) setEmail(''); } finally { setBusy(false); } return; }
-      setBusy(false);
-      p = found;
-      if (exclude.includes(p.uid)) { toast('Deze persoon zit al in het team.'); return; }
-      // al bekend in de groep (bijv. als Akela Welpen): die naam, niet de accountnaam
-      const known = pool.find(x => x.uid === p!.uid);
-      if (known?.name) p = { ...p, name: known.name };
-    }
-    // zelfde persoon als bij de bezette naam: met de nieuw gekozen naam
-    const pickName = taken && taken.p.uid === p.uid;
-    if (pickName && !taken.name.trim()) { toast(`Kies een naam voor ${groupName}.`); return; }
-    const person = pickName ? { ...p, name: taken.name.trim() } : p;
-    setBusy(true);
-    try { await onPick(person); setSel(''); setEmail(''); setTaken(null); }
-    catch (e: any) {
-      if (e?.message !== 'name-taken') throw e;
-      setTaken({ p, tried: person.name, name: pickName ? taken.name : '' });
-      toast(`${person.name} is al in gebruik binnen ${groupName}. Kies een andere naam voor deze groep.`);
-    }
-    finally { setBusy(false); }
+      try { if (await onPick(person) !== false) { setSel(''); setEmail(''); setTaken(null); } }
+      catch (e: any) {
+        if (e?.message !== 'name-taken') throw e;
+        setTaken({ p, tried: person.name, name: pickName ? taken.name : '' });
+        toast(`${person.name} is al in gebruik binnen ${groupName}. Kies een andere naam voor deze groep.`);
+      }
+    } finally { busyRef.current = false; setBusy(false); }
   };
   return <div className="stack" style={{ gap: 8 }}>
     <div className="row">
@@ -442,6 +447,8 @@ function SpeltakRow({ sp, g, me, pool, all, names, open: openInv }: { sp: Spelta
       // naam bezet: de keuze laat dan een veld zien voor een andere naam
       if (e?.message === 'name-taken') throw e;
       err(e, e?.message === 'member' ? 'Deze persoon zit al in het team.' : 'Toevoegen mislukt.');
+      // mislukt: het ingevulde e-mailadres blijft staan (zie PersonPicker)
+      return false;
     }
   };
   const remove = async () => {

@@ -442,6 +442,18 @@ test('fitsTopic', () => {
   assert.equal(M.fitsTopic(o('Opkomst in het bos'), 'Sinterklaasopkomst'), false, 'algemene woorden tellen niet');
   assert.equal(M.fitsTopic(o('Sinterklaasopkomst'), ''), false, 'geen onderwerp');
 });
+test('fitFor', () => {
+  const list = [
+    opk({ id: 'b1', state: 'bank', title: 'Sinterklaas speurtocht' }),
+    opk({ id: 'p1', state: 'planned', title: 'Sinterklaasopkomst', updatedAt: 9 }),
+    opk({ id: 'd1', state: 'draft', title: 'Sinterklaas oud', updatedAt: 1 }),
+    opk({ id: 'd2', state: 'draft', title: 'Sinterklaas nieuw', updatedAt: 5 }),
+  ];
+  assert.equal(M.fitFor(list, 'Sinterklaas')?.id, 'd2', 'eerst een concept, het laatst aangepaste eerst; nooit een ingeplande opkomst');
+  assert.equal(M.fitFor(list.filter(x => x.state !== 'draft'), 'Sinterklaas')?.id, 'b1', 'anders uit de bank');
+  assert.equal(M.fitFor(list, 'Vossenjacht'), undefined);
+  assert.equal(M.fitFor(list, '  '), undefined, 'geen onderwerp');
+});
 test('libFields en blockFromLib', () => {
   const l = M.normLib({ id: 'L1', title: 'Kompasposten', dur: 45, cat: 'spel', minLeaders: 2, location: 'Bos', short: 'Kort', desc: 'Lang', prep: 'Klaarzetten', materials: 'Kompas', updatedAt: 5 });
   assert.deepEqual(Object.keys(M.libFields(l)).sort(), [...M.LIB_FIELDS].sort(), 'alleen de gedeelde velden, geen id of updatedAt');

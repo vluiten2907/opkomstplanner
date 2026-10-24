@@ -319,6 +319,14 @@ with sync_playwright() as p:
     pg.fill('.invite input[type=email]', 'anna@test.nl'); pg.click('text=Uitnodigingslink maken'); w(600)
     check(pg.locator('.invite .mono-code').inner_text() == link and pg.locator('.invrow:has-text("anna@test.nl")').count() == 1 and 'dezelfde link' in pg.locator('.toast').inner_text(),
           'nogmaals uitnodigen met dezelfde rechten: dezelfde link, geen dubbele uitnodiging')
+    # twee keer Enter terwijl de uitnodiging nog wordt gemaakt (trage verbinding): één uitnodiging, niet twee
+    n_inv_dub = lambda em: pg.evaluate("em => Object.entries(JSON.parse(localStorage.getItem('fake.firestore'))).filter(([k, v]) => k.startsWith('invites/') && v && v.email === em).length", em)
+    pg.evaluate("localStorage.setItem('fake.lag', '500')")
+    pg.fill('.invite input[type=email]', 'dubbel@test.nl'); pg.press('.invite input[type=email]', 'Enter'); w(150); pg.press('.invite input[type=email]', 'Enter'); w(2000)
+    pg.evaluate("localStorage.removeItem('fake.lag')"); w(300)
+    check(n_inv_dub('dubbel@test.nl') == 1 and pg.locator('.invrow:has-text("dubbel@test.nl")').count() == 1,
+          f'team: twee keer Enter bij een trage verbinding maakt één uitnodiging ({n_inv_dub("dubbel@test.nl")})')
+    pg.locator('.invrow:has-text("dubbel@test.nl") >> text=Intrekken').click(); w(150); pg.locator('.invrow:has-text("dubbel@test.nl") >> text=Zeker?').click(); w(800)
     # verlopen uitnodiging: Vernieuwen maakt een nieuwe link met dezelfde rol en rechten, de oude verdwijnt
     pg.fill('.invite input[type=email]', 'later@test.nl'); pg.click('text=Uitnodigingslink maken'); w(600)
     old_t = pg.locator('.invite .mono-code').inner_text().rsplit('/', 1)[-1]
@@ -1404,6 +1412,23 @@ with sync_playwright() as p:
     # verkeerd getypt? De uitnodiging staat bij de openstaande uitnodigingen en is in te trekken
     pg.locator('.invrow:has-text("niemand@test.nl") >> text=Intrekken').click(); w(150); pg.locator('.invrow:has-text("niemand@test.nl") >> text=Zeker?').click(); w(800)
     check(pg.locator('.invrow:has-text("niemand@test.nl")').count() == 0, 'uitnodiging voor een verkeerd adres ingetrokken')
+    # twee keer Enter op een adres zonder account terwijl opzoeken en uitnodigen nog lopen (trage verbinding): één uitnodiging
+    pg.evaluate("localStorage.setItem('fake.lag', '500')")
+    sem = sc.locator('input[aria-label="E-mailadres nieuw lid"]')
+    sem.fill('dubbel2@test.nl'); sem.press('Enter'); w(150); sem.press('Enter'); w(2500)
+    pg.evaluate("localStorage.removeItem('fake.lag')"); w(300)
+    check(n_inv_dub('dubbel2@test.nl') == 1 and pg.locator('.invrow:has-text("dubbel2@test.nl")').count() == 1 and sem.input_value() == '',
+          f'beheer, iemand toevoegen: twee keer Enter bij een trage verbinding maakt één uitnodiging ({n_inv_dub("dubbel2@test.nl")})')
+    pg.locator('.invrow:has-text("dubbel2@test.nl") >> text=Intrekken').click(); w(150); pg.locator('.invrow:has-text("dubbel2@test.nl") >> text=Zeker?').click(); w(800)
+    # toevoegen mislukt (geen verbinding): het ingevulde e-mailadres blijft staan
+    pg.evaluate("() => window.__fakeRemote('accounts/faal@test.nl', { uid: 'ufaal', name: 'Faal Test' })")
+    pg.evaluate("localStorage.setItem('fake.failWrite', 'unavailable')")
+    sem.fill('faal@test.nl'); sc.locator('button:text-is("Toevoegen")').click(); w(800)
+    ftt = pg.locator('.toast').inner_text()
+    pg.evaluate("localStorage.removeItem('fake.failWrite')")
+    check('Toevoegen mislukt' in ftt and sem.input_value() == 'faal@test.nl' and sc.locator('.member:has-text("Faal Test")').count() == 0,
+          f'beheer, toevoegen mislukt: het e-mailadres blijft staan ({ftt!r}, {sem.input_value()!r})')
+    sem.fill('')
     sc.locator('input[aria-label="E-mailadres nieuw lid"]').fill('greet2@test.nl'); sc.locator('button:text-is("Toevoegen")').click(); w(800)
     greet2_scouts = sc.locator('.mono-code').inner_text()
     # hetzelfde adres dat Greet (beheerder van de groep) al uitnodigde: dezelfde link, maar mailen via de server kan alleen Greet
@@ -3046,10 +3071,14 @@ with sync_playwright() as p:
     q.click('.hero-notopic button:has-text("Invullen")'); q.wait_for_timeout(200)
     q.fill('.hero input.inline-edit', 'Bosspel'); q.keyboard.press('Enter'); q.wait_for_timeout(600)
     check(q.locator('.hero h2.hero-title:not(.none)').inner_text() == 'Bosspel' and q.locator('.hero-notopic').count() == 0, 'dashboard: onderwerp invullen met de knop Invullen')
-    # nog geen programma: met het recht Opkomsten is Programma maken de hoofdknop (één klik), Koppelen staat ernaast
+    # nog geen programma, maar de bank heeft "Grote vlaggenroof" (een groot bosspel): die past bij Bosspel, dus Gebruiken is de hoofdknop;
+    # Programma maken en Koppelen staan ernaast (zie verderop: zonder iets dat past is Programma maken de hoofdknop)
     hb = q.locator('.hero .empty .btn')
-    check(hb.all_inner_texts() == ['Programma maken', 'Koppelen', 'In jaarplanning'] and q.locator('.hero .empty .btn.primary').all_inner_texts() == ['Programma maken'],
-          f'dashboard zonder programma: Programma maken is de hoofdknop, Koppelen ernaast ({hb.all_inner_texts()})')
+    check(hb.all_inner_texts() == ['Gebruiken', 'Programma maken', 'Koppelen', 'In jaarplanning'] and q.locator('.hero .empty .btn.primary').all_inner_texts() == ['Gebruiken']
+          and q.locator('.hero .hero-fit').inner_text() == 'Past bij: Grote vlaggenroof (opkomstenbank)',
+          f'dashboard zonder programma, iets uit de bank past: Gebruiken is de hoofdknop, Programma maken en Koppelen ernaast ({hb.all_inner_texts()})')
+    check(q.locator('.hero button:has-text("Opmerking toevoegen")').count() == 1 and q.locator('.hero button:has-text("Korte omschrijving toevoegen")').count() == 0,
+          'dashboard zonder programma: Opmerking toevoegen (geen Korte omschrijving)')
     q.wait_for_timeout(700); q.click('.hero button:has-text("Programma maken")'); q.wait_for_timeout(900)
     hk = q.url.rstrip('/').rsplit('/', 1)[-1]
     check('/bouwer/' in q.url and q.input_value('#om-title') == 'Bosspel' and q.locator('.metatoggle').get_attribute('aria-expanded') == 'true'
@@ -3059,6 +3088,38 @@ with sync_playwright() as p:
     check(q.url.rstrip('/').endswith('/dashboard') and q.locator('.hero button:has-text("Programma maken")').count() == 1 and q.locator('.hero h2.hero-title').inner_text() == 'Bosspel'
           and q.evaluate("id => !JSON.parse(localStorage.getItem('opk.oefen.v1'))['speltakken/oefen/opkomsten/' + id]", hk),
           'dashboard: Programma maken → Ongedaan maken: terug op het dashboard, opkomst weg, onderwerp blijft')
+    # zonder programma: de opmerking toevoegen komt in de rij van de jaarplanning (niet in een opkomst)
+    q.click('.hero button:has-text("Opmerking toevoegen")'); q.wait_for_timeout(200)
+    q.keyboard.type('Laarzen aan'); q.keyboard.press('Enter'); q.wait_for_timeout(900)
+    qn = q.evaluate("(() => { const s = JSON.parse(localStorage.getItem('opk.oefen.v1')); return Object.entries(s).filter(([k, v]) => k.startsWith('speltakken/oefen/planning/') && v && v.topic === 'Bosspel').map(([, v]) => v.note); })()")
+    check(qn == ['Laarzen aan'] and q.locator('.hero .hero-note').text_content() == 'Opmerking: Laarzen aan' and q.locator('.hero button:has-text("Opmerking toevoegen")').count() == 0,
+          f'dashboard zonder programma: Opmerking toevoegen slaat de opmerking op bij de datum ({qn})')
+    # past er een concept bij het onderwerp: Gebruiken is de hoofdknop (zoals Nog zonder programma in de opkomstbouwer), Programma maken en Koppelen ernaast
+    q.wait_for_timeout(300)
+    q.evaluate("(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)); s['speltakken/oefen/opkomsten/opk-bos'] = { id: 'opk-bos', state: 'draft', kind: 'opkomst', title: 'Bosspel', short: '', cats: [], blocks: [], start: 840, end: 990, prep: 0, post: 0, createdAt: Date.now(), updatedAt: Date.now() }; localStorage.setItem(k, JSON.stringify(s)); })()")
+    q.reload(); q.wait_for_timeout(1200)
+    hb = q.locator('.hero .empty .btn')
+    check(hb.all_inner_texts() == ['Gebruiken', 'Programma maken', 'Koppelen', 'In jaarplanning'] and q.locator('.hero .empty .btn.primary').all_inner_texts() == ['Gebruiken']
+          and q.locator('.hero .hero-fit').inner_text() == 'Past bij: Bosspel (concept)',
+          f'dashboard zonder programma, met een passend concept: Past bij en Gebruiken als hoofdknop ({hb.all_inner_texts()})')
+    q.screenshot(path=f'{OUT}/33c-dashboard-past-bij.png', full_page=False)
+    q.set_viewport_size({'width': 390, 'height': 844}); q.wait_for_timeout(200)
+    check(q.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'dashboard met Past bij mobiel: geen horizontale scroll')
+    q.locator('.hero .empty').scroll_into_view_if_needed(); q.screenshot(path=f'{OUT}/33d-dashboard-past-bij-mobiel.png', full_page=False)
+    q.set_viewport_size({'width': 1360, 'height': 900}); q.wait_for_timeout(200)
+    q.click('.hero .empty button:has-text("Gebruiken")'); q.wait_for_timeout(900)
+    qg = lambda: q.evaluate("(() => { const s = JSON.parse(localStorage.getItem('opk.oefen.v1')); return [s['speltakken/oefen/opkomsten/opk-bos'].state, Object.values(s).filter(v => v && v.opkId === 'opk-bos').length, Object.values(s).filter(v => v && v.state && v.title === 'Bosspel').length]; })()")
+    g1 = qg(); gt = q.locator('.toast').inner_text()
+    check(g1 == ['planned', 1, 1] and 'Gekoppeld' in gt and q.locator('.hero h2.hero-title').inner_text() == 'Bosspel' and q.locator('.hero button:has-text("Openen")').count() == 1,
+          f'dashboard: Gebruiken koppelt het passende concept (geen tweede, lege opkomst) ({g1}, {gt!r})')
+    q.click('.toast button:has-text("Ongedaan maken")'); q.wait_for_timeout(900)
+    check(qg() == ['draft', 0, 1] and q.locator('.hero .empty button:has-text("Gebruiken")').count() == 1, f'dashboard: Gebruiken → Ongedaan maken: weer een concept ({qg()})')
+    # niets dat past (concept en bank-opkomst weg): Programma maken is de hoofdknop, Koppelen ernaast, geen Past bij
+    q.wait_for_timeout(300)
+    q.evaluate("(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)); delete s['speltakken/oefen/opkomsten/opk-bos']; delete s['speltakken/oefen/opkomsten/opk-bank-vlag']; localStorage.setItem(k, JSON.stringify(s)); })()")
+    q.reload(); q.wait_for_timeout(1200)
+    check(hb.all_inner_texts() == ['Programma maken', 'Koppelen', 'In jaarplanning'] and q.locator('.hero .empty .btn.primary').all_inner_texts() == ['Programma maken'] and q.locator('.hero .hero-fit').count() == 0,
+          f'dashboard zonder programma, niets dat past: Programma maken is de hoofdknop, Koppelen ernaast ({hb.all_inner_texts()})')
     # lege banken in de oefenomgeving (geen groep: geen tabbladen); eerst het opslaan van het onderwerp laten afronden
     q.wait_for_timeout(800); q.evaluate(drop, 'speltakken/oefen/activiteiten/'); q.evaluate(drop, 'speltakken/oefen/opkomsten/')
     q.goto(BASE + '/s/oefen/opkomsten'); q.wait_for_timeout(1200)
@@ -3110,9 +3171,41 @@ with sync_playwright() as p:
     u.locator('.modal .pick:has-text("Sinterklaasopkomst") button:has-text("Kiezen")').click(); u.wait_for_timeout(900)
     tt = u.locator('.toast').inner_text(); lk = uget("[s[P + 'planning/pl-2'].opkId, s[P + 'opkomsten/opk-sint'].state]")
     check(lk == ['opk-sint', 'planned'] and 'Gekoppeld' in tt and u.locator('.toast button:has-text("Ongedaan maken")').count() == 1, f'concept koppelen: melding Gekoppeld met Ongedaan maken ({lk}, {tt!r})')
+    check('Onderwerp was "Sinterklaas"' in tt, f'concept koppelen: de melding noemt het onderwerp dat er stond ({tt!r})')
     u.click('.toast button:has-text("Ongedaan maken")'); u.wait_for_timeout(900)
     lk = uget("[s[P + 'planning/pl-2'].opkId, s[P + 'planning/pl-2'].topic, s[P + 'opkomsten/opk-sint'].state, s[P + 'opkomsten/opk-sint'].title]")
     check(lk == [None, 'Sinterklaas', 'draft', 'Sinterklaasopkomst'], f'concept koppelen, Ongedaan maken: rij weer met zijn onderwerp, concept weer concept ({lk})')
+    # 4) Datum en soort → Geen opkomst op een gekoppelde rij: vooraf staat erbij dat de opkomst naar de concepten gaat, daarna Ongedaan maken
+    u_row('Sinterklaas'); vkr = u.locator('.prow:has(.plink:has-text("Vuur en kompas"))')
+    vkr.locator('.pdate').click(); u.wait_for_timeout(300)
+    u.click('.modal .seg >> text=Geen opkomst'); u.wait_for_timeout(150)
+    gh = u.locator('.modal .hint:has-text("De gekoppelde opkomst gaat naar de concepten.")').count()
+    u.click('.modal button:has-text("Opslaan")'); u.wait_for_timeout(800)
+    tt = u.locator('.toast').inner_text(); g1 = uget("[s[P + 'planning/pl-1'].type, s[P + 'planning/pl-1'].opkId, s[P + 'opkomsten/opk-vuur'].state]")
+    check(gh == 1 and g1 == ['geen', None, 'draft'] and 'staat nu bij de concepten' in tt and u.locator('.toast button:has-text("Ongedaan maken")').count() == 1,
+          f'Datum en soort → Geen opkomst op een gekoppelde rij: uitleg vooraf, opkomst naar de concepten, met Ongedaan maken ({gh}, {g1}, {tt!r})')
+    u.click('.toast button:has-text("Ongedaan maken")'); u.wait_for_timeout(900)
+    g2 = uget("[s[P + 'planning/pl-1'].type, s[P + 'planning/pl-1'].opkId, s[P + 'planning/pl-1'].topic, s[P + 'opkomsten/opk-vuur'].state]")
+    check(g2 == ['opkomst', 'opk-vuur', 'Vuur en kompas', 'planned'], f'Geen opkomst, Ongedaan maken: weer een opkomst met de gekoppelde opkomst ({g2})')
+    # 5) dashboard: de omschrijving (van de opkomst) en de opmerking (van de datum) zijn twee regels; de een aanpassen laat de ander staan
+    u.evaluate("(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)), P = 'speltakken/oefen/'; s[P + 'opkomsten/opk-jungle'].short = ''; s[P + 'planning/pl-0'].note = 'Verzamelen bij de kerk'; localStorage.setItem(k, JSON.stringify(s)); })()")
+    u.goto(BASE + '/s/oefen/dashboard'); u.wait_for_timeout(1200)
+    h1 = [u.locator('.hero .hero-note').text_content(), u.locator('.hero p.hero-short').count(), u.locator('.hero button:has-text("Korte omschrijving toevoegen")').count(), u.locator('.hero button:has-text("Opmerking toevoegen")').count()]
+    u.click('.hero button:has-text("Korte omschrijving toevoegen")'); u.wait_for_timeout(200)
+    u.keyboard.type('Verzamelen bij het station'); u.keyboard.press('Enter'); u.wait_for_timeout(900)
+    h2 = uget("[s[P + 'opkomsten/opk-jungle'].short, s[P + 'planning/pl-0'].note]")
+    check(h1 == ['Opmerking: Verzamelen bij de kerk', 0, 1, 0] and h2 == ['Verzamelen bij het station', 'Verzamelen bij de kerk'] and u.locator('.hero p.hero-short').inner_text() == 'Verzamelen bij het station',
+          f'dashboard: opmerking op een eigen regel; de omschrijving invullen laat de opmerking staan ({h1}, {h2})')
+    u.locator('.hero .hero-note').dblclick(); u.wait_for_timeout(200)
+    ne = u.locator('.hero textarea.inline-edit[aria-label="Opmerking"]').count()
+    u.fill('.hero textarea.inline-edit', 'Verzamelen bij de molen'); u.keyboard.press('Enter'); u.wait_for_timeout(900)
+    h3 = uget("[s[P + 'opkomsten/opk-jungle'].short, s[P + 'planning/pl-0'].note]")
+    check(ne == 1 and h3 == ['Verzamelen bij het station', 'Verzamelen bij de molen'] and u.locator('.hero .hero-note').text_content() == 'Opmerking: Verzamelen bij de molen',
+          f'dashboard: opmerking aanpassen met dubbelklik, de omschrijving blijft ({h3})')
+    u.screenshot(path=f'{OUT}/48-dashboard-omschrijving-en-opmerking.png', full_page=False)
+    u.set_viewport_size({'width': 390, 'height': 844}); u.wait_for_timeout(200)
+    check(u.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'dashboard met omschrijving en opmerking mobiel: geen horizontale scroll')
+    u.screenshot(path=f'{OUT}/48b-dashboard-omschrijving-en-opmerking-mobiel.png', full_page=True)
     uc.close()
     # --- toegankelijkheid (eigen oefendata): vaste kopbalk, volgorde in de tijdlijn, Ctrl+Z, Leiding indelen met het toetsenbord, controle, contrast
     kc = b.new_context(viewport={'width': 390, 'height': 844}, locale='nl-NL')

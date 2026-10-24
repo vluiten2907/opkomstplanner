@@ -12,7 +12,7 @@ import { Chip, ConfirmBtn, Dot, Field, TimePicker, scrollCalm, useMedia, useShee
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, todayISO, uid, DAYS } from '../lib/time';
-import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, fitsTopic, rowDate, rowsIn, catOf, changeOpkTime, copyKampDay, copyOpk, dayShort, firstFree, freeName, hasPdfPage, kampBase, kampFitRow, kampMismatchNote, nameTaken, dayTitle, isBlankOpk, relabelDays, isFixed, isKamp, lanesLayout, libSearchText, minNeed, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, progEmpty, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, fitFor, rowDate, rowsIn, catOf, changeOpkTime, copyKampDay, copyOpk, dayShort, firstFree, freeName, hasPdfPage, kampBase, kampFitRow, kampMismatchNote, nameTaken, dayTitle, isBlankOpk, relabelDays, isFixed, isKamp, lanesLayout, libSearchText, minNeed, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, progEmpty, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /** Titel van de opkomst: loopt door op een volgende regel in plaats van af te breken (smal scherm), zonder echte regeleinden. */
 function TitleArea({ value, readOnly, onChange, placeholder, autoFocus }: { value: string; readOnly: boolean; onChange: (v: string) => void; placeholder: string; autoFocus?: boolean }) {
@@ -76,7 +76,7 @@ export default function Bouwer() {
       <div className="picklist">{open.map((r, i) => {
         const e = r.e!, d = rowDate(r), what = e.topic.trim() || 'Weekendkamp', main = firstOpen && i === 0;
         // past er al een concept of iets uit de bank bij het onderwerp? Dan staat Gebruiken vooraan (het venster Koppelen zet die ook bovenaan)
-        const fit = e.topic.trim() ? [...drafts, ...bank].find(x => fitsTopic(x, e.topic)) : undefined;
+        const fit = fitFor(opks, e.topic);
         const pick = <button className="btn sm" onClick={() => openModal({ kind: 'link', keyId: r.key })} aria-label={`Koppelen: ${what}`}>Koppelen</button>;
         const makeBtn = <button className={'btn sm' + (main && !fit ? ' primary' : '')} onClick={() => make(r.key, e.type === 'kamp')} aria-label={`Programma maken: ${what}`}><Plus size={14} />Maken</button>;
         return <div key={r.key} className="pick">

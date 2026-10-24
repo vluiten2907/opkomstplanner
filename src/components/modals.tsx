@@ -50,15 +50,28 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
       const [ds, de] = defaultTimes(settings, en2.type, en2.date, en2.endDate), mine = (touched || own) && (stV !== ds || enV !== de);
       en2.start = mine ? stV : null; en2.end = mine ? enV : null;
     }
+    // Geen opkomst op een gekoppelde rij: de opkomst gaat naar de concepten, met Ongedaan maken (zie relinkGeen)
+    let unlinked: (() => void) | null = null;
     if (en2.type === 'geen' && en2.opkId) {
       if (!canOpk) { toast(NO_UNLINK); return; }
-      unlinkEntry(en2); en2.opkId = null; toast('De gekoppelde opkomst staat nu bij de concepten.');
+      const back = clone(e!), oid = en2.opkId;
+      unlinkEntry(en2); en2.opkId = null; unlinked = () => relinkGeen(back, oid);
     }
     // verzet kamp: dagen die een weekdag heten volgen de nieuwe datum; past de lengte niet meer bij de rij, dan een melding
     const misfit = linked && en2.opkId ? kampMismatchNote(linked, en2.date, en2.endDate, en2.type) : '';
     if (linked && en2.opkId && isKamp(linked) && can('build')) { const c = clone(linked); if (relabelDays(c, iso)) saveOpk(c); }
     savePlan(en2); onSaved?.(en2); onClose();
-    if (misfit) toast(misfit, undefined, 8000);
+    if (unlinked) toast('De gekoppelde opkomst staat nu bij de concepten.', undoAction(unlinked));
+    else if (misfit) toast(misfit, undefined, 8000);
+  };
+  // Ongedaan maken na Geen opkomst: soort, datums en onderwerp terug en de opkomst weer gekoppeld, met de nieuwste stand.
+  // Alleen als de rij nog Geen opkomst is zonder opkomst, en de opkomst nog een concept is dat nergens anders aan hangt (zoals restoreRow).
+  const relinkGeen = (back: Plan, oid: string) => {
+    const L = latest(), cur = L.plans.find(p => p.id === back.id), c = L.getO(oid);
+    if (!cur || cur.type !== 'geen' || cur.opkId || !c || c.state !== 'draft' || L.plans.some(p => p.opkId === oid)) { toast('Kan niet meer terug: de datum of de opkomst is intussen veranderd.'); return; }
+    L.savePlan({ ...cur, type: back.type, date: back.date, endDate: back.endDate, topic: back.topic, opkId: oid });
+    L.saveOpk({ ...c, state: 'planned' });
+    toast('Teruggezet');
   };
   const clear = () => {
     if (!e) { onClose(); return; }
@@ -87,7 +100,8 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
     <div className="two"><Field label="Datum" htmlFor="md-date"><input id="md-date" value={date} onChange={e => setDate(e.target.value)} onBlur={() => setDate(tidyNL(date))} placeholder="dd-mm-jjjj" inputMode="numeric" /></Field>
       <Field label="Tot en met" htmlFor="md-end"><input id="md-end" value={end} onChange={e => setEnd(e.target.value)} onBlur={() => setEnd(tidyNL(end, parseNL(date)))} placeholder="leeg = één dag" inputMode="numeric" /></Field></div>
     <Field label="Snel kiezen"><div className="row" style={{ gap: 6 }}>{quick.map(([l, a, b]) => <Chip key={l} onClick={() => { setDate(fmtNL(a)); setEnd(b ? fmtNL(b) : ''); if (b && type === 'opkomst') setType('kamp'); if (!b && type === 'kamp') setType('opkomst'); }}>{l}</Chip>)}</div></Field>
-    {linked ? <p className="hint">De tijden komen uit de gekoppelde opkomst: {fmtT(st0)}–{fmtT(en0)}.</p>
+    {linked && type === 'geen' ? <p className="hint">De gekoppelde opkomst gaat naar de concepten.</p>
+      : linked ? <p className="hint">De tijden komen uit de gekoppelde opkomst: {fmtT(st0)}–{fmtT(en0)}.</p>
       : <div className="two"><Field label="Begintijd / vertrek"><TimePicker value={stV} onChange={v => { setSt(v); setEn(enV); setTouched(true); }} /></Field><Field label="Eindtijd / terug"><TimePicker value={enV} onChange={v => { setSt(stV); setEn(v); setTouched(true); }} /></Field></div>}
     <Field label="Opmerking" htmlFor="md-note"><textarea id="md-note" rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="bijv. vertrek bij het clubhuis" /></Field>
     <div className="row between"><div className="row"><button className="btn primary" onClick={save}>Opslaan</button><button className="btn ghost" onClick={onClose}>Annuleren</button></div>
@@ -286,7 +300,9 @@ export function linkDraft(S: SpeltakCtx, o: Opk, keyId: string) {
   S.linkOpk(o, en, false, true);
   const undo = plannedUndo(S, { rowId: en.id, before, created, oid: o.id, kind: 'draft', title0 });
   const note = kampMismatchNote(o, en.date, en.endDate, en.type);
-  if (!S.offerPlanTimes(o, en, 'Gekoppeld.')) toast(note ? 'Gekoppeld. ' + note : 'Gekoppeld', undoAction(undo), note ? 9000 : undefined);
+  // het onderwerp van de datum wordt de titel van het concept: zeg wat er stond (zoals bij Inplannen), Ongedaan maken zet het terug
+  const t0 = before.topic.trim(), was = t0 && t0 !== (title0.trim() || t0) ? ` Onderwerp was "${t0}".` : '';
+  if (!S.offerPlanTimes(o, en, 'Gekoppeld.' + was)) toast(was || note ? 'Gekoppeld.' + was + (note ? ' ' + note : '') : 'Gekoppeld', undoAction(undo), was || note ? 9000 : undefined);
 }
 
 /** Een kopie uit de bank (zonder namen) inplannen op een rij in de jaarplanning (Kiezen in Koppelen, Gebruiken in de opkomstbouwer). */

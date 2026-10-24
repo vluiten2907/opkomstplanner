@@ -159,13 +159,16 @@ export function onSnapshot(ref: Ref, a: any, b?: any, c?: any) {
   if (d) { const t = setTimeout(() => { listeners.add(l); l(); }, d); return () => { clearTimeout(t); listeners.delete(l); }; }
   listeners.add(l); setTimeout(l, 0); return () => listeners.delete(l);
 }
-export async function getDoc(ref: Ref) { return snap(ref); }
-export async function getDocs(ref: Ref) { if (invitesDenied(ref)) throw err('permission-denied'); return snap(ref); }
+// Testhaak 'fake.lag' = ms: eenmalig lezen (getDoc, getDocs) en setDoc duren zo lang, op elk pad, zoals bij echte Firestore
+// (bijv. dubbel Enter terwijl een uitnodiging nog wordt gemaakt). Alleen voor de rooktest.
+const lag = async () => { const ms = Number(localStorage.getItem('fake.lag')) || 0; if (ms) await new Promise(r => setTimeout(r, ms)); };
+export async function getDoc(ref: Ref) { await lag(); return snap(ref); }
+export async function getDocs(ref: Ref) { await lag(); if (invitesDenied(ref)) throw err('permission-denied'); return snap(ref); }
 // Testhaak 'fake.holdWrite' = ms: schrijven in een speltak duurt zo lang (trage of geen verbinding). Alleen voor de rooktest.
 const hold = async (path: string) => { const ms = Number(failCode('fake.holdWrite', path)) || 0; if (ms) await new Promise(r => setTimeout(r, ms)); };
 export async function setDoc(ref: Ref, data: any, opts?: { merge?: boolean }) {
   const f = failCode('fake.failWrite', ref.path); if (f) throw failErr(f);
-  await hold(ref.path);
+  await hold(ref.path); await lag();
   const cur = opts?.merge && store[ref.path] ? store[ref.path] : {};
   const next = clone(cur); Object.entries(data).forEach(([k, v]) => applyKey(next, k, v)); store[ref.path] = next; persist();
 }
