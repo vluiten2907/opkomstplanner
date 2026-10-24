@@ -4,7 +4,7 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 
 ## Bezig
 
-- **Code- en design-review (4 rondes)** — 10 reviewers (logica, data, beveiliging, schermen, beheer, banken, codekwaliteit, toegankelijkheid, gebruiksgemak, uiterlijk), elke vondst door een tweede controleur nagelopen. 297 verbeteringen op branch `claude/project-thread-ycuy7a`, alle reviewers op 4 sterren. Wacht op Vincents akkoord om live te zetten; nieuwe `firestore.rules` (232 emulatortests) in `/mnt/project-files/code-review/`.
+_(niets)_
 
 
 ## Open
@@ -14,6 +14,7 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 - **Live controle met echt account** — registreren, speltak aanmaken en uitnodiging accepteren op conqueston.nl/opkomst door Vincent (bevestigt e-mail/wachtwoord-login en de gepubliceerde regels).
 
 ## Klaar
+- 2026-10-24 — Code- en design-review (4 rondes): 10 reviewers (logica, data, beveiliging, schermen, beheer, banken, codekwaliteit, toegankelijkheid, gebruiksgemak, uiterlijk), elke vondst door een tweede controleur nagelopen. 297 verbeteringen, alle reviewers op 4 sterren. Nieuwe `firestore.rules` (232 emulatortests). Rapport: https://claude.ai/artifact/MugBxP1LjYj4HkhSrDBTNN
 - 2026-10-22 — Beveiligingscontrole + fixes: e-mailadres bevestigen na account aanmaken (nodig voor uitnodiging accepteren en vindbaar zijn voor beheer; melding met *Ik heb bevestigd* / *Mail opnieuw sturen*), map `api/` op de server helemaal dicht behalve het mailscript, teller met hash, max. 20 uitnodigingsmails per afzender per dag, namen in uitnodigingen max. 60 tekens en zonder links, namen vastleggen alleen met uitnodiging of als lid van de groep, beveiligingsheaders, jsPDF 4.2.1 / react-router 6.30.6 / Firebase 11.10. Nieuwe `firestore.rules` (129 emulatortests). Rapport: https://claude.ai/artifact/Dtb9Tj5YhNgqHeCS7GnHzT
 - 2026-10-22 — Scoutinggroep verwijderen (alleen Beheer totaal): knop *Groep verwijderen* onderaan de groepskaart op Beheer, bevestigen door de groepsnaam te typen, met overzicht van wat er weggaat. Weg: alle speltakken met opkomsten, activiteiten en jaarplanning, groepsbank, namen, groepsleden, open uitnodigingen, beheerders en de groep. Inlogaccounts blijven bestaan (website kan die niet wissen); na afloop een lijst van wie nergens meer bij hoort, om eventueel in de Firebase-console te verwijderen. Nieuwe `firestore.rules`: beheerder mag `groepen/{gid}/leden` lezen en opruimen.
 - 2026-10-22 — Jaarplanning opent standaard op *Komende 3 maanden* (vandaag + 13 weken) i.p.v. het hele seizoen; een andere keuze blijft staan zolang het tabblad open is.
