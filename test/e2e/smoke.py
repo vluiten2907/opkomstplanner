@@ -1204,6 +1204,14 @@ with sync_playwright() as p:
     check(be.count() == 1 and 'Kopieer er een uit de groep (tabblad Groep); een nieuwe opkomst bouwen kan met het recht Opkomsten.' in be.inner_text()
           and 'kies "In bank"' not in be.inner_text() and be.locator('button:has-text("Nieuwe opkomst")').count() == 0,
           f'lege opkomstenbank met alleen Banken (in een groep): kopieer er een uit de groep ({be.all_inner_texts()})')
+    # ... maar deelt niemand iets, dan niet naar een leeg tabblad Groep verwijzen
+    gbak = pg.evaluate("() => { const s = " + fsjs + "; return Object.fromEntries(Object.keys(s).filter(k => k.includes('/gedeeld/')).map(k => [k, s[k]])); }")
+    pg.evaluate("ks => ks.forEach(k => window.__fakeRemote(k, null))", list(gbak.keys())); w(600)
+    be = pg.locator('.bank-empty')
+    check(be.count() == 1 and 'tabblad Groep' not in be.inner_text() and 'Een opkomst bouwen kan met het recht Opkomsten; daarna zet je hem hier in de bank.' in be.inner_text()
+          and pg.locator('.tabs.page [role=tab]:has-text("Groep") .count').inner_text() == '0',
+          f'lege opkomstenbank met alleen Banken, groep deelt niets: geen verwijzing naar tabblad Groep ({be.all_inner_texts()})')
+    pg.evaluate("b => Object.entries(b).forEach(([k, v]) => window.__fakeRemote(k, v))", gbak); w(600)
     pg.click('.tabs.page >> text=Groep'); w(400); pg.click('.bcard:has-text("Sluipspel")'); w(300)
     pg.click('.side >> text=Kopieer naar onze bank'); w(900)
     copy_of = "sid => { const s = " + fsjs + "; return Object.keys(s).find(k => k.startsWith('speltakken/' + sid + '/opkomsten/') && s[k].state === 'bank' && s[k].title === 'Sluipspel'); }"

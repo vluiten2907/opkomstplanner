@@ -84,7 +84,7 @@ export default function Opkomstenbank() {
       : <><span>{!can('bank') ? 'Hier komen opkomsten die jullie vaker gebruiken, zonder namen van leiding. In de bank zetten kan met het recht Banken.'
         : can('build') ? 'Bewaar hier opkomsten die je vaker gebruikt: bouw een opkomst en kies "In bank". Namen van leiding gaan niet mee.'
         // alleen Banken: bouwen kan niet, dus niet "bouw een opkomst" zonder knop
-        : groupOn ? 'Bewaar hier opkomsten die je vaker gebruikt, zonder namen van leiding. Kopieer er een uit de groep (tabblad Groep); een nieuwe opkomst bouwen kan met het recht Opkomsten.'
+        : groupOn && others.length ? 'Bewaar hier opkomsten die je vaker gebruikt, zonder namen van leiding. Kopieer er een uit de groep (tabblad Groep); een nieuwe opkomst bouwen kan met het recht Opkomsten.'
         : 'Bewaar hier opkomsten die je vaker gebruikt, zonder namen van leiding. Een opkomst bouwen kan met het recht Opkomsten; daarna zet je hem hier in de bank.'}</span>
         {can('build') && <button className="btn primary" onClick={newOpkomst}><Plus size={16} />Nieuwe opkomst</button>}</>}</div> : <>
     <div className="toolbar"><input className="inp" type="search" placeholder={g ? 'Zoek in de groep' : 'Zoek opkomst'} aria-label={g ? 'Zoek in de groep' : 'Zoek opkomst'} value={q} onChange={e => setQ(e.target.value)} />
