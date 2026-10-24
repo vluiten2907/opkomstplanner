@@ -441,8 +441,12 @@ export function analyzeOne(o: { start: number; end: number; blocks: Block[]; pre
     if (!free && run != null) { issues.push({ lvl: 'info', at: run, text: `Niet ingepland: ${fmtT(run)}–${fmtT(m)} (${fmtDur(m - run)})` }); run = null; }
   }
   const pres = new Set(present), std = new Set(leaders), per: PerName = {};
+  // komt een titel vaker voor, dan staat de begintijd ervoor, zodat je ziet welk onderdeel bedoeld is
+  const seen = new Map<string, number>();
+  bl.forEach(b => { const k = (b.title || '').trim().toLowerCase(); seen.set(k, (seen.get(k) || 0) + 1); });
+  const lab = (b: Block, none: string) => ((seen.get((b.title || '').trim().toLowerCase()) || 0) > 1 ? fmtT(b.start) + ' ' : '') + (b.title || none);
   bl.forEach(b => {
-    const t = b.title || 'Naamloos onderdeel';
+    const t = lab(b, 'Naamloos onderdeel');
     if (b.start < lo || b.start + b.dur > hi) issues.push({ lvl: 'warn', at: b.start, id: b.id, text: `${t} valt buiten ${fmtT(lo)}–${fmtT(hi)}` });
     if (!nn && b.minLeaders && b.names.length < b.minLeaders) issues.push({ lvl: 'warn', at: b.start, id: b.id, text: `${t}: ${b.names.length} van minimaal ${b.minLeaders} leiding ingedeeld` });
     if (!isFixed(b) && !b.desc && !b.short) issues.push({ lvl: 'info', at: b.start, id: b.id, text: `${t}: nog geen beschrijving` });
@@ -457,7 +461,7 @@ export function analyzeOne(o: { start: number; end: number; blocks: Block[]; pre
       const a = arr[i], b = arr[j];
       if (a.start < b.start + b.dur && b.start < a.start + a.dur) {
         clashes.add(a.id + '|' + n); clashes.add(b.id + '|' + n);
-        issues.push({ lvl: 'warn', at: b.start, id: b.id, text: `${n} staat tegelijk bij ${a.title || 'naamloos'} en ${b.title || 'naamloos'}` });
+        issues.push({ lvl: 'warn', at: b.start, id: b.id, text: `${n} staat tegelijk bij ${lab(a, 'naamloos')} en ${lab(b, 'naamloos')}` });
       }
     }
   });

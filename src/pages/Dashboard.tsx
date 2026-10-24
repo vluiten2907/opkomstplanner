@@ -235,7 +235,7 @@ export function ProgList({ o, date }: { o: Opk; date: string | null }) {
     <span className="who">{b.names.length ? b.names.join(', ') : <span className="muted">nog niemand</span>}</span></li>;
   const sorted = (list: Opk['blocks']) => [...list].sort((a, b) => a.start - b.start);
   if (isKamp(o)) return <>{o.days.map((d, i) => <Fragment key={d.id}><li className="dayhead"><b>{dayTitle(o, i, date ? addDays(date, i) : null)}</b><span className="hint">{fmtT(d.start)}–{fmtT(d.end)}</span></li>{sorted(d.blocks).map(li)}</Fragment>)}</>;
-  const band = (t: number, txt: string) => <li key={txt} className="band"><span className="mono">{fmtT(t)}</span><i /><span>{txt}</span><span /></li>;
+  const band = (t: number, txt: string) => <li key={txt} className="band"><span className="mono">{fmtT(t)}</span><i /><span>{txt}</span></li>;
   return <>{o.prep ? band(o.start - o.prep, `Voorbereiding leiding · ${o.prep} min`) : null}{sorted(o.blocks).map(li)}{o.post ? band(o.end, `Nabespreking leiding · ${o.post} min`) : null}</>;
 }
 

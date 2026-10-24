@@ -465,6 +465,12 @@ with sync_playwright() as p:
     check(soon(lambda: kp.count() == 1 and undo.count() == 1), 'onderdeel verwijderd, melding met Ongedaan maken')
     undo.click()
     check(soon(lambda: kp.count() == 2), 'Ongedaan maken zet het onderdeel terug')
+    # twee onderdelen met dezelfde titel: de aandachtspunten noemen de begintijd, zodat de regels niet woordelijk dubbel staan
+    pg.click('button.stat:has-text("Aandachtspunten")'); w(300)
+    kp_iss = [t.strip() for t in pg.locator('.issues li').all_inner_texts() if 'Kompasposten' in t]
+    check(len(kp_iss) >= 2 and len(set(kp_iss)) == len(kp_iss) and all(re.search(r'\d\d:\d\d Kompasposten', t) for t in kp_iss),
+          f'aandachtspunten: twee onderdelen "Kompasposten" krijgen elk hun begintijd erbij, geen dubbele regels ({kp_iss})')
+    pg.click('.tabs >> text=Activiteitenbank'); w(200)
     shot('03-bouwer')
 
     # --- leiding indelen (tijdlijn naast elkaar)
@@ -862,12 +868,20 @@ with sync_playwright() as p:
     pg.click('.toast.show button:has-text("Ongedaan maken")'); w(900)
     lib_back = pg.evaluate("Object.entries(JSON.parse(localStorage.getItem('fake.firestore'))).some(([k, v]) => k.includes('/activiteiten/') && v && v.title === 'Vlaggenroof groot')")
     check(pg.locator('.bcard:has-text("Vlaggenroof groot")').count() == 1 and lib_back, 'activiteit verwijderd: Ongedaan maken zet hem terug (ook opgeslagen)')
+    # onderste regel van elke kaart (N× gebruikt) op één lijn met de prullenbak, ook in kortere kaarten naast een hogere
+    card_align = """(() => [...document.querySelectorAll('.bwrap')].filter(w => w.querySelector('.carddel')).map(w => {
+      const h = w.querySelector('.bcard > .hint:last-child').getBoundingClientRect(), d = w.querySelector('.carddel').getBoundingClientRect();
+      return Math.round((h.top + h.height / 2) - (d.top + d.height / 2)); }))()"""
+    al = pg.evaluate(card_align)
+    check(len(al) >= 2 and all(abs(v) <= 3 for v in al), f'activiteitenbank: "N× gebruikt" op één lijn met de prullenbak in elke kaart ({al})')
     card('Vlaggenroof groot').locator('.carddel').click(); w(150); card('Vlaggenroof groot').locator('text=Verwijderen?').click(); w(600)
     for t in ('Bankweg', 'Bouwerweg'):
         pg.click('nav >> text=Opkomstbouwer'); w(300); pg.click('text=Nieuwe opkomst'); w(700); pg.fill('#om-title', t); w(700)
         pg.click('.plan-head >> button:has-text("In bank")'); w(600)
     pg.click('nav >> text=Opkomstenbank'); w(500)
     check(card('Bankweg').locator('.carddel').count() == 1, 'opkomstenbank: verwijderknop op de kaart'); shot('15-bank-verwijderen')
+    al = pg.evaluate(card_align)
+    check(len(al) >= 2 and all(abs(v) <= 3 for v in al), f'opkomstenbank: "N× ingepland" op één lijn met de prullenbak in elke kaart ({al})')
     card('Bankweg').locator('.carddel').click(); w(150); shot('15b-bank-verwijderen-bevestigen'); card('Bankweg').locator('text=Verwijderen?').click(); w(600)
     check(pg.locator('.bcard:has-text("Bankweg")').count() == 0, 'afgeronde opkomst verwijderd vanaf de kaart')
     pg.click('.toast.show button:has-text("Ongedaan maken")'); w(900)
@@ -875,6 +889,21 @@ with sync_playwright() as p:
     card('Bankweg').locator('.carddel').click(); w(150); card('Bankweg').locator('text=Verwijderen?').click(); w(600)
     pg.set_viewport_size({'width': 390, 'height': 800}); w(300)
     check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'opkomstenbank mobiel met verwijderknoppen: geen horizontale scroll'); shot('15c-bank-mobiel', False)
+    # zoekveld op de telefoon net zo breed als de kaarten eronder (beide banken)
+    search_full = "(() => { const i = document.querySelector('.toolbar .inp').getBoundingClientRect(), g = document.querySelector('.bank-grid, .empty').getBoundingClientRect(); return [Math.round(i.left - g.left), Math.round(i.right - g.right)]; })()"
+    ob_s = pg.evaluate(search_full)
+    pg.click('nav a[href$="/activiteiten"]'); w(500); ab_s = pg.evaluate(search_full)
+    check(all(abs(v) <= 2 for v in ob_s + ab_s), f'banken mobiel: zoekveld even breed als de kaarten (opkomsten {ob_s}, activiteiten {ab_s})')
+    pg.click('nav a[href$="/opkomsten"]'); w(500)
+    # melding met Ongedaan maken op de telefoon: bijna schermbreed, knop links uitgelijnd onder de tekst of ernaast (niet half zo breed en ingesprongen)
+    card('Bouwerweg').locator('.carddel').click(); w(150); card('Bouwerweg').locator('text=Verwijderen?').click(); w(600)
+    toast_m = pg.evaluate("""(() => { const t = document.querySelector('.toast.show.has-act'); if (!t) return null;
+      const r = t.getBoundingClientRect(), s = t.querySelector('span').getBoundingClientRect(), b = t.querySelector('button').getBoundingClientRect(), pl = parseFloat(getComputedStyle(t).paddingLeft);
+      return { w: Math.round(r.width), vw: innerWidth, sh: Math.round(s.height), same: b.top < s.bottom - 2, ind: Math.round(b.left - r.left - pl) }; })()""")
+    check(toast_m is not None and toast_m['w'] > toast_m['vw'] * 0.75 and toast_m['w'] <= toast_m['vw'] - 31 and toast_m['sh'] < 45 and (toast_m['same'] or abs(toast_m['ind']) <= 1),
+          f'melding mobiel: bijna schermbreed, tekst in hooguit twee regels, Ongedaan maken niet ingesprongen ({toast_m})'); shot('15d-melding-mobiel', False)
+    pg.click('.toast.show button:has-text("Ongedaan maken")'); w(900)
+    check(pg.locator('.bcard:has-text("Bouwerweg")').count() == 1, 'opkomstenbank mobiel: verwijderen en Ongedaan maken')
     pg.set_viewport_size({'width': 1360, 'height': 900}); w(300)
     pg.click('.bcard:has-text("Bouwerweg")'); w(300); pg.click('.side >> text=Bewerken'); w(700)
     pg.click('.plan-head >> button:has-text("Verwijderen")'); w(200); pg.click('.plan-head >> text=Klik nogmaals om te verwijderen'); w(700)
@@ -970,6 +999,8 @@ with sync_playwright() as p:
     shot('07-mobiel', False)
     pg.click('nav >> text=Dashboard'); w(500)
     check(pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'mobiel dashboard: geen horizontale scroll'); shot('07-mobiel-dashboard', False)
+    bands = pg.evaluate("[...document.querySelectorAll('.hero .prog li.band')].map(l => [Math.round(l.getBoundingClientRect().height), l.children.length])")
+    check(len(bands) >= 1 and all(h <= 40 and n == 3 for h, n in bands), f'mobiel dashboard: voorbereiding/nabespreking op één regel, zonder lege tweede rij ({bands})')
     hero_ok = pg.evaluate("""(() => { const r = s => document.querySelector(s).getBoundingClientRect();
       const h = r('.hero'), t = r('.hero .hero-title'), d = r('.hero .hero-date'), e = r('.hero .eyebrow');
       return t.left - h.left < 40 && t.width > h.width * 0.8 && t.top >= d.bottom - 2 && e.left >= d.right - 2 && e.top < d.bottom; })()""")

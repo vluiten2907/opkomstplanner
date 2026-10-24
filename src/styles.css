@@ -276,7 +276,9 @@ h2.h-sm { font-size: 16.5px; }
 .blk.tiny .rs { height: 6px; }
 .blk.tiny .bdel { top: 50%; transform: translateY(-50%); width: 22px; height: 22px; }
 .toast.show.has-act { pointer-events: auto; }
-.toast button { margin-left: 14px; border: 0; background: transparent; color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 0; }
+/* met een knop (Ongedaan maken): tekst en knop naast elkaar, past het niet dan de knop netjes eronder */
+.toast.has-act { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 14px; row-gap: 2px; }
+.toast button { margin-left: 0; border: 0; background: transparent; color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 0; }
 
 /* Opkomst */
 .plan-head { display: grid; gap: 12px; }
@@ -399,8 +401,10 @@ h2.h-sm { font-size: 16.5px; }
 .bcard {
   --c: #55635A; --cc: color-mix(in srgb, var(--c) var(--keep), #fff);
   text-align: left; border: 0; padding: 14px 16px;
-  display: grid; gap: 7px; cursor: pointer; align-content: start;
+  display: flex; flex-direction: column; gap: 7px; cursor: pointer;
 }
+/* de onderste regel (N× gebruikt) staat in elke kaart onderaan, op één lijn met de prullenbak */
+.bcard > .hint:last-child { margin-top: auto; }
 .bcard .bt { font-weight: 700; font-size: 15px; line-height: 1.25; overflow-wrap: anywhere; display: flex; gap: 8px; align-items: baseline; }
 .bcard .bt .dot { transform: translateY(-1px); }
 .bcard .bm { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; color: var(--muted); }
@@ -438,7 +442,7 @@ h2.h-sm { font-size: 16.5px; }
 .toast {
   position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) translateY(20px);
   background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 700; font-size: 14px;
-  opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 80; max-width: calc(100% - 32px);
+  opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 80; width: max-content; max-width: calc(100% - 32px);
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .loading { padding: 60px 0; text-align: center; color: var(--muted); }
@@ -480,7 +484,7 @@ h2.h-sm { font-size: 16.5px; }
   .hero-top { gap: 14px; }
   .hero-date { width: 66px; }
   .hero-date b { font-size: 32px; }
-  .prog li { grid-template-columns: 44px 10px minmax(0, 1fr); }
+  .prog li { grid-template-columns: 44px 10px minmax(0, 1fr); row-gap: 4px; }
   .prog .who { grid-column: 3; text-align: left; }
   .nextitem { grid-template-columns: 42px minmax(0, 1fr); }
   .nt { grid-column: 2; justify-content: flex-start; }
@@ -1057,6 +1061,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
     margin: -2px -4px; padding: 5px 28px 5px 4px; mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
   }
   .toolbar .catfilter::-webkit-scrollbar { display: none; }
+  .toolbar .inp { max-width: none; flex: 1 1 100%; }
   .toolbar .catfilter .chip { flex: none; scroll-margin-inline: 4px 32px; }
 }
 

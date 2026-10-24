@@ -141,6 +141,12 @@ test('analyze: afwezig, dubbel ingedeeld en te weinig leiding', () => {
   const none = M.analyze(o, [], ['Akela', 'Baloe', 'Kaa']);
   assert.ok(texts(none).includes('Minimaal 3 leiding nodig (voor b), 0 aanwezig'), 'ook als niemand aanwezig is');
 });
+test('analyze: twee onderdelen met dezelfde titel krijgen hun begintijd erbij', () => {
+  const o = opk({ blocks: [blk('a', 840, 30, { title: 'Vlaggenroof', minLeaders: 3, names: [] }), blk('b', 900, 30, { title: 'Vlaggenroof', minLeaders: 3, names: [] }), blk('c', 930, 30, { title: 'Ranja', minLeaders: 2, names: [] })] });
+  const t = texts(M.analyze(o, [], []));
+  assert.ok(t.includes('14:00 Vlaggenroof: 0 van minimaal 3 leiding ingedeeld') && t.includes('15:00 Vlaggenroof: 0 van minimaal 3 leiding ingedeeld'));
+  assert.ok(t.includes('Ranja: 0 van minimaal 2 leiding ingedeeld'), 'unieke titel blijft zonder tijd');
+});
 test('analyze: bank-opkomst kijkt niet naar namen', () => {
   const o = opk({ state: 'bank', blocks: [blk('b', 850, 30, { minLeaders: 3, names: [] })] });
   const a = M.analyze(o, [], ['Akela']);
