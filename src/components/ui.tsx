@@ -112,6 +112,11 @@ function inertOutside(el: HTMLElement) {
   return () => done.forEach(s => { s.inert = false; });
 }
 
+/** scrollIntoView, vloeiend tenzij het systeem minder beweging vraagt (prefers-reduced-motion). */
+export function scrollCalm(el: Element | null | undefined, opts: Omit<ScrollIntoViewOptions, 'behavior'> = {}) {
+  el?.scrollIntoView({ ...opts, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+}
+
 /** Klopt de media query (bijv. smal scherm)? Volgt draaien en vergroten. */
 export function useMedia(q: string) {
   const [on, setOn] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(q).matches);

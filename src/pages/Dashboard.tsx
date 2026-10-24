@@ -4,15 +4,15 @@ import { CalendarClock, ChevronLeft, ChevronRight, Download, ExternalLink, Mail,
 import { useSpeltak } from '../store/speltak';
 import { toast, undoAction } from '../store/toast';
 import { openModal } from '../store/modal';
-import { makeForEntry, markFresh } from '../store/fresh';
+import { createFresh, makeForEntry } from '../store/fresh';
 import { Strip, StatusPill, CatTags, PeopleChips, usePdf, PageTitle } from '../components/shared';
 import { Dot, TimePicker } from '../components/ui';
 import { addDays, cap, dayDiff, fmtLong, fmtRange, fmtShort, fmtT, fromISO, isoWeek, mon3, plural, todayISO, toISO, DAYS, MONTHS } from '../lib/time';
-import { catOf, dayTitle, entryStatus, entryTimes, isKamp, kampBase, letterDue, minNeed, newKamp, newOpk, opkCatList, plannersOf, changeOpkTime, progStatus, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Opk, type Plan, type Row } from '../lib/model';
+import { catOf, dayTitle, entryStatus, entryTimes, isKamp, kampBase, letterDue, minNeed, opkCatList, plannersOf, changeOpkTime, progStatus, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Opk, type Plan, type Row } from '../lib/model';
 
 export default function Dashboard() {
   const S = useSpeltak();
-  const { settings, opks, lib, plans, sid, saveOpk, can } = S;
+  const { settings, opks, lib, plans, sid, can } = S;
   const nav = useNavigate();
   const today = todayISO();
   const rows = rowsIn(settings, plans, today, addDays(today, 400)).filter(r => rowEnd(r) >= today);
@@ -26,7 +26,7 @@ export default function Dashboard() {
   const onDay = after.every(r => fromISO(rowDate(r)).getDay() === settings.opkDay);
   const blankLine = after.length === 1 ? `De volgende ${onDay ? DAYS[settings.opkDay] : 'opkomst'} is nog leeg.`
     : `De komende ${after.length} ${onDay ? DAYS[settings.opkDay] + 'en' : 'opkomsten'} zijn nog leeg.`;
-  const create = (kamp: boolean) => { const o = kamp ? newKamp(settings, 3) : newOpk(settings); saveOpk(o); markFresh(o.id); nav(`/s/${sid}/bouwer/${o.id}`); };
+  const create = (kamp: boolean) => createFresh(S, kamp, nav);
   return <div className="stack pt-6 md:pt-8" style={{ gap: 20 }}>
     {/* de groepsnaam staat al in de kopbalk; de titel blijft kleiner dan die van de komende opkomst */}
     <PageTitle small kicker={S.practice ? undefined : <Link className="kicker-switch" to="/speltakken"><Users size={13} />Andere speltak</Link>} title={S.sp?.name || settings.speltak || 'Overzicht'} sub={`${cap(fmtLong(today))}, week ${isoWeek(today)}`}>

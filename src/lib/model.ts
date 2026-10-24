@@ -401,7 +401,9 @@ export const byTitle = (a: { title: string }, b: { title: string }) => (a.title 
 
 /* ---------- Analyse ---------- */
 export type Issue = { lvl: 'warn' | 'info'; at: number; id?: string; text: string };
-export type Analysis = { total: number; planned: number; free: number; issues: Issue[]; warn: number; per: Record<string, any[]>; clashes: Set<string>; peak: number; present: string[] };
+/** Onderdelen per naam; bij een kamp met `_di`, de index van de dag. */
+export type PerName = Record<string, (Block & { _di?: number })[]>;
+export type Analysis = { total: number; planned: number; free: number; issues: Issue[]; warn: number; per: PerName; clashes: Set<string>; peak: number; present: string[] };
 export function analyzeOne(o: { start: number; end: number; blocks: Block[]; prep?: number; post?: number }, present: string[], leaders: string[], nn: boolean): Analysis {
   const total = o.end - o.start, lo = o.start - (o.prep || 0), hi = o.end + (o.post || 0);
   const bl = [...o.blocks].sort((a, b) => a.start - b.start || a.dur - b.dur);
@@ -414,7 +416,7 @@ export function analyzeOne(o: { start: number; end: number; blocks: Block[]; pre
     if (free && run == null) run = m;
     if (!free && run != null) { issues.push({ lvl: 'info', at: run, text: `Niet ingepland: ${fmtT(run)}–${fmtT(m)} (${fmtDur(m - run)})` }); run = null; }
   }
-  const pres = new Set(present), std = new Set(leaders), per: Record<string, any[]> = {};
+  const pres = new Set(present), std = new Set(leaders), per: PerName = {};
   bl.forEach(b => {
     const t = b.title || 'Naamloos onderdeel';
     if (b.start < lo || b.start + b.dur > hi) issues.push({ lvl: 'warn', at: b.start, id: b.id, text: `${t} valt buiten ${fmtT(lo)}–${fmtT(hi)}` });
@@ -449,7 +451,7 @@ export function analyze(o: Opk, present: string[], leaders: string[]): Analysis 
     const a = analyzeOne(d, present, leaders, nn);
     out.total += a.total; out.planned += a.planned; out.free += a.free; out.warn += a.warn; out.peak = Math.max(out.peak, a.peak);
     a.issues.forEach(x => out.issues.push({ ...x, text: d.label + ': ' + x.text }));
-    Object.entries(a.per).forEach(([n, arr]) => (out.per[n] = out.per[n] || []).push(...arr.map(b => ({ ...b, _day: d.label, _di: i }))));
+    Object.entries(a.per).forEach(([n, arr]) => (out.per[n] = out.per[n] || []).push(...arr.map(b => ({ ...b, _di: i }))));
     a.clashes.forEach(c => out.clashes.add(c));
   });
   return out;

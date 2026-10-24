@@ -40,8 +40,6 @@ type Ctx = {
   removeMember: (uid: string) => Promise<void>;
   createInvite: (email: string, kind: 'teamleider' | 'leiding', perms: Perms, transfer?: boolean) => Promise<Invite>;
   getO: (id: string | null | undefined) => Opk | undefined;
-  /** Nieuwste versie van een opkomst, voor acties die later komen (bijv. Ongedaan maken in een melding). */
-  latestO: (id: string) => Opk | undefined;
   /** Gekoppelde opkomst van een rij in de jaarplanning, of null. */
   opkOf: (e: Plan | null | undefined) => Opk | null;
   getL: (id: string | null | undefined) => Lib | undefined;
@@ -126,9 +124,8 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
   // lokale, optimistische kopie: wijzigingen tonen direct, opslaan gebeurt met een korte vertraging
   const pending = useRef(new Map<string, { sid: string; kind: string; obj: any; t: any }>());
   const [, bump] = useState(0);
-  // nieuwste opkomsten, voor acties die later (vanuit een melding) worden uitgevoerd
-  const opksRef = useRef<Opk[]>([]);
-  const plansRef = useRef<Plan[]>([]);
+  // nieuwste stand (wordt bij elke render bijgewerkt), voor acties die later (vanuit een melding) worden uitgevoerd: latest()
+  const latestRef = useRef<Ctx>(null as any);
 
   useEffect(() => {
     if (!user) return;
@@ -188,8 +185,6 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
   // nieuwste instellingen, ook vlak na een eigen wijziging (voor lijsten die je snel na elkaar aanpast)
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
-  useEffect(() => { opksRef.current = opks; }, [opks]);
-  useEffect(() => { plansRef.current = plans; }, [plans]);
   const me = user && sp ? sp.members[user.uid] : null;
   const myName = me?.name || user?.displayName || '';
   const roles = useRoles();
@@ -246,9 +241,10 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
     // Een gedeelde bank-opkomst zet de synchronisatie vanzelf terug in de groepsbank.
     const back = clone(o);
     const undo = () => {
-      if (opksRef.current.some(x => x.id === back.id)) return;
+      const L = latestRef.current;
+      if (L.opks.some(x => x.id === back.id)) return;
       saveOpk(clone(back));
-      const cur = e && plansRef.current.find(p => p.id === e.id);
+      const cur = e && L.plans.find(p => p.id === e.id);
       if (cur && !cur.opkId) savePlan({ ...cur, opkId: back.id });
     };
     toast(o.state === 'bank' ? `"${o.title || 'Opkomst'}" uit de bank verwijderd${used ? '. Ingeplande opkomsten blijven staan' : ''}` : 'Concept verwijderd', undoAction(undo));
@@ -288,7 +284,6 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
 
   /* ---- afgeleiden en koppelingen (zelfde logica als de losse versie) ---- */
   const getO = (id: string | null | undefined) => opks.find(o => o.id === id);
-  const latestO = (id: string) => opksRef.current.find(o => o.id === id);
   const opkOf = (e: Plan | null | undefined) => (e && e.opkId && getO(e.opkId)) || null;
   const getL = (id: string | null | undefined) => lib.find(l => l.id === id);
   const entryOfOpk = (o: Opk | null | undefined) => (o && plans.find(p => p.opkId === o.id)) || null;
@@ -360,7 +355,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
     if (!can('build') || !planTimesDiffer(settings, e, o)) return false;
     const st = e.start!, en = e.end!;
     toast(`${prefix ? prefix + ' ' : ''}In de jaarplanning staat ${fmtT(st)}–${fmtT(en)}, de opkomst is ${fmtT(o.start)}–${fmtT(o.end)}.`, { label: 'Tijden uit jaarplanning gebruiken', fn: () => {
-      const cur = opksRef.current.find(x => x.id === o.id); if (!cur) return;
+      const cur = latestRef.current.getO(o.id); if (!cur) return;
       const c = clone(cur); applyPlanTimes(c, st, en); saveOpk(c); toast(`Opkomst staat nu op ${fmtT(c.start)}–${fmtT(c.end)}`);
     } });
     return true;
@@ -421,10 +416,9 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
     return { opk, dropped };
   };
 
-  const latestRef = useRef<Ctx>(null as any);
   const value: Ctx = { sid, sp, loading, denied: denied || missing, offline, loadError, cacheOnly, flushAll, canLink, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
     saveOpk, deleteOpk, removeOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
-    getO, latestO, opkOf, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, newForEntry, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null, practiceFrom,
+    getO, opkOf, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, newForEntry, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null, practiceFrom,
     latest: () => latestRef.current };
   latestRef.current = value;
   return <C.Provider value={value}>{children}</C.Provider>;

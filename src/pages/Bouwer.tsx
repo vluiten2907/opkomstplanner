@@ -6,13 +6,13 @@ import { toast, undoAction } from '../store/toast';
 import { linkBankCopy, linkDraft } from '../components/modals';
 import { openModal, withFreeName } from '../store/modal';
 import { guardLeave, setUnsaved, useDirty } from '../store/unsaved';
-import { isFresh, makeForEntry, markFresh, watchFresh } from '../store/fresh';
+import { createFresh, isFresh, makeForEntry, watchFresh } from '../store/fresh';
 import { Strip, PickOpk, usePdf, PageTitle, SaveBar, StatusPill, askBankName } from '../components/shared';
-import { Chip, ConfirmBtn, Dot, Field, TimePicker, useMedia, useSheetDialog } from '../components/ui';
+import { Chip, ConfirmBtn, Dot, Field, TimePicker, scrollCalm, useMedia, useSheetDialog } from '../components/ui';
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, todayISO, uid, DAYS } from '../lib/time';
-import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, fitsTopic, rowDate, rowsIn, catOf, changeOpkTime, copyKampDay, copyOpk, dayShort, firstFree, freeName, hasPdfPage, kampBase, kampFitRow, kampMismatchNote, nameTaken, dayTitle, isBlankOpk, relabelDays, isFixed, isKamp, lanesLayout, libSearchText, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, progEmpty, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, fitsTopic, rowDate, rowsIn, catOf, changeOpkTime, copyKampDay, copyOpk, dayShort, firstFree, freeName, hasPdfPage, kampBase, kampFitRow, kampMismatchNote, nameTaken, dayTitle, isBlankOpk, relabelDays, isFixed, isKamp, lanesLayout, libSearchText, minNeed, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, progEmpty, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /** Titel van de opkomst: loopt door op een volgende regel in plaats van af te breken (smal scherm), zonder echte regeleinden. */
 function TitleArea({ value, readOnly, onChange, placeholder, autoFocus }: { value: string; readOnly: boolean; onChange: (v: string) => void; placeholder: string; autoFocus?: boolean }) {
@@ -41,7 +41,7 @@ function metaPref(narrow: boolean, v?: '0' | '1') {
 export default function Bouwer() {
   const { oid } = useParams();
   const S = useSpeltak();
-  const { opks, plans, settings, saveOpk, sid, can, canLink, getO, removeOpk, entryOfOpk, practice } = S;
+  const { opks, plans, settings, sid, can, canLink, getO, removeOpk, entryOfOpk, practice } = S;
   const nav = useNavigate(), loc = useLocation();
   const o = oid ? getO(oid) : undefined;
   if (oid && o) return <Builder key={o.id} o={o} />;
@@ -55,7 +55,7 @@ export default function Bouwer() {
   const open = canLink ? rowsIn(settings, plans, today, addDays(today, 180)).filter(r => !!r.e && !r.e.opkId && r.e.type !== 'geen' && (!!r.e.topic.trim() || r.e.type === 'kamp')).slice(0, 3) : [];
   // met het recht Opkomsten meteen een programma maken (onderwerp als titel, gekoppeld, met Ongedaan maken); anders kiezen uit de bank of een concept
   const make = (key: string, kamp: boolean) => makeForEntry(S, key, kamp, nav, loc.pathname + loc.search);
-  const create = (kamp: boolean) => { const n = kamp ? newKamp(settings, 3) : newOpk(settings); saveOpk(n); markFresh(n.id); nav(`/s/${sid}/bouwer/${n.id}`); };
+  const create = (kamp: boolean) => createFresh(S, kamp, nav);
   // één hoofdknop in de lijsten (naast Nieuwe opkomst): Openen bij de eerstvolgende opkomst, of als die er niet is
   // de eerste datum nog zonder programma (Gebruiken als er iets past, anders Maken); de rest gewone knoppen
   const firstOpen = !coming.length;
@@ -131,7 +131,7 @@ function Builder({ o: stored }: { o: Opk }) {
     setTimeout(() => {
       const el = document.querySelector<HTMLElement>(blkSel(id)); if (!el) return;
       const r = el.getBoundingClientRect();
-      if (r.top < 120 || r.bottom > window.innerHeight - 40) el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+      if (r.top < 120 || r.bottom > window.innerHeight - 40) scrollCalm(el, { block: 'center' });
     }, 30);
   };
   // de activiteitenbank (zijpaneel) in beeld? Dan is de knop "+ Activiteit" onderin niet nodig
@@ -163,7 +163,7 @@ function Builder({ o: stored }: { o: Opk }) {
     setSelId(null); setSideTab(tab);
     setTimeout(() => {
       const el = sideRef.current; if (!el) return;
-      el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+      scrollCalm(el, { block: 'start' });
       el.querySelector<HTMLElement>('[role=tab][aria-selected=true]')?.focus({ preventScroll: true });
     }, 0);
   };
@@ -217,7 +217,7 @@ function Builder({ o: stored }: { o: Opk }) {
   // Breed scherm: het bewerkpaneel plakt naast de tijdlijn, maar bij een onderdeel onderaan duwt het einde van de tijdlijn
   // het omhoog, onder de kopbalk (titel en sluiten onzichtbaar). Dan terugschuiven tot het paneel weer op zijn plek staat.
   const editorInView = () => {
-    const el = sideRef.current; if (!el || window.matchMedia('(max-width: 900px)').matches) return;
+    const el = sideRef.current; if (!el || narrow) return;
     const bar = document.querySelector('header.bar')?.getBoundingClientRect().bottom ?? 0, top = el.getBoundingClientRect().top;
     if (top < bar + 4) window.scrollBy(0, top - (parseFloat(getComputedStyle(el).top) || bar + 16));
   };
@@ -375,7 +375,7 @@ function Builder({ o: stored }: { o: Opk }) {
           const fits = sel.start + 2 * sel.dur <= selCtx.T1; const c = { ...clone(sel), id: uid(), start: fits ? sel.start + sel.dur : sel.start };
           upd(() => { selCtx.D.blocks.push(c); }); select(c.id); toast(fits ? 'Kopie direct erna gezet' : 'Kopie op dezelfde tijd gezet');
         }} saveLib={saveLib} /></div>
-          : <SidePanel tab={sideTab} setTab={t => { setSideTab(t); if (window.matchMedia('(max-width: 900px)').matches) sideRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} ctx={ctx} A={whole} lanesRef={lanesRef} onSelect={select}
+          : <SidePanel tab={sideTab} setTab={t => { setSideTab(t); if (narrow) scrollCalm(sideRef.current, { block: 'start' }); }} ctx={ctx} A={whole} lanesRef={lanesRef} onSelect={select}
             onPlan={l => { const f = firstFree(D, Math.min(l.dur, D.end - D.start)); const b = insertLib(l, f == null ? D.start : f); showNew(b.id); toast(f == null ? 'Geen vrij moment lang genoeg; gezet op ' + fmtT(b.start) : 'Ingepland om ' + fmtT(b.start)); }}
             onDrop={(l, m) => { const b = insertLib(l, m); showNew(b.id); toast('Ingepland om ' + fmtT(b.start)); }} />}
       </aside>
@@ -560,7 +560,7 @@ function SidePanel({ tab, setTab, ctx, A, lanesRef, onSelect, onPlan, onDrop }: 
     {nn ? <p className="hint">Minimaal {minNeed(o)} leiding nodig: het onderdeel dat de meeste leiding vraagt bepaalt dit.</p> : <>
       <h3 className="gap-lg">Taken per leiding</h3>
       {people.length ? <ul className="who-list">{people.map(([n, arr]) => <li key={n}><b>{n}{A.present.includes(n) || !leaders.includes(n) ? '' : <> <span className="pill warn">afwezig</span></>}</b>
-        <span className="what">{[...arr].sort((a, b) => (a._di || 0) - (b._di || 0) || a.start - b.start).map((x, k) => <span key={k}>{isKamp(o) && o.days[x._di] ? dayOf(x._di) + ' ' : ''}{fmtT(x.start)}–{fmtT(x.start + x.dur)} {x.title || 'naamloos'}<br /></span>)}</span></li>)}</ul> : <p className="hint">Nog niemand ingedeeld.</p>}
+        <span className="what">{[...arr].sort((a, b) => (a._di || 0) - (b._di || 0) || a.start - b.start).map((x, k) => <span key={k}>{isKamp(o) && x._di != null && o.days[x._di] ? dayOf(x._di) + ' ' : ''}{fmtT(x.start)}–{fmtT(x.start + x.dur)} {x.title || 'naamloos'}<br /></span>)}</span></li>)}</ul> : <p className="hint">Nog niemand ingedeeld.</p>}
       {free.length > 0 && <p className="hint">Zonder taak: {free.join(', ')}</p>}
     </>}
   </div></>;

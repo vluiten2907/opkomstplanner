@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Plus, Tent, Trash2, SquarePen, Users } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast, undoAction } from '../store/toast';
-import { Modal, TimePicker, Field, Chip, ConfirmBtn, useMedia } from './ui';
+import { Modal, TimePicker, Field, Chip, ConfirmBtn, scrollCalm, useMedia } from './ui';
 import { PickOpk, copySharedToBank } from './shared';
 import { addDays, clone, fmtLong, fmtNL, fmtRange, fmtShort, parseNL, parseRange, tidyNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, plural, todayISO } from '../lib/time';
 import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, defaultTimes, entryTimes, ownTimes, firstFree, fitsTopic, isBlankPlan, isKamp, kampBase, kampMismatch, opkOnKamp, kampMismatchNote, kampStart, lanesLayout, minNeed, newEntry, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
@@ -379,7 +379,7 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
 
 /* ---------- Opkomst overnemen: planning door, leiding per activiteit, programma ---------- */
 export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean; onClose: () => void }) {
-  const { settings, leaders, lib, getO, latestO, saveOpk, entryOfOpk, presentForEntry, sid, savePlan, can } = useSpeltak();
+  const { settings, leaders, lib, getO, latest, saveOpk, entryOfOpk, presentForEntry, sid, savePlan, can } = useSpeltak();
   const nav = useNavigate();
   const [, bump] = useState(0);
   // indelen en het programma aanpassen hoort bij het recht Opkomsten (zoals in de bouwer); zonder dat recht alleen bekijken
@@ -393,7 +393,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
   const selRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!selId) return;
-    const t = setTimeout(() => selRef.current?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }), 30);
+    const t = setTimeout(() => scrollCalm(selRef.current, { block: 'nearest' }), 30);
     return () => clearTimeout(t);
   }, [selId]);
   // onderdelen staan op volgorde van tijd; schuift er een met de focus (andere begintijd), dan houdt het de focus
@@ -424,7 +424,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
     focusSoon(nb ? pickSel(nb.id) : '', '.modal select[aria-label="Activiteit om toe te voegen"]', '.modal .btn.primary');
     toast(`"${b.title || 'Naamloos onderdeel'}" verwijderd`, undoAction(() => {
       // de nieuwste versie van de opkomst (na het opslaan is dat een nieuw object), ook als dit venster al dicht is
-      const cur = latestO(oid); if (!cur) return;
+      const cur = latest().getO(oid); if (!cur) return;
       const list = dayId ? cur.days.find(d => d.id === dayId)?.blocks : cur.blocks;
       if (!list || list.some(x => x.id === b.id)) return;
       list.splice(Math.min(at, list.length), 0, b); if (isKamp(cur)) syncKamp(cur); saveOpk({ ...cur });

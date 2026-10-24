@@ -2,7 +2,7 @@ import type { NavigateFunction } from 'react-router-dom';
 import { toast, undoAction } from './toast';
 import { fmtRange } from '../lib/time';
 import type { useSpeltak } from './speltak';
-import { kampMismatchNote, type Plan } from '../lib/model';
+import { kampMismatchNote, newKamp, newOpk, type Plan } from '../lib/model';
 /**
  * Nieuwe opkomsten (knop Nieuwe opkomst of Weekendkamp) worden meteen opgeslagen. Ga je weg zonder iets in te vullen,
  * dan ruimt de bouwer ze weer op, zodat er geen lege "Naamloze opkomst" bij de concepten blijft staan.
@@ -25,6 +25,13 @@ export function watchFresh(id: string, drop: () => void) {
 }
 
 type Speltak = ReturnType<typeof useSpeltak>;
+
+/** Knop Nieuwe opkomst of Weekendkamp: meteen opslaan, als nieuw markeren (zie watchFresh) en openen in de bouwer. */
+export function createFresh(S: Speltak, kamp: boolean, nav: NavigateFunction) {
+  const o = kamp ? newKamp(S.settings, 3) : newOpk(S.settings);
+  S.saveOpk(o); markFresh(o.id); nav(`/s/${S.sid}/bouwer/${o.id}`);
+  return o;
+}
 
 export type PlannedSpec = {
   /** De rij in de jaarplanning (id) en hoe hij was vóór het inplannen. */

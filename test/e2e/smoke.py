@@ -1386,7 +1386,7 @@ with sync_playwright() as p:
     zname = zg.locator('input[id^="g-"]')
     zname.fill('TESTGROEP'); zname.press('Enter'); w(500)
     check(zname.input_value() == 'Zeegroep' and 'Er is al een groep Testgroep.' in pg.locator('.toast').inner_text()
-          and pg.evaluate("() => Object.entries(JSON.parse(localStorage.getItem('fake.firestore'))).filter(([k, v]) => /^groepen\/[^/]+$/.test(k) && v.name.toLowerCase() === 'testgroep').length") == 1,
+          and pg.evaluate("() => Object.entries(JSON.parse(localStorage.getItem('fake.firestore'))).filter(([k, v]) => /^groepen\\/[^/]+$/.test(k) && v.name.toLowerCase() === 'testgroep').length") == 1,
           'groep hernoemen naar de naam van een andere groep: niet opgeslagen, met melding')
     zg.locator('input[placeholder^="Naam nieuwe speltak"]').fill('Zeeverkenners'); zg.locator('button:has-text("Speltak aanmaken")').click(); w(800)
     zs = zg.locator('.spcard:has-text("Zeeverkenners")'); opened(zs, '.sp-head')
@@ -3542,6 +3542,21 @@ with sync_playwright() as p:
             check(q.locator('h1:text-is("Jaarplanning")').count() == 1 and q.locator('.subline:has-text("Seizoen 2026–2027")').count() == 1, 'jaarplanning in augustus: Dit seizoen is het komende seizoen (kop Jaarplanning, seizoen eronder)')
             q.goto(BASE + '/s/oefen/jaarplanning?focus=s:2026-08-08'); q.wait_for_timeout(1200)
             check(q.locator('.rangebar .field:has(label:text-is("Van")) input').input_value() == '09-07-2026', 'datum in de zomerpauze openen: bereik eromheen, geen eindeloze lus')
+        c.close()
+
+    # --- vloeiend schuiven alleen zonder 'minder beweging' (scrollCalm): Jaarplanning ?focus= schuift de rij in beeld
+    for rm, want in (('reduce', 'auto'), ('no-preference', 'smooth')):
+        c = b.new_context(viewport={'width': 1360, 'height': 900}, locale='nl-NL', reduced_motion=rm)
+        c.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())
+        q = c.new_page(); q.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+        q.add_init_script("""window.__scrolls = []; const o = Element.prototype.scrollIntoView;
+          Element.prototype.scrollIntoView = function (a) { window.__scrolls.push(a && typeof a === 'object' ? a.behavior || null : null); return o.call(this, a); };""")
+        q.goto(BASE + '/s/oefen/jaarplanning'); q.wait_for_timeout(1200)
+        rid = q.locator('.prow[id^="r-s-"]').last.get_attribute('id')
+        q.goto(BASE + '/s/oefen/jaarplanning?focus=s:' + rid[4:]); q.wait_for_timeout(1200)
+        sc = q.evaluate('window.__scrolls')
+        check(want in sc and ('smooth' not in sc if rm == 'reduce' else True) and q.locator('#' + rid + '.flash').count() == 1,
+              f'jaarplanning ?focus= met {rm}: schuift met {want} naar de rij ({sc})')
         c.close()
 
     # --- lid zonder naam (of met een getal of object als naam, bijv. via de API toegetreden): Team en Beheer blijven werken

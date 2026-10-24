@@ -8,8 +8,8 @@ import { openModal } from '../store/modal';
 import { BankCard, Strip, CatTags, PageTitle, SaveBar, askBankName, copySharedToBank } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, useEscapeClose, useSheetDialog } from '../components/ui';
 import { fmtDur, fmtT, plural } from '../lib/time';
-import { progBlocks, isFixed, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, newOpk, opkCatList, opkCatOf, opkSearchText, toBank, type Cat, type Opk } from '../lib/model';
-import { markFresh } from '../store/fresh';
+import { progBlocks, isFixed, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, opkCatList, opkCatOf, opkSearchText, toBank, type Cat, type Opk } from '../lib/model';
+import { createFresh } from '../store/fresh';
 import type { Gedeeld } from '../store/groepsbank';
 
 type Tab = 'own' | 'group';
@@ -53,7 +53,7 @@ export default function Opkomstenbank() {
 
   // lege bank of lege groep: geen zoekveld, filters of zijpaneel (de tabbladen blijven)
   const bare = g ? !others.length : !total && !opks.some(o => o.state === 'draft');
-  const newOpkomst = () => guardLeave(() => { const o = newOpk(settings); saveOpk(o); markFresh(o.id); nav(`/s/${sid}/bouwer/${o.id}`); });
+  const newOpkomst = () => guardLeave(() => { createFresh(latest(), false, nav); });
   const switchTab = (t: Tab) => guardLeave(() => { setTab(t); setSelRaw(null); setFrom(''); });
   const doCopy = (x: Gedeeld) => copySharedToBank(x, own, 'Kopieer naar onze bank', latest, (o, note) => {
     const t = `"${o.title || 'Opkomst'}" staat nu in jullie opkomstenbank`;

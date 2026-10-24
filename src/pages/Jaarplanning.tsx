@@ -5,7 +5,7 @@ import { useSpeltak } from '../store/speltak';
 import { toast, undoAction } from '../store/toast';
 import { openModal } from '../store/modal';
 import { StatusPill, PeopleChips, PageTitle } from '../components/shared';
-import { Chip, ConfirmBtn, Dot } from '../components/ui';
+import { Chip, ConfirmBtn, Dot, scrollCalm } from '../components/ui';
 import { addDays, dayDiff, fmtLong, fmtNL, fmtRange, fmtShort, fmtT, isoWeek, parseNL, plural, todayISO, DAYS, MONTHS } from '../lib/time';
 import { progBlocks, plannersOf, entryStatus, entryTimes, isKamp, letterDue, minNeed, opkCatOf, opkDaysIn, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Row, type Settings } from '../lib/model';
 
@@ -39,7 +39,7 @@ export default function Jaarplanning() {
     }
     const t = setTimeout(() => {
       const el = document.getElementById(rowDomId(focus));
-      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); }
+      if (el) { scrollCalm(el, { block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); }
       setParams({}, { replace: true });
     }, 80);
     return () => clearTimeout(t);
