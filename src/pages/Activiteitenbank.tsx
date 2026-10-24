@@ -3,7 +3,7 @@ import { guardLeave, useDirty } from '../store/unsaved';
 import { Plus, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast, undoAction } from '../store/toast';
-import { BankCard, PageTitle, SaveBar, cardSel, focusAfter, sideInView } from '../components/shared';
+import { BankCard, PageTitle, SaveBar, cardSel, enterSaves, focusAfter, sideInView } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, useEscapeClose, useSheetDialog } from '../components/ui';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { clone, fmtDur, plural, uid } from '../lib/time';
@@ -80,7 +80,7 @@ function LibEditor({ l, isNew, lib, readOnly, onClose, onCancelNew, onSave, onCo
   return <div className="pad stack">
     <div className="row between" style={{ alignItems: 'flex-start' }}><div className="row"><span className="eyebrow">{isNew ? 'Nieuwe activiteit' : 'Activiteit'}</span>{readOnly && <span className="pill neutral">Alleen lezen</span>}</div><button className="closex" onClick={onClose} aria-label="Sluiten"><X size={18} /></button></div>
     {readOnly && <p className="hint">Aanpassen kan met het recht Banken.</p>}
-    <Field label="Titel van de activiteit" htmlFor="lf-title"><input id="lf-title" value={d.title} readOnly={readOnly} onChange={e => upd(() => { d.title = e.target.value; })} placeholder="bijv. Levend Stratego" /></Field>
+    <Field label="Titel van de activiteit" htmlFor="lf-title"><input id="lf-title" value={d.title} readOnly={readOnly} onChange={e => upd(() => { d.title = e.target.value; })} onKeyDown={readOnly ? undefined : enterSaves} placeholder="bijv. Levend Stratego" /></Field>
     <div className="two"><Field label="Duur" htmlFor="lf-dur"><select id="lf-dur" value={d.dur} disabled={readOnly} onChange={e => upd(() => { d.dur = +e.target.value; })}>{durs.sort((a, b) => a - b).map(x => <option key={x} value={x}>{fmtDur(x)}</option>)}</select></Field>
       <Field label="Minimaal aantal leiding" htmlFor="lf-min"><NumInput id="lf-min" min={0} max={30} readOnly={readOnly} value={d.minLeaders} onChange={n => upd(() => { d.minLeaders = n; })} /></Field></div>
     <CatSelect prefix="lf" value={d.cat} disabled={readOnly} onChange={id => upd(() => { d.cat = id; })} />

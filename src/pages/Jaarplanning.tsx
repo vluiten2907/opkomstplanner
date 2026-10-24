@@ -7,7 +7,7 @@ import { openModal } from '../store/modal';
 import { StatusPill, PeopleChips, PageTitle } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, scrollCalm } from '../components/ui';
 import { addDays, dayDiff, fmtLong, fmtNL, fmtRange, fmtShort, fmtT, isoWeek, parseNL, plural, todayISO, DAYS, MONTHS } from '../lib/time';
-import { progBlocks, plannersOf, entryStatus, entryTimes, isKamp, letterDue, minNeed, opkCatOf, opkDaysIn, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Row, type Settings } from '../lib/model';
+import { progBlocks, plannersOf, entryStatus, entryTimes, isKamp, letterDue, minNeed, opkCatOf, opkDaysIn, rowDate, rowEnd, rowsIn, shownEnd, seasonLabel, seasonOf, seasonRange, type Row, type Settings } from '../lib/model';
 
 type Range = { from: string; to: string };
 function presetRange(s: Settings, p: string): Range {
@@ -111,7 +111,7 @@ function PlanRow({ r, today }: { r: Row; today: string }) {
     if (!cur || cur.state !== 'draft' || !row || row.opkId) { toast('Kan niet meer terug: de opkomst of de datum is intussen veranderd.'); return; }
     L.linkOpk(cur, { ...row }, false, true); toast('Weer gekoppeld');
   };
-  const dateBtn = <button className="pdate" disabled={!plan} onClick={() => openModal({ kind: 'date', keyId: r.key })} title="Datum of soort aanpassen"><b>{fmtRange(d, e && e.endDate)}</b><span>{sub}</span>{moved && <span className="moved">verzet van {fmtShort(e!.slot!)}</span>}</button>;
+  const dateBtn = <button className="pdate" disabled={!plan} onClick={() => openModal({ kind: 'date', keyId: r.key })} title="Datum of soort aanpassen"><b>{fmtRange(d, shownEnd(e))}</b><span>{sub}</span>{moved && <span className="moved">verzet van {fmtShort(e!.slot!)}</span>}</button>;
   // gekoppeld: het onderwerp is de titel van de opkomst, en die aanpassen vraagt ook recht op opkomsten
   const topic = <TopicInput keyId={r.key} value={o ? o.title : (e ? e.topic : '')} disabled={!plan || (!!o && !(can('build') || can('bank')))} placeholder={type === 'geen' ? 'Reden, bijv. Herfstvakantie' : 'Onderwerp, bijv. Pionieren'} label={'Onderwerp ' + fmtShort(d)} />;
   const cls = ['prow', type, past ? 'past' : ''].join(' ');

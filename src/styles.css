@@ -846,7 +846,7 @@ body { padding-top: env(safe-area-inset-top, 0px); }
 .groupcard > * { min-width: 0; }
 .gc-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .gc-chev { flex: 0 0 auto; transition: transform .15s; }
-.groupcard.open .gc-chev, .spcard.open .gc-chev { transform: rotate(90deg); }
+.groupcard.open .gc-head > .gc-chev, .spcard.open .sp-head > .gc-chev { transform: rotate(90deg); }
 .sp-head { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; flex: 1 1 200px; min-width: 0; cursor: pointer; }
 .sp-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .spcard .leiding .subrow { background: var(--paper, #fff); border-radius: 10px; padding: 8px 10px; }

@@ -68,18 +68,13 @@ export const focusAfter = (...sels: string[]) => setTimeout(() => {
 /** Selector voor een kaart in een bank (data-id). */
 export const cardSel = (id: string) => `.bcard[data-id="${CSS.escape(id)}"]`;
 
-/**
- * Breed scherm: het zijpaneel van een bank plakt pas onder de kopbalk als je wat naar beneden scrolt; bovenaan de pagina staat het lager
- * en valt de opslaan-balk onder de rand van het scherm. Dan de pagina schuiven tot het paneel op zijn plakplek staat (zoals editorInView in de bouwer).
- */
-export function sideInView() {
-  setTimeout(() => {
-    if (window.matchMedia?.('(max-width: 900px)').matches) return;
-    const el = document.querySelector<HTMLElement>('.bank > aside.side'); if (!el || !el.querySelector('.savebar')) return;
-    const r = el.getBoundingClientRect(), stick = parseFloat(getComputedStyle(el).top) || 80;
-    if (r.bottom <= window.innerHeight || r.top <= stick + 1) return;
-    window.scrollBy({ top: r.top - stick, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-  }, 30);
+export { sideInView } from '../store/unsaved';
+
+/** Enter in het titelveld van een bank-paneel: Opslaan, als dat kan (gewijzigd of nieuw, en zonder fout). Het paneel blijft open, net als na Opslaan. */
+export function enterSaves(e: React.KeyboardEvent<HTMLInputElement>) {
+  if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+  const b = e.currentTarget.closest('.pad')?.querySelector<HTMLButtonElement>('.savebar .row > .btn.primary');
+  if (b && !b.disabled && b.textContent === 'Opslaan') { e.preventDefault(); b.click(); }
 }
 
 /** Paginakop. `small`: op het dashboard, zodat de komende opkomst (64 px) het grootst blijft. */

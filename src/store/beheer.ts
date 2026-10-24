@@ -168,8 +168,10 @@ export async function removeGroupAdmin(g: Groep, uid: string, allowEmpty = false
 }
 
 /* ---------- speltakken onder een groep ---------- */
-export async function createSpeltakInGroep(g: Groep, name: string, me: Me) {
+/** `onId`: vóór het opslaan, met het nieuwe id (de realtime lijst kan de speltak al tonen voordat dit klaar is). */
+export async function createSpeltakInGroep(g: Groep, name: string, me: Me, onId?: (id: string) => void) {
   const id = mkId() + mkId();
+  onId?.(id);
   const { groupName: _g, speltak: _s, ...settings } = defaultSettings();
   await setDoc(doc(db, 'speltakken', id), { name: name.trim(), groupName: g.name, gid: g.id, createdAt: Date.now(), createdBy: me.uid, settings, members: {}, memberIds: [], tlIds: [] });
   return id;

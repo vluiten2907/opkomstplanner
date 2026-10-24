@@ -7,7 +7,7 @@ import { useAuth } from '../store/auth';
 import { useRoles } from '../store/roles';
 import { toast } from '../store/toast';
 import PageHead from '../components/PageHead';
-import { BusyButton, ConfirmBtn, Field, announce } from '../components/ui';
+import { BusyButton, ConfirmBtn, Field, announce, scrollCalm } from '../components/ui';
 import { InviteLink, InviteList, useOpenInvites, type InviteScope } from '../components/Invites';
 import { addMember, setPerms, claimName, releaseName, syncNames, createGroep, newGroepId, createInvite, inviteOnce, renewInvite, revokeInvite, createSpeltakInGroep, deleteSpeltak, deleteGroep, countOpkomsten, ensureTlIds, findAccount, readAccounts, removeFromTeam, type AccountInfo, transferTeamleider, type Person, isEmail, linkSpeltak, removeGroupAdmin, removeRootPerson, renameGroep, setGroupAdmin, setTeamleider, type Me } from '../store/beheer';
 import { DEFAULT_LEIDING_PERMS, PERM_LABELS, normPerms, normSpeltak, isTeamleider, type Admin, type Member, type PermKey, type Groep, type Invite, type Speltak } from '../lib/types';
@@ -217,6 +217,8 @@ function GroupCard({ g, sps, loaded, invites, me, canAll, allSps, groups, onGone
   const [newSp, setNewSp] = useState(''); const [pick, setPick] = useState('');
   // speltak aanmaken loopt: geen tweede (bijv. dubbelklik op een trage verbinding)
   const [adding, setAdding] = useState(false); const addingRef = useRef(false);
+  // net aangemaakte speltak: die staat open en krijgt de focus
+  const [justMade, setJustMade] = useState('');
   // Standaard ingeklapt; per groep onthouden in deze browser.
   const [open, toggle] = useStoredToggle('opk.groep.open.' + g.id);
   const mine = g.adminIds.includes(me.uid);
@@ -267,7 +269,9 @@ function GroupCard({ g, sps, loaded, invites, me, canAll, allSps, groups, onGone
     if (dup) { toast(`Er is al een speltak ${dup.name} in ${g.name || 'deze groep'}. Kies een andere naam.`); return; }
     // veld meteen leeg; mislukt het, dan komt de naam terug
     addingRef.current = true; setAdding(true); setNewSp('');
-    try { await createSpeltakInGroep(g, nm, me); toast('Speltak aangemaakt; nodig nu de teamleider uit.'); }
+    // de nieuwe speltak staat meteen open met de focus bij Teamleider toevoegen (vóór het opslaan: de lijst kan hem al tonen)
+    const onId = (id: string) => { try { localStorage.setItem('opk.speltak.open.' + id, '1'); } catch { /* geen opslag */ } setJustMade(id); };
+    try { await createSpeltakInGroep(g, nm, me, onId); toast('Speltak aangemaakt; nodig nu de teamleider uit.'); }
     catch (e) { setNewSp(cur => cur || nm); err(e, 'Aanmaken mislukt.'); }
     addingRef.current = false; setAdding(false);
   };
@@ -290,7 +294,7 @@ function GroupCard({ g, sps, loaded, invites, me, canAll, allSps, groups, onGone
       : <p className="hint">{sps.length ? 'Een beheerder kies je uit de leiding van deze groep. Er is nog niemand anders om te kiezen.' : 'Een beheerder kies je uit de leiding van deze groep. Maak eerst een speltak en zet er leiding in.'}</p>}
 
     <h3>Speltakken</h3>
-    <div className="team">{sps.map(sp => <SpeltakRow key={sp.id} sp={sp} g={g} me={me} pool={pool} all={sps} names={names} open={invites.filter(i => i.sid === sp.id)} />)}{!sps.length && <p className="hint">Nog geen speltakken.</p>}</div>
+    <div className="team">{sps.map(sp => <SpeltakRow key={sp.id} sp={sp} g={g} me={me} pool={pool} all={sps} names={names} open={invites.filter(i => i.sid === sp.id)} fresh={justMade === sp.id} />)}{!sps.length && <p className="hint">Nog geen speltakken.</p>}</div>
     <div className="row"><input className="inp" value={newSp} maxLength={60} onChange={e => setNewSp(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addSp(); }} placeholder="Naam nieuwe speltak, bijv. Welpen" aria-label="Naam nieuwe speltak" list="speltaklist-b" style={{ flex: '1 1 220px' }} />
       <datalist id="speltaklist-b">{SPELTAKKEN.map(x => <option key={x} value={x} />)}</datalist>
       <button className="btn" disabled={adding} onClick={addSp}><Plus size={16} />{adding ? 'Aanmaken…' : 'Speltak aanmaken'}</button></div>
@@ -412,10 +416,18 @@ function PersonPicker({ pool, exclude, label, emailLabel, button, groupName, onP
   </div>;
 }
 
-function SpeltakRow({ sp, g, me, pool, all, names, open: openInv }: { sp: Speltak; g: Groep; me: Me; pool: Person[]; all: Speltak[]; names: Record<string, AccountInfo>; open: Invite[] }) {
+function SpeltakRow({ sp, g, me, pool, all, names, open: openInv, fresh }: { sp: Speltak; g: Groep; me: Me; pool: Person[]; all: Speltak[]; names: Record<string, AccountInfo>; open: Invite[]; fresh?: boolean }) {
   const err = useErr();
-  // Standaard ingeklapt; per speltak onthouden in deze browser.
+  // Standaard ingeklapt; per speltak onthouden in deze browser. Een net aangemaakte speltak staat open (zie addSp).
   const [open, toggle] = useStoredToggle('opk.speltak.open.' + sp.id);
+  // net aangemaakt: in beeld en de focus op het e-mailadres bij Teamleider toevoegen (één keer)
+  const addRef = useRef<HTMLDivElement>(null), focused = useRef(false);
+  useEffect(() => {
+    if (!fresh || !open || focused.current) return;
+    focused.current = true;
+    const f = addRef.current?.querySelector<HTMLElement>('input[type=email]') || addRef.current?.querySelector<HTMLElement>('select, input');
+    if (f) { scrollCalm(addRef.current, { block: 'center' }); f.focus({ preventScroll: true }); }
+  }, [fresh, open]);
   const members = Object.entries(sp.members).sort((a, b) => Number(isTeamleider(sp, b[0])) - Number(isTeamleider(sp, a[0])) || a[1].name.localeCompare(b[1].name, 'nl'));
   const [inv, setInv] = useState<Invite | null>(null), [invLead, setInvLead] = useState('');
   const [role, setRole] = useState<'leiding' | 'teamleider'>('leiding');
@@ -472,9 +484,9 @@ function SpeltakRow({ sp, g, me, pool, all, names, open: openInv }: { sp: Spelta
       </div>
       {/* één formulier: iemand uit de groep of een e-mailadres. Met een account komt die persoon er meteen bij, anders volgt een uitnodiging */}
       <b>{tl ? 'Iemand toevoegen' : 'Teamleider toevoegen'}</b>
-      <PersonPicker pool={pool} exclude={sp.memberIds} label="Persoon kiezen voor de speltak" emailLabel={tl ? 'E-mailadres nieuw lid' : 'E-mailadres teamleider'} button="Toevoegen" groupName={g.name || 'de groep'} onPick={add} onNoAccount={invite}>
+      <div ref={addRef}><PersonPicker pool={pool} exclude={sp.memberIds} label="Persoon kiezen voor de speltak" emailLabel={tl ? 'E-mailadres nieuw lid' : 'E-mailadres teamleider'} button="Toevoegen" groupName={g.name || 'de groep'} onPick={add} onNoAccount={invite}>
         {tl ? <select className="inp" value={role} onChange={e => setRole(e.target.value as 'leiding' | 'teamleider')} aria-label="Rol" style={{ width: 'auto', flex: 'none' }}><option value="leiding">Leiding</option><option value="teamleider">Teamleider</option></select> : null}
-      </PersonPicker>
+      </PersonPicker></div>
       <p className="hint">{tl ? 'Heeft iemand nog geen account, dan maakt Toevoegen een uitnodigingslink. Nieuwe leiding krijgt de rechten jaarplanning, opkomsten en banken; aanpassen kan hierboven bij de leiding. Bekijken mag iedereen in de speltak altijd.'
         : 'Er is nog geen teamleider: wie je nu toevoegt of uitnodigt, wordt teamleider. Heeft die persoon nog geen account, dan maakt Toevoegen een uitnodigingslink.'}</p>
       {inv && <InviteLink key={inv.id} inv={inv} fromName={me.name} lead={invLead} onClose={() => setInv(null)} />}

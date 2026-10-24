@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Copy, Download, GraduationCap, Plus, Tent, Trash2, TriangleAlert, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast, undoAction } from '../store/toast';
-import { linkBankCopy, linkDraft } from '../components/modals';
+import { applyFit } from '../components/modals';
 import { openModal, withFreeName } from '../store/modal';
 import { guardLeave, setUnsaved, useDirty } from '../store/unsaved';
 import { createFresh, isFresh, makeForEntry, watchFresh } from '../store/fresh';
@@ -12,7 +12,7 @@ import { Chip, ConfirmBtn, Dot, Field, TimePicker, scrollCalm, useMedia, useShee
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, todayISO, uid, DAYS } from '../lib/time';
-import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, fitFor, rowDate, rowsIn, catOf, changeOpkTime, copyKampDay, copyOpk, dayShort, firstFree, freeName, hasPdfPage, kampBase, kampFitRow, kampMismatchNote, nameTaken, dayTitle, isBlankOpk, relabelDays, isFixed, isKamp, lanesLayout, libSearchText, minNeed, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, progEmpty, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, fitFor, rowDate, rowsIn, shownEnd, catOf, changeOpkTime, copyKampDay, copyOpk, dayShort, firstFree, freeName, hasPdfPage, kampBase, kampFitRow, kampMismatchNote, nameTaken, dayTitle, isBlankOpk, relabelDays, isFixed, isKamp, lanesLayout, libSearchText, minNeed, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, progEmpty, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /** Titel van de opkomst: loopt door op een volgende regel in plaats van af te breken (smal scherm), zonder echte regeleinden. */
 function TitleArea({ value, readOnly, onChange, placeholder, autoFocus }: { value: string; readOnly: boolean; onChange: (v: string) => void; placeholder: string; autoFocus?: boolean }) {
@@ -61,7 +61,7 @@ export default function Bouwer() {
   const firstOpen = !coming.length;
   // past er een concept of iets uit de bank bij het onderwerp: meteen gebruiken, net als Kiezen in Koppelen
   // (een concept wordt zelf gekoppeld, uit de bank komt een kopie zonder namen met Opkomst overnemen)
-  const use = (x: Opk, key: string) => x.state === 'draft' ? linkDraft(S, x, key) : linkBankCopy(S, x, key, (id, fresh) => openModal({ kind: 'takeover', oid: id, fresh }), id => nav(`/s/${sid}/bouwer/${id}`));
+  const use = (x: Opk, key: string) => applyFit(S, x, key, nav);
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title="Opkomstbouwer" />
     {oid && !o && <div className="ctx">Deze opkomst bestaat niet (meer).</div>}
@@ -80,7 +80,7 @@ export default function Bouwer() {
         const pick = <button className="btn sm" onClick={() => openModal({ kind: 'link', keyId: r.key })} aria-label={`Koppelen: ${what}`}>Koppelen</button>;
         const makeBtn = <button className={'btn sm' + (main && !fit ? ' primary' : '')} onClick={() => make(r.key, e.type === 'kamp')} aria-label={`Programma maken: ${what}`}><Plus size={14} />Maken</button>;
         return <div key={r.key} className="pick">
-          <div className="info"><span className="pick-kicker"><span className="pk-when"><CalendarDays size={14} aria-hidden="true" />{fmtRange(d, e.endDate)}</span>{e.type === 'kamp' && <span className="pill kamp">Kamp</span>}</span><b>{what}</b>
+          <div className="info"><span className="pick-kicker"><span className="pk-when"><CalendarDays size={14} aria-hidden="true" />{fmtRange(d, shownEnd(e))}</span>{e.type === 'kamp' && <span className="pill kamp">Kamp</span>}</span><b>{what}</b>
             {fit && <span className="hint">Past bij: {fit.title || 'Naamloze opkomst'} ({fit.state === 'bank' ? 'opkomstenbank' : 'concept'})</span>}</div>
           {can('build') ? <div className="row">{fit && <button className={'btn sm' + (main ? ' primary' : '')} onClick={() => use(fit, r.key)} aria-label={`Gebruiken: ${fit.title || 'Naamloze opkomst'} voor ${what}`}>Gebruiken</button>}{makeBtn}{fit && pick}</div> : pick}</div>;
       })}</div>
@@ -291,12 +291,14 @@ function Builder({ o: stored }: { o: Opk }) {
     saveOpk({ ...src, cats: f.cats, kind: f.kind, title: f.title, short: f.short, group: f.group, location: f.location, start: f.start, end: f.end, prep: f.prep, post: f.post, blocks: f.blocks, days: f.days });
     toast('Opkomstenbank bijgewerkt');
   };
-  const pdfBtn = <button className="btn primary" onClick={() => pdf(o)}><Download size={16} />PDF maken</button>;
+  // één hoofdknop: bij een concept is Inplannen de volgende stap (als dat mag), anders PDF maken
+  const planMain = o.state === 'draft' && canLink;
+  const pdfBtn = <button className={'btn' + (planMain ? '' : ' primary')} onClick={() => pdf(o)}><Download size={16} />PDF maken</button>;
   // Elke knop volgt zijn eigen recht: In bank en Verwijderen (bank) met Banken, Kopie en Verwijderen (concept) met Opkomsten.
   const bankBtn = can('bank') && (o.state === 'draft' && !can('build')
     ? <ConfirmBtn className="btn" label={<><Bookmark size={16} />In bank</>} confirm="Klik nogmaals: namen gaan niet mee" title="In de opkomstenbank zetten" onConfirm={putInBank} />
     : <button className="btn" onClick={putInBank}><Bookmark size={16} />In bank</button>);
-  const planBtn = canLink && <button className="btn" onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: o.id }))}><CalendarDays size={16} />Inplannen</button>;
+  const planBtn = canLink && <button className={'btn' + (planMain ? ' primary' : '')} onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: o.id }))}><CalendarDays size={16} />Inplannen</button>;
   const actions = o.state === 'draft' ? <>{bankBtn}{planBtn}{pdfBtn}{can('build') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Concept verwijderen" onConfirm={() => { nav(`/s/${sid}/bouwer`); removeOpk(stored); }} />}</>
     : o.state === 'bank' ? <>{can('build') && <button className="btn" onClick={dup} title="Kopie als concept"><Copy size={16} />Kopie</button>}{planBtn}{pdfBtn}{can('bank') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Uit de opkomstenbank verwijderen" onConfirm={() => { setUnsaved(false); nav(`/s/${sid}/bouwer`); removeOpk(stored); }} />}</>
       : <>{bankBtn}<button className="btn" onClick={() => go(`/s/${sid}/jaarplanning?focus=${e ? e.id : ''}`)}><CalendarDays size={16} />Jaarplanning</button>{pdfBtn}</>;

@@ -167,6 +167,18 @@ with sync_playwright() as p:
     check(pg.locator('.groupcard select[aria-label="Bestaande persoon kiezen"]').count() == 0, 'beheerder kiezen kan pas als er leiding is')
     pg.fill('input[placeholder^="Naam nieuwe speltak"]', 'Scouts'); pg.click('text=Speltak aanmaken'); w(800)
     check(pg.locator('.groupcard .member:has-text("Scouts")').count() == 1, 'speltak aangemaakt in groep')
+    # de nieuwe speltak staat open met de focus op het e-mailadres van de teamleider (de melding zegt: nodig nu de teamleider uit)
+    sc_new = pg.locator('.groupcard .spcard:has-text("Scouts")')
+    fa_new = pg.evaluate("document.activeElement && document.activeElement.getAttribute('aria-label')")
+    check('open' in (sc_new.get_attribute('class') or '') and sc_new.locator('.sp-head').get_attribute('aria-expanded') == 'true' and fa_new == 'E-mailadres teamleider',
+          f'nieuwe speltak: meteen open, focus op E-mailadres teamleider ({fa_new})')
+    # pijltjes: een dichte speltak in een open groep wijst niet naar beneden
+    rot = lambda sel: pg.evaluate(f"getComputedStyle(document.querySelector({json.dumps(sel)})).transform")
+    sc_new.locator('.sp-head').click(); w(300)
+    chev_closed, chev_group = rot('.groupcard.open .spcard .gc-chev'), rot('.groupcard.open .gc-head > .gc-chev')
+    sc_new.locator('.sp-head').click(); w(300)
+    chev_open = rot('.groupcard.open .spcard.open .gc-chev')
+    check(chev_closed == 'none' and chev_group != 'none' and chev_open != 'none', f'beheer: pijltje dicht = rechts, open = omlaag (speltak dicht {chev_closed}, groep {chev_group}, speltak open {chev_open})')
     sp_opts = pg.eval_on_selector_all('.groupcard.open datalist[id="speltaklist-b"] option', 'els => els.map(e => e.value)')
     check({'Bevers', 'Welpen', 'Kabouters', 'Gidsen'} <= set(sp_opts), f'nieuwe speltak: dezelfde suggesties als in de instellingen ({sp_opts})')
     open_sp('Scouts')
@@ -930,6 +942,9 @@ with sync_playwright() as p:
     check(pg.locator('.meta .field:has-text("Categorieën van het kamp")').count() == 1 and pg.locator('#om-short').get_attribute('placeholder').startswith('Waar gaat dit kamp over?'),
           'weekendkamp: details spreken van het kamp (categorieën, omschrijving), niet van een opkomst of activiteit')
     # kamp vr–zo inplannen op een zaterdag (5 juni 2027): vrijdag 4 t/m zondag 6 juni, de dagen kloppen; de vaste zaterdag valt in het kamp, dus niet "verzet"
+    # concept: Inplannen is de hoofdknop, PDF maken een gewone knop
+    check(pg.locator('.plan-head .btn.primary').count() == 1 and pg.locator('.plan-head .btn.primary').inner_text().strip() == 'Inplannen'
+          and 'primary' not in (pg.locator('.plan-head button:has-text("PDF maken")').get_attribute('class') or ''), 'concept in de bouwer: Inplannen is de hoofdknop, PDF maken niet')
     pg.click('.plan-head >> text=Inplannen'); w(300)
     check(all(' t/m ' in t for t in pg.locator('.modal .pick .info b').all_inner_texts()[:3]), 'kamp inplannen: de lijst toont het hele bereik van het kamp')
     pg.fill('.modal input[placeholder^="Andere datum"]', '05-06-2027'); pg.click('.modal >> text=Op deze datum'); w(700)
@@ -1968,6 +1983,10 @@ with sync_playwright() as p:
     # met dat recht wel Verstuurd; Ongedaan maken zet alleen "verstuurd" terug, op de nieuwste stand van de rij
     pg.goto(BASE + '/s/oefen/dashboard'); w(1200)
     nt = pg.locator('.notice:has-text("Winterweekend")')
+    # de knop is een actie ("Is verstuurd"), geen status
+    sbtn = nt.locator('button.primary')
+    check(sbtn.count() == 1 and sbtn.inner_text().strip() == 'Is verstuurd' and (sbtn.get_attribute('aria-label') or '').startswith('Brief ') and sbtn.locator('svg').count() == 1,
+          f'dashboard: briefknop heet Is verstuurd (met vinkje en aria-label), niet Verstuurd ({sbtn.inner_text() if sbtn.count() else "-"})')
     nt.locator('button:has-text("Verstuurd")').click(); w(300)
     gone = nt.count() == 0 and soon(lambda: oefen_get("s['speltakken/oefen/planning/pl-kamp'].letter.sent === true"))
     pg.click('.toast.show button:has-text("Ongedaan maken")'); w(300)
@@ -2291,6 +2310,22 @@ with sync_playwright() as p:
     pg.goto(BASE + '/s/oefen/activiteiten'); w(1000); pg.evaluate('window.scrollTo(0, 0)')
     pg.locator('button.btn.primary:has-text("Nieuwe activiteit")').first.click(); w(900)
     check(in_view() and pg.evaluate("document.activeElement.id") == 'lf-title', f'activiteitenbank 1440×900: Nieuwe activiteit, opslaan-balk in beeld en focus op de titel ({in_view()})')
+    # Enter in de titel = Opslaan (het paneel blijft open); een lege titel slaat niet op
+    pg.keyboard.press('Enter'); w(200); empty_kept = pg.locator('.side #lf-title').count() == 1 and not oefen_get("Object.values(s).some(x => x && x.title === 'Entertest')")
+    pg.keyboard.type('Entertest'); pg.keyboard.press('Enter'); w(700)
+    check(empty_kept and soon(lambda: oefen_get("Object.keys(s).some(k => k.startsWith('speltakken/oefen/activiteiten/') && s[k].title === 'Entertest')"))
+          and pg.locator('.side #lf-title').count() == 1 and pg.locator('.side .savebar.on').count() == 0 and 'opgeslagen' in pg.locator('.toast').inner_text(),
+          'activiteitenbank: Enter in de titel slaat op en het paneel blijft open')
+    pg.click('.side button:has-text("Uit de bank verwijderen")'); w(100); pg.click('.side button:has-text("Klik nogmaals")'); w(500)
+    # niet opgeslagen en dan iets anders kiezen terwijl het paneel buiten beeld is: de melding zegt "Sla op", dus Opslaan komt in beeld
+    pg.goto(BASE + '/s/oefen/opkomsten'); w(1000)
+    pg.locator('.bcard').first.click(); w(900); pg.locator('#tf-title').press('End'); pg.keyboard.type('x'); w(200)
+    pg.evaluate('window.scrollTo(0, 0)'); w(100); pg.locator('.bcard').nth(1).click(); w(900)
+    check('nog niet opgeslagen' in pg.locator('.toast').inner_text() and in_view(), f'opkomstenbank 1440×900: vraag om op te slaan, Opslaan staat dan in beeld ({in_view()})')
+    pg.locator('#tf-title').press('Enter'); w(500)
+    check(pg.locator('.side .savebar.on').count() == 0 and soon(lambda: oefen_get("Object.keys(s).some(k => k.startsWith('speltakken/oefen/opkomsten/') && /x$/.test(s[k].title || ''))")),
+          'opkomstenbank: Enter in de titel slaat op')
+    pg.locator('#tf-title').press('Backspace'); pg.locator('#tf-title').press('Enter'); w(500)
     pg.keyboard.press('Escape'); w(300)
     pg.set_viewport_size({'width': 1360, 'height': 900}); w(200)
     # verwijderen met het toetsenbord: de focus gaat naar de volgende kaart, niet naar het begin van de pagina
@@ -2550,9 +2585,11 @@ with sync_playwright() as p:
           f'inplannen: bij een datum met een ander onderwerp staat wat het onderwerp wordt (Sinterklaas → Speurtocht; voor een schermlezer in woorden) ({sk_change})')
     sig = pg.evaluate("(() => { const x = document.createElement('span'); x.style.color = 'var(--signal-ink)'; document.body.append(x); const c = getComputedStyle(x).color; x.remove(); return c; })()")
     prim_ip = pg.locator('.modal .btn.primary').evaluate_all('bs => bs.map(b => b.getAttribute("aria-label"))')
-    first_ip = pg.locator('.modal .pick button').first.get_attribute('aria-label')
-    check(sk_change and sk_change[0][3] != sig and prim_ip == [first_ip],
-          f'inplannen: de wijzigingsregel rustig (niet in de signaalkleur), alleen de eerste datum heeft de hoofdknop ({sk_change[0][3] if sk_change else None}, {prim_ip})')
+    # de hoofdknop staat bij de eerste vrije datum (zonder ander onderwerp en geen kamp), nooit bij een datum waar je een onderwerp overschrijft
+    pick_rows = pg.evaluate("[...document.querySelectorAll('.modal .pick')].map(p => [p.querySelector('button').classList.contains('primary'), !!p.querySelector('.pk-change, .err')])")
+    pi = [i for i, r in enumerate(pick_rows) if r[0]]
+    check(sk_change and sk_change[0][3] != sig and len(prim_ip) == 1 and len(pi) == 1 and not pick_rows[pi[0]][1] and all(r[1] for r in pick_rows[:pi[0]]),
+          f'inplannen: de wijzigingsregel rustig (niet in de signaalkleur), één hoofdknop bij de eerste vrije datum ({sk_change[0][3] if sk_change else None}, {prim_ip}, {pick_rows[:6]})')
     shot('29c-inplannen-onderwerp', False)
     sk.locator('button:has-text("Hier inplannen")').click(); w(300)
     tt = pg.locator('.toast').inner_text()
@@ -2562,6 +2599,18 @@ with sync_playwright() as p:
           and soon(lambda: oefen_get("s['speltakken/oefen/planning/pl-2'].topic === 'Sinterklaas' && !s['speltakken/oefen/planning/pl-2'].opkId && s['speltakken/oefen/opkomsten/" + sp_id + "'].state === 'draft'"))
           and pg.locator('.pill:has-text("Concept")').count() == 1, f'inplannen: melding noemt het oude onderwerp; Ongedaan maken zet onderwerp en concept terug ({tt})')
     pg.click('.plan-head >> button:has-text("Verwijderen")'); w(200); pg.click('.plan-head >> text=Klik nogmaals om te verwijderen'); w(700)
+    # kamp inplannen zonder passende datum: de hoofdknop staat bij een kamp-rij of een lege datum, niet bij een datum met een ander onderwerp
+    pg.goto(BASE + '/s/oefen/bouwer'); w(900); pg.click('main .btn:has-text("Weekendkamp")'); w(700); pg.fill('#om-title', 'Bosweekend'); w(700)
+    bw_id = pg.url.rstrip('/').rsplit('/', 1)[-1]
+    pg.click('.plan-head >> text=Inplannen'); w(300)
+    kp = pg.locator('.modal .pick:has(.btn.primary)')
+    kp_txt = kp.inner_text() if kp.count() == 1 else ''
+    check(pg.locator('.modal .btn.primary').count() == 1 and kp.locator('.pk-change').count() == 0 and 'Sinterklaas' not in kp_txt,
+          f'kamp inplannen zonder passende datum: de hoofdknop overschrijft geen ander onderwerp ({kp_txt!r})')
+    shot('29d-kamp-inplannen', False)
+    pg.keyboard.press('Escape'); w(200)
+    pg.click('.plan-head .btn.ghost:has-text("Verwijderen")'); w(100); pg.click('.plan-head .btn.ghost:has-text("Klik nogmaals")'); w(500)
+    check(soon(lambda: oefen_get(f"!s['speltakken/oefen/opkomsten/{bw_id}']")), 'kamp-concept Bosweekend weer weg')
     # startpagina van de bouwer: de komende datums met een onderwerp maar zonder programma, met één klik een programma maken
     open_rows = pg.locator('section[aria-labelledby="bw-open"] .pick')
     ot = open_rows.locator('.info > b').all_inner_texts()
@@ -3100,8 +3149,18 @@ with sync_playwright() as p:
     brow = q.locator('.prow:not(.head)').nth(q.evaluate("[...document.querySelectorAll('.prow:not(.head)')].findIndex(r => r.querySelector('.ptopic')?.value === 'Bosspel met de Scouts')"))
     md_times = lambda: [q.locator(f'.modal .field:has(> label:text-is("{l}")) {c}').input_value() for l in ('Begintijd / vertrek', 'Eindtijd / terug') for c in ('.tp-h', '.tp-m')]
     brow.locator('.pdate').click(); q.wait_for_timeout(300); kt0 = md_times()
-    q.click('.modal .seg .chip:has-text("Kamp / weekend")'); q.wait_for_timeout(150); kt1 = md_times()
-    q.click('.modal .seg .chip:text-is("Opkomst")'); q.wait_for_timeout(150); kt2 = md_times()
+    md_dates = lambda: [q.input_value('#md-date'), q.input_value('#md-end'), q.get_attribute('#md-end', 'placeholder')]
+    kd0 = md_dates()
+    q.click('.modal .seg .chip:has-text("Kamp / weekend")'); q.wait_for_timeout(150); kt1 = md_times(); kd1 = md_dates()
+    q.click('.modal .seg .chip:text-is("Opkomst")'); q.wait_for_timeout(150); kt2 = md_times(); kd2 = md_dates()
+    # Kamp / weekend op een zaterdag zonder "tot en met": meteen het weekend vr–zo (zoals het gemaakt wordt); terug naar Opkomst zet de datum terug
+    sat0 = date(*map(int, reversed(kd0[0].split('-')))) if kd0[0] else None
+    check(sat0 is not None and kd0[1] == '' and kd0[2] == 'leeg = één dag' and kd1[:2] == [(sat0 - timedelta(days=1)).strftime('%d-%m-%Y'), (sat0 + timedelta(days=1)).strftime('%d-%m-%Y')] and kd2 == kd0,
+          f'datum en soort: Kamp / weekend op een zaterdag vult vr–zo in, Opkomst zet het terug ({kd0}, {kd1}, {kd2})')
+    # leeg "tot en met" bij een kamp: de tekst zegt t/m zondag (zoals een nieuw weekendkamp)
+    q.click('.modal .seg .chip:has-text("Kamp / weekend")'); q.wait_for_timeout(100); q.fill('#md-end', ''); q.fill('#md-date', kd0[0]); q.wait_for_timeout(100); kd3 = md_dates()
+    q.click('.modal .seg .chip:text-is("Opkomst")'); q.wait_for_timeout(100); kd4 = md_dates()
+    check(kd3[2] == 'leeg = t/m zondag' and kd4[2] == 'leeg = één dag' and kd4[:2] == kd0[:2], f'datum en soort: bij een kamp zegt leeg "t/m zondag", bij een opkomst "één dag" ({kd3}, {kd4})')
     q.click('.modal .chip:has-text("Weekend vr–zo")'); q.wait_for_timeout(150); kt3 = md_times()
     check(kt1 == ['19', '0', '15', '0'] and kt2 == kt0 and kt3 == kt1, f'datum en soort: Kamp / weekend stelt vertrek 19:00 en terug 15:00 voor, terug naar Opkomst weer de opkomsttijden ({kt0}, {kt1}, {kt2}, {kt3})')
     q.screenshot(path=f'{OUT}/43-kamp-tijden.png')
@@ -3132,6 +3191,22 @@ with sync_playwright() as p:
     brow.locator('.btn:has-text("Koppelen")').click(); q.wait_for_timeout(300); q.click('.modal >> text=Weekendkamp'); q.wait_for_timeout(1200)
     kd = oget("(id => id && s[P + 'opkomsten/' + id] ? [s[P + 'opkomsten/' + id].days[0].start, s[P + 'opkomsten/' + id].days.at(-1).end, s[P + 'opkomsten/' + id].days.length] : null)(s[P + 'planning/pl-7'].opkId)")
     check(kd == [1140, 900, 3], f'koppelen → Weekendkamp: vrijdag vanaf 19:00 tot zondag 15:00, net als de rij ({kd})')
+    # kamp-rij zonder "tot en met" op een zaterdag: de rij en Koppelen tonen za–zo (zoals Weekendkamp hem maakt), niet één dag
+    sat_k = date.today() + timedelta(days=40 + (5 - (date.today() + timedelta(days=40)).weekday()) % 7)
+    q.goto(BASE + '/wachtwoord'); q.wait_for_timeout(500)
+    q.evaluate("""(d => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)), P = 'speltakken/oefen/';
+      s[P + 'planning/pl-kampleeg'] = { ...s[P + 'planning/pl-0'], id: 'pl-kampleeg', slot: null, date: d, endDate: '', type: 'kamp', topic: 'Kamp zonder einde', opkId: null, planners: [], absent: [], start: null, end: null, note: '' };
+      localStorage.setItem(k, JSON.stringify(s)); })""", sat_k.isoformat())
+    q.goto(BASE + '/s/oefen/jaarplanning'); q.wait_for_timeout(1000); q.click('.presets >> text=Komende 3 maanden'); q.wait_for_timeout(300)
+    krow = q.locator('.prow:not(.head)').nth(q.evaluate("[...document.querySelectorAll('.prow:not(.head)')].findIndex(r => r.querySelector('.ptopic')?.value === 'Kamp zonder einde')"))
+    kpd = krow.locator('.pdate b').inner_text()
+    krow.locator('.btn:has-text("Koppelen")').click(); q.wait_for_timeout(300)
+    ksub = q.locator('.modal-card h2 + p.hint').first.inner_text()
+    q.keyboard.press('Escape'); q.wait_for_timeout(200)
+    check(kpd.startswith(f'za {sat_k.day}') and ' – zo ' in kpd, f'kamp-rij zonder tot en met: de rij toont za–zo ({kpd})')
+    check(' t/m zondag ' in ksub, f'kamp-rij zonder tot en met: Koppelen toont het hele weekend ({ksub})')
+    q.goto(BASE + '/wachtwoord'); q.wait_for_timeout(500)
+    q.evaluate("(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)); delete s['speltakken/oefen/planning/pl-kampleeg']; localStorage.setItem(k, JSON.stringify(s)); })()")
     # ingepland kamp in de bouwer: dag erbij → melding en de pdf telt de dagen vanaf de datum (kop en dagkoppen kloppen met elkaar);
     # Jaarplanning aanpassen trekt de rij gelijk. Eerste dag eraf → de rij begint op de nieuwe eerste dag (Ongedaan maken zet hem terug).
     q.goto(BASE + '/s/oefen/bouwer/opk-kamp'); q.wait_for_timeout(1200)

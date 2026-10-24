@@ -1,15 +1,15 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { CalendarClock, ChevronLeft, ChevronRight, Download, ExternalLink, Mail, Plus, SquarePen, Tent, Users } from 'lucide-react';
+import { CalendarClock, Check, ChevronLeft, ChevronRight, Download, ExternalLink, Mail, Plus, SquarePen, Tent, Users } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast, undoAction } from '../store/toast';
 import { openModal } from '../store/modal';
 import { createFresh, makeForEntry } from '../store/fresh';
-import { linkBankCopy, linkDraft } from '../components/modals';
+import { applyFit } from '../components/modals';
 import { Strip, StatusPill, CatTags, PeopleChips, usePdf, PageTitle } from '../components/shared';
 import { Dot, TimePicker } from '../components/ui';
 import { addDays, cap, dayDiff, fmtLong, fmtRange, fmtShort, fmtT, fromISO, isoWeek, mon3, plural, todayISO, toISO, DAYS, MONTHS } from '../lib/time';
-import { catOf, dayTitle, entryStatus, fitFor, entryTimes, isKamp, kampBase, letterDue, minNeed, opkCatList, plannersOf, changeOpkTime, progStatus, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Opk, type Plan, type Row } from '../lib/model';
+import { catOf, dayTitle, entryStatus, fitFor, entryTimes, isKamp, kampBase, letterDue, minNeed, opkCatList, plannersOf, changeOpkTime, progStatus, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, shownEnd, type Opk, type Plan, type Row } from '../lib/model';
 
 export default function Dashboard() {
   const S = useSpeltak();
@@ -77,7 +77,7 @@ function Notice({ e, due, today }: { e: Plan; due: string; today: string }) {
   // de brief op verstuurd zetten is een wijziging in de jaarplanning (zoals de briefknop daar): alleen met dat recht
   return <div ref={box} className={'notice' + (left < 0 ? ' late' : '')}><Mail size={18} />
     <div className="ntext"><b>Brief: {title}</b><span>{msg} · opkomst {fmtShort(e.date)}</span></div>
-    <div className="row"><button className="btn sm ghost" onClick={() => nav(`/s/${sid}/jaarplanning?focus=${e.id}`)}>Bekijken</button>{can('plan') && <button className="btn sm primary" onClick={sent}>Verstuurd</button>}</div></div>;
+    <div className="row"><button className="btn sm ghost" onClick={() => nav(`/s/${sid}/jaarplanning?focus=${e.id}`)}>Bekijken</button>{can('plan') && <button className="btn sm primary" onClick={sent} aria-label={`Brief ${title} is verstuurd`}><Check size={14} />Is verstuurd</button>}</div></div>;
 }
 
 /** Dubbelklik (of dubbel tikken op de telefoon) om iets op de kaart aan te passen. */
@@ -172,7 +172,7 @@ function Hero({ r, today }: { r: Row; today: string }) {
   };
   const timesEditable = !kamp && !isKamp(o) && canEdit;
   const timeTap = useDoubleTap(timesEditable ? () => setTimeEdit(true) : null);
-  const facts: ReactNode[] = [<span key="d">{fmtRange(d, e && e.endDate, true)}</span>, <span key="w">week {isoWeek(d)}</span>,
+  const facts: ReactNode[] = [<span key="d">{fmtRange(d, shownEnd(e), true)}</span>, <span key="w">week {isoWeek(d)}</span>,
     kamp ? <span key="t">vertrek {fmtT(st)} · terug {fmtT(en)}</span>
       : timeEdit ? <TimeEdit key="t" st={st} en={en} onSet={setTime} onClose={() => setTimeEdit(false)} />
       : <span key="t" {...timeTap}>{fmtT(st)}–{fmtT(en)}</span>];
@@ -184,8 +184,7 @@ function Hero({ r, today }: { r: Row; today: string }) {
   const gotoRow = () => nav(`/s/${sid}/jaarplanning?focus=${encodeURIComponent(r.key)}`);
   // nog geen programma: past er een concept of iets uit de bank bij het onderwerp, dan is Gebruiken de hoofdknop (zoals Nog zonder programma in de opkomstbouwer)
   const build = canLink && can('build'), fit = !o && build && e && e.type !== 'geen' ? fitFor(S.opks, e.topic) : undefined;
-  const use = (x: Opk) => x.state === 'draft' ? linkDraft(S, x, r.key)
-    : linkBankCopy(S, x, r.key, (id, fresh) => openModal({ kind: 'takeover', oid: id, fresh }), id => nav(`/s/${sid}/bouwer/${id}`));
+  const use = (x: Opk) => applyFit(S, x, r.key, nav);
   const plannersTap = useDoubleTap(can('plan') ? () => openModal({ kind: 'people', keyId: r.key, field: 'planners' }) : null);
   const absentTap = useDoubleTap(can('plan') ? () => openModal({ kind: 'people', keyId: r.key, field: 'absent' }) : null);
   const presentTap = useDoubleTap(o && can('build') ? () => openModal({ kind: 'takeover', oid: o.id, fresh: false }) : null);

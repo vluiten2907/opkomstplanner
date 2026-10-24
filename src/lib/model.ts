@@ -247,6 +247,16 @@ export function kampLength(date: string, endDate?: string | null) {
   const toSun = (7 - fromISO(date).getDay()) % 7 + 1;
   return toSun <= 3 ? toSun : 3;
 }
+/**
+ * Einddatum van een rij zoals je hem ziet: een kamp-rij zonder "tot en met" en zonder programma loopt t/m de eerstvolgende
+ * zondag (zoals een nieuw weekendkamp vanaf die rij, zie kampLength); anders de einddatum zelf (leeg = één dag).
+ */
+export function shownEnd(e: Pick<Plan, 'type' | 'date' | 'endDate' | 'opkId'> | null | undefined) {
+  if (!e) return '';
+  if (e.endDate || e.type !== 'kamp' || e.opkId) return e.endDate || '';
+  const n = kampLength(e.date);
+  return n > 1 ? addDays(e.date, n - 1) : '';
+}
 /** Is de naam van een kampdag gewoon een weekdag ("Zaterdag")? Dan volgt hij de datum. */
 export const isWeekdayLabel = (l: string) => DAYS.includes((l || '').trim().toLowerCase());
 /**

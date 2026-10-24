@@ -18,10 +18,25 @@ function discardAll() {
   try { d?.(); } finally { setUnsaved(false); }
 }
 
-/** Voert `fn` uit, of vraagt eerst of de wijzigingen weg mogen. */
+/**
+ * Breed scherm: het zijpaneel van een bank plakt pas onder de kopbalk als je wat naar beneden scrolt; bovenaan de pagina staat het lager
+ * en valt de opslaan-balk onder de rand van het scherm. Dan de pagina schuiven tot het paneel op zijn plakplek staat (zoals editorInView in de bouwer).
+ */
+export function sideInView() {
+  setTimeout(() => {
+    if (window.matchMedia?.('(max-width: 900px)').matches) return;
+    const el = document.querySelector<HTMLElement>('.bank > aside.side'); if (!el || !el.querySelector('.savebar')) return;
+    const r = el.getBoundingClientRect(), stick = parseFloat(getComputedStyle(el).top) || 80;
+    if (r.bottom <= window.innerHeight || r.top <= stick + 1) return;
+    window.scrollBy({ top: r.top - stick, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }, 30);
+}
+
+/** Voert `fn` uit, of vraagt eerst of de wijzigingen weg mogen (met Opslaan in beeld: de melding zegt "Sla op"). */
 export function guardLeave(fn: () => void) {
   if (!useUnsaved.getState().dirty) { fn(); return; }
   toast(ASK, { label: 'Weggooien', fn: () => { discardAll(); fn(); } });
+  sideInView();
 }
 
 /**
@@ -55,7 +70,7 @@ export function LeaveGuard() {
     if (blocker.state !== 'blocked') return;
     let open = true;
     const go = () => { open = false; discardAll(); try { if (ref.current.state === 'blocked') ref.current.proceed(); } catch { /* al door een andere navigatie vervangen */ } };
-    toast(ASK, { label: 'Weggooien', fn: go });
+    toast(ASK, { label: 'Weggooien', fn: go }); sideInView();
     const n = useToast.getState().n;
     // melding verlopen of vervangen: niet weggaan (na de klik op Weggooien, die direct volgt, niets doen)
     const unsub = useToast.subscribe(s => {

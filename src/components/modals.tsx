@@ -6,7 +6,7 @@ import { toast, undoAction } from '../store/toast';
 import { Modal, TimePicker, Field, Chip, ConfirmBtn, scrollCalm, useMedia } from './ui';
 import { PickOpk, copySharedToBank } from './shared';
 import { addDays, clone, fmtLong, fmtNL, fmtRange, fmtShort, parseNL, parseRange, tidyNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, plural, todayISO } from '../lib/time';
-import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, defaultTimes, entryTimes, ownTimes, firstFree, fitsTopic, isBlankPlan, isKamp, kampBase, kampMismatch, opkOnKamp, kampMismatchNote, kampStart, lanesLayout, minNeed, newEntry, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
+import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, defaultTimes, entryTimes, ownTimes, firstFree, fitsTopic, isBlankPlan, isKamp, kampBase, kampMismatch, opkOnKamp, kampMismatchNote, kampStart, lanesLayout, minNeed, newEntry, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, shownEnd, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from './timeline';
 import { openModal, type NameSpec } from '../store/modal';
 import { makeForEntry, plannedUndo } from '../store/fresh';
@@ -37,6 +37,24 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
   // de vaste dag als eigen knop alleen als hij nog niet bij vrijdag, zaterdag of zondag staat
   const quick: [string, string, string][] = [...([5, 6, 0].includes(settings.opkDay) ? [] : [[DAYS[settings.opkDay] + ' (standaard)', base, ''] as [string, string, string]]),
     ['Vrijdag', fri, ''], ['Zaterdag', sat, ''], ['Zondag', sun, ''], ['Weekend vr–zo', fri, sun], ['Weekend za–zo', sat, sun]];
+  // Kamp / weekend zonder "tot en met" op een vrijdag, zaterdag of zondag: meteen het weekend vr–zo (zoals een nieuw weekendkamp),
+  // zodat je ziet wat er gemaakt wordt. Niet op een andere dag (dan valt de rij buiten zijn vaste dag) en niet bij een gekoppelde opkomst.
+  // Weer een andere soort terwijl die datums nog zo staan: de datums van daarvoor terug.
+  const autoRange = useRef<{ date: string; end: string; was: [string, string] } | null>(null);
+  const pickType = (v: Plan['type']) => {
+    setType(v);
+    const a = autoRange.current;
+    if (v !== 'kamp') { if (a && a.date === date && a.end === end) { setDate(a.was[0]); setEnd(a.was[1]); } autoRange.current = null; return; }
+    if (type === 'kamp' || linked || end.trim()) return;
+    const wd = fromISO(dRef).getDay();
+    if (![5, 6, 0].includes(wd)) return;
+    const m = addDays(dRef, -((wd + 6) % 7)), nd = fmtNL(addDays(m, 4)), ne = fmtNL(addDays(m, 6));
+    autoRange.current = { date: nd, end: ne, was: [date, end] };
+    setDate(nd); setEnd(ne);
+  };
+  // leeg "tot en met": wat dat betekent (een kamp loopt dan t/m de eerstvolgende zondag, zie kampLength)
+  const impliedEnd = type === 'kamp' && !linked ? shownEnd({ type, date: dRef, endDate: '', opkId: null }) : '';
+  const endHint = impliedEnd ? 'leeg = t/m ' + DAYS[fromISO(impliedEnd).getDay()] : 'leeg = één dag';
   const save = () => {
     const r = parseRange(date, end);
     if ('error' in r) { toast(r.error); return; }
@@ -96,9 +114,9 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
     toast('Rij teruggezet');
   };
   return <Modal title="Datum en soort" sub={slot ? 'Vaste ' + DAYS[settings.opkDay] + ': ' + fmtLong(slot) : 'Extra datum'} onClose={onClose}>
-    <Field label="Soort"><div className="seg">{([['opkomst', 'Opkomst'], ['kamp', 'Kamp / weekend'], ['geen', 'Geen opkomst']] as const).map(([v, l]) => <Chip key={v} on={type === v} onClick={() => setType(v)}>{l}</Chip>)}</div></Field>
+    <Field label="Soort"><div className="seg">{([['opkomst', 'Opkomst'], ['kamp', 'Kamp / weekend'], ['geen', 'Geen opkomst']] as const).map(([v, l]) => <Chip key={v} on={type === v} onClick={() => pickType(v)}>{l}</Chip>)}</div></Field>
     <div className="two"><Field label="Datum" htmlFor="md-date"><input id="md-date" value={date} onChange={e => setDate(e.target.value)} onBlur={() => setDate(tidyNL(date))} placeholder="dd-mm-jjjj" inputMode="numeric" /></Field>
-      <Field label="Tot en met" htmlFor="md-end"><input id="md-end" value={end} onChange={e => setEnd(e.target.value)} onBlur={() => setEnd(tidyNL(end, parseNL(date)))} placeholder="leeg = één dag" inputMode="numeric" /></Field></div>
+      <Field label="Tot en met" htmlFor="md-end"><input id="md-end" value={end} onChange={e => setEnd(e.target.value)} onBlur={() => setEnd(tidyNL(end, parseNL(date)))} placeholder={endHint} inputMode="numeric" /></Field></div>
     <Field label="Snel kiezen"><div className="row" style={{ gap: 6 }}>{quick.map(([l, a, b]) => <Chip key={l} onClick={() => { setDate(fmtNL(a)); setEnd(b ? fmtNL(b) : ''); if (b && type === 'opkomst') setType('kamp'); if (!b && type === 'kamp') setType('opkomst'); }}>{l}</Chip>)}</div></Field>
     {linked && type === 'geen' ? <p className="hint">De gekoppelde opkomst gaat naar de concepten.</p>
       : linked ? <p className="hint">De tijden komen uit de gekoppelde opkomst: {fmtT(st0)}–{fmtT(en0)}.</p>
@@ -268,7 +286,7 @@ export function LinkModal({ keyId, q0, back, onClose, onTakeover }: { keyId: str
       : <p className="hint">Niets gevonden in de groep.</p>}
     {/* staat er al bij Past bij */}
     {!fitsGroup && copyHint}</> : null;
-  return <Modal title="Opkomst koppelen" sub={fmtRange(d, e && e.endDate, true) + (topic.trim() ? ' · ' + topic.trim() : '')} onClose={onClose}>
+  return <Modal title="Opkomst koppelen" sub={fmtRange(d, shownEnd(e), true) + (topic.trim() ? ' · ' + topic.trim() : '')} onClose={onClose}>
     {/* past er iets bij het onderwerp, dan is dat de hoofdknop (Kiezen bij het eerste); anders Nieuwe opkomst of Weekendkamp */}
     {build ? <div className="row"><button className={'btn' + (!fits.length && !isKampRow ? ' primary' : '')} onClick={() => newOne(false)}><Plus size={16} />Nieuwe opkomst</button><button className={'btn' + (!fits.length && isKampRow ? ' primary' : '')} onClick={() => newOne(true)}><Tent size={16} />Weekendkamp</button></div>
       : <p className="hint">Kies een opkomst uit de bank of een concept. Een nieuwe opkomst maken kan met het recht Opkomsten.</p>}
@@ -306,6 +324,14 @@ export function linkDraft(S: SpeltakCtx, o: Opk, keyId: string) {
 }
 
 /** Een kopie uit de bank (zonder namen) inplannen op een rij in de jaarplanning (Kiezen in Koppelen, Gebruiken in de opkomstbouwer). */
+/**
+ * Gebruiken bij een datum zonder programma (dashboard en opkomstbouwer, zie fitFor): een passend concept wordt zelf gekoppeld,
+ * uit de bank komt een kopie zonder namen met Opkomst overnemen, net als Kiezen in Koppelen.
+ */
+export function applyFit(S: SpeltakCtx, x: Opk, keyId: string, nav: (to: string) => void) {
+  if (x.state === 'draft') linkDraft(S, x, keyId);
+  else linkBankCopy(S, x, keyId, (id, fresh) => openModal({ kind: 'takeover', oid: id, fresh }), id => nav(`/s/${S.sid}/bouwer/${id}`));
+}
 export function linkBankCopy(S: SpeltakCtx, o: Opk, keyId: string, onTakeover: (oid: string, fresh: boolean) => void, open: (oid: string) => void, pre = '') {
   const created = !S.peekEntry(keyId), en = { ...S.entryFor(keyId) }, before = { ...en }, linked = S.linkOpk(o, en, true, false);
   afterBankCopy(S, linked, en, before, created, onTakeover, open, pre);
@@ -372,11 +398,15 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
   };
   // het onderwerp van de datum wordt de titel van de opkomst: laat zien wat er verandert
   const change = (e: Plan | null) => !!(e && e.topic.trim() && o.title.trim() && e.topic.trim().toLowerCase() !== o.title.trim().toLowerCase());
-  // wat bij de opkomst past bovenaan onder een eigen kop (zoals in Koppelen), de andere datums daarna op volgorde van datum;
-  // alleen de eerste (de beste keuze) is de hoofdknop
+  // wat bij de opkomst past bovenaan onder een eigen kop (zoals in Koppelen), de andere datums daarna op volgorde van datum.
+  // Eén hoofdknop, alleen bij een goede keuze: een passende datum, bij een kamp een kamp-rij zonder programma, anders een datum
+  // zonder onderwerp (voor een gewone opkomst geen kamp-rij). Nooit een datum met een ander onderwerp: dat zou je overschrijven.
   type Row = (typeof rows)[number];
   const fitsRow = (r: Row) => !!(r.e && r.e.topic.trim() && fitsTopic(o, r.e.topic));
-  const fitRows = rows.filter(fitsRow), otherRows = rows.filter(r => !fitsRow(r)), firstKey = (fitRows[0] || otherRows[0])?.key;
+  const fitRows = rows.filter(fitsRow), otherRows = rows.filter(r => !fitsRow(r));
+  const kampRow = isKamp(o) ? otherRows.find(r => r.e && r.e.type === 'kamp') : undefined;
+  const freeRow = otherRows.find(r => (!r.e || !r.e.topic.trim()) && (isKamp(o) || !r.e || r.e.type !== 'kamp'));
+  const firstKey = (fitRows[0] || kampRow || freeRow)?.key;
   // een gewone opkomst op een kamp (of een rij van meer dagen): ook dat staat erbij, net als een kamp dat qua lengte niet past
   const row = (r: Row) => { const e = r.e, d = rowDate(r), off = e && e.endDate ? kampMismatch(o, d, e.endDate) : null, onKamp = e ? opkOnKamp(o, d, e.endDate, e.type) : null, ch = change(e); return <div key={r.key} className="pick" data-date={d}><div className="info">
     <b>{shown(d, e && e.endDate)}</b>

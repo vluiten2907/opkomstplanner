@@ -5,7 +5,7 @@ import { CalendarDays, Copy, ExternalLink, Plus, Users, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal } from '../store/modal';
-import { BankCard, Strip, CatTags, PageTitle, SaveBar, askBankName, cardSel, conceptToBank, copySharedToBank, focusAfter, sideInView } from '../components/shared';
+import { BankCard, Strip, CatTags, PageTitle, SaveBar, askBankName, cardSel, conceptToBank, copySharedToBank, enterSaves, focusAfter, sideInView } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, useEscapeClose, useSheetDialog } from '../components/ui';
 import { fmtDur, fmtT, plural } from '../lib/time';
 import { progBlocks, isFixed, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, opkCatList, opkCatOf, opkSearchText, type Cat, type Opk } from '../lib/model';
@@ -162,7 +162,7 @@ function TplEditor({ t, own, groupOn, onClose, onDelete, onCopied }: { t: Opk; o
   return <div className="pad stack">
     <div className="row between" style={{ alignItems: 'flex-start' }}><div className="row"><span className="eyebrow">Opkomst uit de bank</span>{ro && <span className="pill neutral">Alleen lezen</span>}</div><button className="closex" onClick={onClose} aria-label="Sluiten"><X size={18} /></button></div>
     {ro && <p className="hint">Aanpassen kan met het recht Banken.</p>}
-    <Field label="Opkomst titel" htmlFor="tf-title"><input id="tf-title" value={d.title} readOnly={ro} onChange={e => upd({ title: e.target.value })} /></Field>
+    <Field label="Opkomst titel" htmlFor="tf-title"><input id="tf-title" value={d.title} readOnly={ro} onChange={e => upd({ title: e.target.value })} onKeyDown={ro ? undefined : enterSaves} /></Field>
     <Field label="Korte beschrijving" htmlFor="tf-short"><textarea id="tf-short" rows={2} readOnly={ro} value={d.short} onChange={e => upd({ short: e.target.value })} placeholder="Waar gaat deze opkomst over?" /></Field>
     {groupOn && <label className="toggle"><input id="tf-share" type="checkbox" checked={d.shared} disabled={ro} onChange={e => upd({ shared: e.target.checked })} />
       <span><b>Delen met de groep</b><br /><span className="hint">{d.shared ? `Andere speltakken van ${sp?.groupName || 'de groep'} zien deze opkomst (zonder namen) en kunnen hem kopiëren.` : 'Alleen jullie speltak ziet deze opkomst.'}</span></span></label>}
