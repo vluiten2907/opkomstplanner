@@ -3,6 +3,12 @@ import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import App from './App';
 import { reloadForUpdate } from './lib/reload';
+// lettertypes zelf meeleveren (geen verzoek naar Google; zelfde letters op elke computer)
+import '@fontsource-variable/bricolage-grotesque/opsz.css';
+import '@fontsource/hanken-grotesk/400.css';
+import '@fontsource/hanken-grotesk/500.css';
+import '@fontsource/hanken-grotesk/600.css';
+import '@fontsource/hanken-grotesk/700.css';
 import './styles.css';
 
 // Data-router (nodig voor useBlocker: terugknop met niet-opgeslagen wijzigingen). De routes zelf staan in App.

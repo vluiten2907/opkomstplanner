@@ -20,7 +20,7 @@
   --hero-bg: color-mix(in srgb, var(--accent) 75%, #0E1411); --hero-ink: #FFFFFF; --hero-pill: rgba(0,0,0,.18);
   /* statuslabel in die kaart (Morgen, 5 min vrij): staat op de telefoon in de gloed, dus altijd een donkere waas onder de witte tekst */
   --hero-status: var(--hero-pill);
-  --f-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --f-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --f-body: "Hanken Grotesk", "Segoe UI", system-ui, -apple-system, sans-serif;
   --f-mono: var(--f-body);
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
