@@ -12,10 +12,34 @@ export type Speltak = {
   /** Wie teamleider is; ontbreekt bij oude speltakken (dan telt `members[uid].role`). */
   tlIds: string[] | null;
 };
+const txt = (v: unknown) => typeof v === 'string' ? v : '';
+const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v);
+/**
+ * Leden en beheerders altijd in dezelfde vorm: naam en e-mail als tekst, rechten als vier ja/nee.
+ * Een lid zonder naam (of met een getal of object als naam, bijv. via de API toegevoegd) laat zo nooit Team of Beheer vallen.
+ * Iets wat geen object is valt weg (schrijven gaat altijd per lid, via members.uid, dus dat raakt niets).
+ */
+export function normMembers(m: unknown): Record<string, Member> {
+  const out: Record<string, Member> = {};
+  if (isObj(m)) Object.entries(m).forEach(([u, x]) => {
+    if (!isObj(x)) return;
+    out[u] = { ...x, name: txt(x.name), email: txt(x.email), role: x.role === 'teamleider' ? 'teamleider' : 'leiding', perms: normPerms(x.perms), since: typeof x.since === 'number' ? x.since : 0 };
+    if (typeof x.inviteId !== 'string') delete out[u].inviteId;
+  });
+  return out;
+}
+export function normAdmins(m: unknown): Record<string, Admin> {
+  const out: Record<string, Admin> = {};
+  if (isObj(m)) Object.entries(m).forEach(([u, x]) => {
+    if (!isObj(x)) return;
+    out[u] = { name: txt(x.name), email: txt(x.email), since: typeof x.since === 'number' ? x.since : 0, ...(typeof x.inviteId === 'string' ? { inviteId: x.inviteId } : {}) };
+  });
+  return out;
+}
 /** Speltak uit Firestore; de naam en groepsnaam staan ook in de instellingen (voor pdf en kop). */
 export function normSpeltak(id: string, d: any): Speltak {
-  return { id, name: d.name || '', groupName: d.groupName || '', createdAt: d.createdAt || 0, createdBy: d.createdBy || '',
-    settings: normSettings({ ...d.settings, groupName: d.groupName || '', speltak: d.name || '' }), members: d.members || {}, memberIds: Array.isArray(d.memberIds) ? d.memberIds : [],
+  return { id, name: txt(d.name), groupName: txt(d.groupName), createdAt: d.createdAt || 0, createdBy: d.createdBy || '',
+    settings: normSettings({ ...d.settings, groupName: txt(d.groupName), speltak: txt(d.name) }), members: normMembers(d.members), memberIds: Array.isArray(d.memberIds) ? d.memberIds : [],
     gid: d.gid || null, tlIds: Array.isArray(d.tlIds) ? d.tlIds : null };
 }
 /** Beheerder van een groep of van het geheel. */

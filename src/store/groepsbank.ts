@@ -5,8 +5,8 @@
  */
 import { doc, getDoc, setDoc, deleteDoc, updateDoc, increment } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { allBlocks, catOf, hexColor, normOpk, opkCatOf, FIXED_CATS, OPK_EXTRA, SWATCHES, type Cat, type Opk, type Settings } from '../lib/model';
-import { clone, uid as mkId } from '../lib/time';
+import { allBlocks, catOf, hexColor, normOpk, opkCatOf, str, FIXED_CATS, OPK_EXTRA, SWATCHES, type Cat, type Opk, type Settings } from '../lib/model';
+import { clone, num, uid as mkId } from '../lib/time';
 
 export type Gedeeld = {
   id: string; sid: string; oid: string; speltakName: string;
@@ -22,8 +22,9 @@ export function normGedeeld(id: string, d: any): Gedeeld {
   // categorieën van een andere speltak: alleen id, naam en een echte kleur (#rrggbb) overnemen
   const catDefs: Cat[] = Array.isArray(d.catDefs) ? d.catDefs.filter((c: any) => c && typeof c === 'object')
     .map((c: any) => ({ id: String(c.id ?? ''), label: String(c.label ?? ''), color: hexColor(c.color, SWATCHES[0]) })) : [];
-  return { id, sid: d.sid || '', oid: d.oid || '', speltakName: d.speltakName || '', catDefs,
-    opk: normOpk({ ...(d.opk || {}), state: 'bank' }), updatedAt: d.updatedAt || 0, copies: d.copies || 0 };
+  // tekstvelden altijd als tekst: één afwijkend document van een andere speltak mag de groepsbank niet platleggen
+  return { id, sid: str(d.sid), oid: str(d.oid), speltakName: str(d.speltakName), catDefs,
+    opk: normOpk({ ...(d.opk && typeof d.opk === 'object' ? d.opk : {}), state: 'bank' }), updatedAt: num(d.updatedAt, 0), copies: num(d.copies, 0) };
 }
 
 /** Wat er gedeeld wordt: de bank-opkomst zonder leiding, met de gebruikte categorieën. */

@@ -12,7 +12,7 @@ import { Chip, ConfirmBtn, Dot, Field, TimePicker, useMedia, useSheetDialog } fr
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { addDays, cap, clone, fmtDur, fmtRange, fmtT, isoWeek, plural, splitLines, splitNames, todayISO, uid, DAYS } from '../lib/time';
-import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, fitsTopic, rowDate, rowsIn, catOf, changeOpkTime, copyKampDay, copyOpk, dayShort, firstFree, freeName, hasPdfPage, kampFitRow, kampMismatchNote, nameTaken, dayTitle, isBlankOpk, relabelDays, isFixed, isKamp, lanesLayout, libSearchText, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
+import { allBlocks, analyze, analyzeOne, blockFromLib, byTitle, fitsTopic, rowDate, rowsIn, catOf, changeOpkTime, copyKampDay, copyOpk, dayShort, firstFree, freeName, hasPdfPage, kampBase, kampFitRow, kampMismatchNote, nameTaken, dayTitle, isBlankOpk, relabelDays, isFixed, isKamp, lanesLayout, libSearchText, minNeed, newKamp, newOpk, normBlock, normDay, normLib, normOpk, opkCatList, plannersOf, prepLabel, progEmpty, syncKamp, toBank, libFields, PREP_OPTS, type Analysis, type Block, type Day, type Lib, type Opk } from '../lib/model';
 
 /** Titel van de opkomst: loopt door op een volgende regel in plaats van af te breken (smal scherm), zonder echte regeleinden. */
 function TitleArea({ value, readOnly, onChange, placeholder, autoFocus }: { value: string; readOnly: boolean; onChange: (v: string) => void; placeholder: string; autoFocus?: boolean }) {
@@ -61,7 +61,7 @@ export default function Bouwer() {
   const firstOpen = !coming.length;
   // past er een concept of iets uit de bank bij het onderwerp: meteen gebruiken, net als Kiezen in Koppelen
   // (een concept wordt zelf gekoppeld, uit de bank komt een kopie zonder namen met Opkomst overnemen)
-  const use = (x: Opk, key: string) => x.state === 'draft' ? linkDraft(S, x, key, () => nav(`/s/${sid}/bouwer/${x.id}`)) : linkBankCopy(S, x, key, (id, fresh) => openModal({ kind: 'takeover', oid: id, fresh }), id => nav(`/s/${sid}/bouwer/${id}`));
+  const use = (x: Opk, key: string) => x.state === 'draft' ? linkDraft(S, x, key) : linkBankCopy(S, x, key, (id, fresh) => openModal({ kind: 'takeover', oid: id, fresh }), id => nav(`/s/${sid}/bouwer/${id}`));
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title="Opkomstbouwer" />
     {oid && !o && <div className="ctx">Deze opkomst bestaat niet (meer).</div>}
@@ -273,7 +273,7 @@ function Builder({ o: stored }: { o: Opk }) {
   };
   const pill = o.state === 'bank' ? <span className="pill good">In opkomstenbank</span> : o.state === 'planned' ? <span className="pill acc">Ingepland</span> : <span className="pill neutral">Concept</span>;
   const putInBank = () => {
-    if (!allBlocks(o).length && !o.title) { toast('Geef de opkomst eerst een titel of een onderdeel.'); return; }
+    if (progEmpty(o) && !o.title.trim()) { toast('Geef de opkomst eerst een titel of een onderdeel.'); return; }
     // concept: gaat zelf de bank in (mag zijn eigen naam houden); ingepland: er komt een kopie in de bank (allebei zonder namen)
     if (o.state === 'draft') return askBankName(o, bankOpks, o.id, name => { if (!can('bank')) return; saveOpk(toBank(o, name)); toast(S.sp?.gid ? 'In de opkomstenbank gezet en gedeeld met de groep, zonder namen' : 'Opgeslagen in de opkomstenbank, zonder namen van leiding'); });
     askBankName(o, bankOpks, null, name => {
@@ -298,17 +298,18 @@ function Builder({ o: stored }: { o: Opk }) {
     : o.state === 'bank' ? <>{can('build') && <button className="btn" onClick={dup} title="Kopie als concept"><Copy size={16} />Kopie</button>}{planBtn}{pdfBtn}{can('bank') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Uit de opkomstenbank verwijderen" onConfirm={() => { setUnsaved(false); nav(`/s/${sid}/bouwer`); removeOpk(stored); }} />}</>
       : <>{bankBtn}<button className="btn" onClick={() => go(`/s/${sid}/jaarplanning?focus=${e ? e.id : ''}`)}><CalendarDays size={16} />Jaarplanning</button>{pdfBtn}</>;
   const w = whole.warn;
-  // Kamp past (na een dag toevoegen, kopiëren of weghalen) niet meer bij de rij in de jaarplanning: melden, niet stil laten schuiven.
-  // Met het recht Jaarplanning trek je de rij gelijk met het kamp (Ongedaan maken zet de oude data terug).
-  const misfit = kamp && e ? kampMismatchNote(o, e.date, e.endDate) : '';
+  // Kamp past (na een dag toevoegen, kopiëren of weghalen) niet meer bij de rij in de jaarplanning, of een gewone opkomst hangt aan een kamp:
+  // melden, niet stil laten schuiven. Met het recht Jaarplanning trek je de rij gelijk met het programma (Ongedaan maken zet de oude data terug):
+  // een kamp t/m het aantal kampdagen, een gewone opkomst wordt een opkomst van één dag.
+  const misfit = e ? kampMismatchNote(o, e.date, e.endDate, e.type) : '';
   const fitPlan = () => {
     if (!e || !can('plan')) return;
-    const was = { date: e.date, endDate: e.endDate }, fit = kampFitRow(o, e.date, e.endDate);
+    const was = { date: e.date, endDate: e.endDate, type: e.type }, fit = kamp ? { ...kampFitRow(o, e.date, e.endDate), type: e.type } : { date: e.date, endDate: '', type: 'opkomst' as const };
     savePlan({ ...e, ...fit });
-    if (!readOnly && relabelDays(clone(o), fit.date)) upd(() => { relabelDays(o, fit.date); });
-    toast(`Jaarplanning aangepast: ${fmtRange(fit.date, fit.endDate, true)}`, undoAction(() => {
+    if (kamp && !readOnly && relabelDays(clone(o), fit.date)) upd(() => { relabelDays(o, fit.date); });
+    toast(`Jaarplanning aangepast: ${kamp ? '' : 'opkomst op '}${fmtRange(fit.date, fit.endDate, true)}`, undoAction(() => {
       const L = latest(), row = L.plans.find(p => p.id === e.id);
-      if (row && row.date === fit.date && row.endDate === fit.endDate) L.savePlan({ ...row, ...was });
+      if (row && row.date === fit.date && row.endDate === fit.endDate && row.type === fit.type) L.savePlan({ ...row, ...was });
     }));
   };
   return <div className="stack pt-5 md:pt-7" style={{ gap: 16 }}>
@@ -344,7 +345,7 @@ function Builder({ o: stored }: { o: Opk }) {
             <Field label="Nabespreking" hint={o.post ? 'Klaar om ' + fmtT(o.end + o.post) : 'Geen tijd achteraf'}><select value={o.post} disabled={readOnly} onChange={ev => upd(() => { o.post = +ev.target.value; })}>{PREP_OPTS.map(m => <option key={m} value={m}>{prepLabel(m)}{m ? ' achteraf' : ''}</option>)}</select></Field>
           </>}
         </div>}
-        {kamp && <DaysBar o={o} di={di} setDayIdx={pickDay} upd={upd} date={e ? e.date : null} readOnly={readOnly} />}
+        {kamp && <DaysBar o={o} di={di} setDayIdx={pickDay} upd={upd} date={e ? kampBase(o, e) : null} readOnly={readOnly} />}
         {e && metaOpen && <div className="present" role="group" aria-labelledby="om-present-l"><span className="lbl" id="om-present-l" style={{ marginRight: 6 }}>Aanwezige leiding</span>
           {leaders.length ? leaders.map(n => <Chip key={n} on={!e.absent.includes(n)} disabled={!can('plan')} onClick={() => { const en = { ...e, absent: e.absent.includes(n) ? e.absent.filter(x => x !== n) : [...e.absent, n] }; dropAbsent(en); savePlan(en); }}>{n}</Chip>) : <span className="hint">Nog geen leidingteam.</span>}
           {present.filter(n => !leaders.includes(n)).map(n => <Chip key={n} on disabled title="Met de hand ingedeeld">{n}</Chip>)}</div>}
@@ -356,7 +357,7 @@ function Builder({ o: stored }: { o: Opk }) {
     </div> : <div className="summary">
       {kamp && <span className="stat">Dag<b>{(D as Day).label}</b></span>}
       <span className="stat">Duur<b>{fmtDur(A.total)}</b></span><span className="stat">Ingepland<b>{fmtDur(A.planned)}</b></span>
-      <span className="stat">Nog vrij<b>{A.free ? fmtDur(A.free) : '0 min'}</b></span><span className="stat">Onderdelen<b>{D.blocks.length}</b></span>
+      <span className="stat">Nog vrij<b>{A.free ? fmtDur(A.free) : '0 min'}</b></span><span className="stat">Onderdelen<b>{D.blocks.filter(b => !isFixed(b)).length}</b></span>
       <span className="stat">Minimaal leiding<b>{minNeed(o)}</b></span>
       {!nn && <span className={'stat' + (minNeed(o) > A.present.length ? ' warnc' : '')}>Leiding{o.state === 'planned' ? ' aanwezig' : ''}<b>{A.present.length}</b></span>}
       <button className={'stat' + (w ? ' warnc' : '')} onClick={() => { setSelId(null); setSideTab('check'); }}><span>Aandachtspunten{kamp ? ' (kamp)' : ''}</span><b>{w}</b></button>
@@ -508,7 +509,7 @@ function SidePanel({ tab, setTab, ctx, A, lanesRef, onSelect, onPlan, onDrop }: 
   const { o, T0, T1, row, nn, readOnly } = ctx;
   // kampdag bij een taak: "za 14" (met datum) of een korte unieke naam ("dag 2"), zoals in de pdf
   const pe = isKamp(o) && o.state === 'planned' ? entryOfOpk(o) : null;
-  const dayOf = (i: number) => dayShort(o, i, pe ? addDays(pe.date, i) : null);
+  const dayOf = (i: number) => dayShort(o, i, pe ? addDays(kampBase(o, pe), i) : null);
   const [q, setQ] = useState(''); const [cat, setCat] = useState('');
   const [float, setFloat] = useState<{ l: Lib; x: number; y: number } | null>(null);
   const ld = useRef<{ l: Lib; x0: number; y0: number; started: boolean; m: number | null } | null>(null);

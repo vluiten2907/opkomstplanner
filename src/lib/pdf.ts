@@ -120,7 +120,8 @@ export function buildPdf(jsPDF: any, O: any, cats: any[]) {
     // zonder uitlegpagina (uit, of niets te lezen) ook geen regel "Uitleg op pagina N": de rij wordt lager
     const page = hasPdfPage(b);
     font('bold', 10); const tLines = wrap(b.title || 'Naamloos onderdeel', X.oW);
-    font('normal', 8.5); const sLines = b.short ? wrap(b.short, X.oW, 3) : [];
+    // met uitlegpagina staat de korte beschrijving daar volledig: hier hooguit 3 regels; zonder uitlegpagina hier alles (een geplakte lap tekst hooguit 20 regels)
+    font('normal', 8.5); const sLines = b.short ? wrap(b.short, X.oW, page ? 3 : 20) : [];
     font('normal', 9); const lLines = b.location ? wrap(b.location, X.lW) : ['–'];
     const nArr = splitNames(b.names); const nLines = nArr.length ? wrap(nArr.join(', '), X.nW) : ['–'];
     font('normal', 8.5); const prepL = b.prep ? wrap(b.prep, X.pW, 5) : [];

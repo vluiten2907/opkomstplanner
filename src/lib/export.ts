@@ -1,4 +1,4 @@
-import { ACCENTS, FIXED_CATS, dayShort, progEmpty, dayTitle, isKamp, minNeed, opkCatOf, plannersOf, type Opk, type Plan, type Settings } from './model';
+import { ACCENTS, FIXED_CATS, dayShort, progEmpty, dayTitle, isKamp, kampBase, minNeed, opkCatOf, plannersOf, type Opk, type Plan, type Settings } from './model';
 import { fmtNL, fmtRange, addDays } from './time';
 import { toast } from '../store/toast';
 import { isLoadError, reloadForUpdate } from './reload';
@@ -18,7 +18,7 @@ export const groupLine = (s: Settings) => [s.groupName, s.speltak].map(x => (x |
  * Datum in de kop en voettekst van de pdf. Een kamp telt zijn dagen vanaf de datum (zoals de dagkoppen),
  * ook als de jaarplanning (nog) een andere einddatum heeft: de pdf spreekt zichzelf dan niet tegen.
  */
-const dateLabel = (o: Opk, e: Plan) => isKamp(o) ? fmtRange(e.date, o.days.length > 1 ? addDays(e.date, o.days.length - 1) : '', true) : fmtRange(e.date, e.endDate, true);
+const dateLabel = (o: Opk, e: Plan) => { if (!isKamp(o)) return fmtRange(e.date, e.endDate, true); const d = kampBase(o, e); return fmtRange(d, o.days.length > 1 ? addDays(d, o.days.length - 1) : '', true); };
 
 /** Pdf maken; jsPDF en de pdf-opbouw worden pas hier geladen, zodat ze niet in de hoofdbundel zitten. */
 export async function makePdf(o: Opk | undefined | null, settings: Settings, e: Plan | null, present: string[], practice = false) {
@@ -32,7 +32,7 @@ export async function makePdf(o: Opk | undefined | null, settings: Settings, e: 
     catsLabel: (o.cats || []).map(c => opkCatOf(settings, c)).filter(Boolean).map(c => c!.label).join(', '),
     groupName: settings.groupName, headLabel: groupLine(settings) ? groupLine(settings).toUpperCase() : 'PROGRAMMA OPKOMST',
     logo: settings.logo, logoW: settings.logoW, logoH: settings.logoH, accentRgb: A.rgb,
-    days: isKamp(o) ? o.days.map((d, i) => ({ label: dayTitle(o, i, e ? addDays(e.date, i) : null, true), short: dayShort(o, i, e ? addDays(e.date, i) : null), start: d.start, end: d.end, blocks: d.blocks })) : null,
+    days: isKamp(o) ? o.days.map((d, i) => ({ label: dayTitle(o, i, e ? addDays(kampBase(o, e), i) : null, true), short: dayShort(o, i, e ? addDays(kampBase(o, e), i) : null), start: d.start, end: d.end, blocks: d.blocks })) : null,
   };
   try {
     const [{ jsPDF }, { buildPdf }] = await Promise.all([import('jspdf'), import('./pdf')]);

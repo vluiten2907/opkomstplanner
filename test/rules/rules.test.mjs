@@ -239,6 +239,21 @@ await t('accepteren leiding met ander e-mailadres niet', () => assertFails(joinB
 await t('accepteren leiding met onbevestigd e-mailadres niet', () => assertFails(joinB(unv('nw', 'new@t.nl'), 'speltakken/s1', ldJoin('nw', 'leiding'), 'iLd', 'nw')));
 await t('accepteren leiding als teamleider niet', () => assertFails(joinB(nw, 'speltakken/s1', ldJoin('nw', 'teamleider'), 'iLd', 'nw')));
 await t('toetreden zonder de uitnodiging als gebruikt te markeren: nee', () => assertFails(updateDoc(doc(nw, 'speltakken/s1'), ldJoin('nw', 'leiding'))));
+// naam en e-mail moeten tekst zijn (een lid zonder naam liet Team en Beheer vallen)
+const ldJoinM = (patch) => ({ 'members.nw': { ...mem('leiding', 'iLd', NONE), ...patch }, memberIds: arrayUnion('nw') });
+const noName = { ...mem('leiding', 'iLd', NONE) }; delete noName.name;
+await t('toetreden zonder naam: nee', () => assertFails(joinB(nw, 'speltakken/s1', { 'members.nw': noName, memberIds: arrayUnion('nw') }, 'iLd', 'nw')));
+await t('toetreden met een lege naam: nee', () => assertFails(joinB(nw, 'speltakken/s1', ldJoinM({ name: '' }), 'iLd', 'nw')));
+await t('toetreden met een getal als naam: nee', () => assertFails(joinB(nw, 'speltakken/s1', ldJoinM({ name: 5 }), 'iLd', 'nw')));
+await t('toetreden met een map als naam: nee', () => assertFails(joinB(nw, 'speltakken/s1', ldJoinM({ name: { x: 1 } }), 'iLd', 'nw')));
+await t('toetreden met een naam van meer dan 254 tekens: nee', () => assertFails(joinB(nw, 'speltakken/s1', ldJoinM({ name: 'a'.repeat(255) }), 'iLd', 'nw')));
+await t('toetreden met een getal als e-mail: nee', () => assertFails(joinB(nw, 'speltakken/s1', ldJoinM({ email: 5 }), 'iLd', 'nw')));
+await t('toetreden met naam met accenten (Akela Baloe ÉLAN): ja', async () => {
+  await assertSucceeds(joinB(nw, 'speltakken/s1', ldJoinM({ name: 'Akela Baloe ÉLAN', email: 'new@t.nl' }), 'iLd', 'nw'));
+  // terug naar de stand van vóór het toetreden (uitnodiging weer vrij), voor de tests hieronder
+  await env.withSecurityRulesDisabled(async c => { const db = c.firestore();
+    await updateDoc(doc(db, 'speltakken/s1'), { 'members.nw': deleteField(), memberIds: arrayRemove('nw') }); await updateDoc(doc(db, 'invites/iLd'), { usedBy: null }); });
+});
 await t('accepteren leiding', () => assertSucceeds(joinB(nw, 'speltakken/s1', ldJoin('nw', 'leiding'), 'iLd', 'nw')));
 await t('opnieuw toetreden met dezelfde uitnodiging: nee', async () => {
   await assertSucceeds(updateDoc(doc(as('tl', 'tl@t.nl'), 'speltakken/s1'), { 'members.nw': deleteField(), memberIds: arrayRemove('nw') }));

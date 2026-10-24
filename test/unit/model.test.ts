@@ -295,8 +295,26 @@ test('kampMismatch: kamp past qua lengte niet bij de rij', () => {
   assert.deepEqual(M.kampMismatch(M.newKamp(S(), 2), '2026-11-06', '2026-11-08'), { prog: 2, row: 3 }, 'kamp za–zo op een rij vr–zo');
   assert.deepEqual(M.kampMismatch(k, '2026-11-07', ''), { prog: 3, row: 1 }, 'zonder einddatum is de rij één dag');
   assert.equal(M.kampMismatch(M.newKamp(S(), 1), '2026-11-08', ''), null, 'kamp van één dag zonder einddatum');
-  assert.equal(M.kampMismatch(opk(), '2026-11-07', '2026-11-08'), null, 'gewone opkomst: niets');
+  assert.equal(M.kampMismatch(opk(), '2026-11-07', '2026-11-08'), null, 'gewone opkomst: geen verschil in kampdagen');
   assert.equal(M.kampMismatchNote(k, '2026-11-06', '2026-11-08'), '');
+  // gewone opkomst op een kamp in de jaarplanning: wel een melding
+  assert.equal(M.kampMismatchNote(opk(), '2026-11-13', '2026-11-15', 'kamp'),
+    'Dit is een gewone opkomst (14:00–16:30); de jaarplanning heeft hier een kamp van 3 dagen (vr 13 – zo 15 nov). Controleer de data.');
+  assert.equal(M.opkOnKamp(opk(), '2026-11-14', '', 'kamp'), 1, 'kamp van één dag');
+  assert.equal(M.opkOnKamp(opk(), '2026-11-14', '2026-11-15', 'opkomst'), 2, 'rij van twee dagen');
+  assert.equal(M.kampMismatchNote(opk(), '2026-11-14', '', 'opkomst'), '', 'gewone opkomst op een gewone rij: niets');
+  assert.equal(M.kampMismatchNote(opk(), '2026-11-14', '2026-11-15'), 'Dit is een gewone opkomst (14:00–16:30); de jaarplanning heeft hier een rij van 2 dagen (za 14 – zo 15 nov). Controleer de data.');
+  assert.equal(M.opkOnKamp(k, '2026-11-13', '2026-11-15', 'kamp'), null, 'een kamp zelf telt niet');
+});
+test('kampBase: eerste dag zoals bouwer, dashboard en pdf hem tonen', () => {
+  const k = M.newKamp(S(), 3, '2026-11-13'); // vr–zo
+  assert.equal(M.kampBase(k, { date: '2026-11-13', endDate: '2026-11-15' }), '2026-11-13', 'past: de datum');
+  const zz = M.newKamp(S(), 3, '2026-11-13'); zz.days.shift(); // vrijdag weggehaald, rij nog vr–zo
+  assert.equal(M.kampBase(zz, { date: '2026-11-13', endDate: '2026-11-15' }), '2026-11-14', 'vrijdag weggehaald: het programma begint op zaterdag 14');
+  assert.equal(M.dayTitle(zz, 0, M.kampBase(zz, { date: '2026-11-13', endDate: '2026-11-15' })), 'Zaterdag 14 nov');
+  // rij do 12–za 14 met dagen vr/za/zo: het aantal dagen klopt, de jaarplanning gaat voor
+  assert.equal(M.kampBase(k, { date: '2026-11-12', endDate: '2026-11-14' }), '2026-11-12', 'verzet kamp dat qua lengte past: de datum van de rij');
+  assert.equal(M.kampBase(opk(), { date: '2026-11-13', endDate: '2026-11-15' }), '2026-11-13', 'gewone opkomst: de datum');
 });
 test('kampdag mag doorlopen tot na middernacht (26:00)', () => {
   const d = M.normDay({ label: 'Zaterdag', start: 1200, end: 1560, blocks: [blk('nacht', 1440, 60)] });

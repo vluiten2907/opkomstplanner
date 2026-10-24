@@ -3,7 +3,7 @@ import { collection, doc, getDoc, onSnapshot, query, setDoc, where } from 'fireb
 import { db } from '../lib/firebase';
 import { useAuth } from './auth';
 import { saveAccount } from './beheer';
-import { ROOT_EMAIL, type Groep, type Root } from '../lib/types';
+import { normAdmins, ROOT_EMAIL, type Groep, type Root } from '../lib/types';
 
 /*
  * Beheerrollen van de ingelogde gebruiker:
@@ -26,7 +26,7 @@ type RolesCtx = {
 };
 const Ctx = createContext<RolesCtx>({ ready: false, root: null, isRoot: false, groups: [], ownGroups: [], isAdmin: false, isGroupAdmin: () => false, profile: null, recheck: () => {} });
 
-export const normGroep = (id: string, d: any): Groep => ({ id, name: d.name || '', admins: d.admins || {}, adminIds: d.adminIds || [], createdAt: d.createdAt || 0, createdBy: d.createdBy || '' });
+export const normGroep = (id: string, d: any): Groep => ({ id, name: typeof d.name === 'string' ? d.name : '', admins: normAdmins(d.admins), adminIds: Array.isArray(d.adminIds) ? d.adminIds : [], createdAt: d.createdAt || 0, createdBy: d.createdBy || '' });
 
 export function RolesProvider({ children }: { children: ReactNode }) {
   const { user, verified } = useAuth();
@@ -71,7 +71,7 @@ export function RolesProvider({ children }: { children: ReactNode }) {
       // Wie (nog) niet in Beheer (totaal) staat, mag het niet lezen: dan stopt deze listener met een fout. recheck() begint opnieuw.
       stop = onSnapshot(ref, s => {
         const d = s.exists() ? s.data() as any : null;
-        setRootSnap({ key, root: d && Array.isArray(d.ids) && d.ids.includes(user.uid) ? { ids: d.ids, people: d.people || {} } : null });
+        setRootSnap({ key, root: d && Array.isArray(d.ids) && d.ids.includes(user.uid) ? { ids: d.ids, people: normAdmins(d.people) } : null });
       }, () => setRootSnap({ key, root: null }));
     })();
     return () => { alive = false; stop(); };

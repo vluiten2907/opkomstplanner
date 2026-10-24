@@ -544,6 +544,20 @@ with sync_playwright() as p:
     pg.set_viewport_size({'width': 1360, 'height': 900})
     check(soon(lambda: pg.locator('.picklist .pick:has-text("Scouts")').count() == 1, 5000) and pg.locator('.empty').count() == 0, 'verbinding terug: mijn speltakken verschijnen vanzelf')
     pg.evaluate("localStorage.removeItem('fake.offlineList')")
+    # speltak openen zonder verbinding terwijl het speltakdocument wel in de cache staat (bijv. via Mijn speltakken): de lijsten komen leeg uit
+    # de cache. Niet eindeloos "Speltak laden…", maar Geen verbinding met de knop Mijn speltakken; daarna vanzelf de gegevens.
+    pg.goto(BASE + '/speltakken'); w(900)
+    pg.evaluate("localStorage.setItem('fake.offlineCached', '3500')")
+    pg.click('.picklist .pick:has-text("Scouts") button:has-text("Openen")')
+    check(soon(lambda: pg.locator('.auth-card h2:text-is("Geen verbinding")').count() == 1, 2500) and pg.locator('.auth-card button:has-text("Mijn speltakken")').count() == 1
+          and pg.locator('.loading').count() == 0, 'speltak openen zonder verbinding (speltak wel in de cache, lijsten niet): Geen verbinding met Mijn speltakken, niet eindeloos Speltak laden…')
+    check(soon(lambda: pg.locator('header.bar').count() == 1 and pg.locator('.auth-card').count() == 0, 5000), 'verbinding terug: de speltak verschijnt vanzelf')
+    # nog een keer openen in hetzelfde tabblad (nog steeds zonder verbinding): wat dit tabblad al van de server had, staat meteen in beeld
+    pg.click('header.bar .acct .btn'); pg.click('.menu >> text=Andere speltak'); w(500)
+    pg.click('.picklist .pick:has-text("Scouts") button:has-text("Openen")'); w(600)
+    check(pg.locator('header.bar').count() == 1 and pg.locator('.auth-card').count() == 0 and pg.locator('.loading').count() == 0,
+          'speltak offline opnieuw openen in hetzelfde tabblad: de gegevens staan meteen in beeld (uit de cache)')
+    w(3200); pg.evaluate("localStorage.removeItem('fake.offlineCached')")
     pg.goto(BASE + '/s/bestaatniet/dashboard'); w(800)
     check(pg.locator('.auth-card h2:text-is("Geen toegang")').count() == 1, 'speltak die niet bestaat: Geen toegang')
     pg.goto(BASE + f'/s/{scouts}/dashboard'); w(900)
@@ -1174,6 +1188,24 @@ with sync_playwright() as p:
     pg.evaluate("""([sid, gk, sp, g, ck]) => { const s = JSON.parse(localStorage.getItem('fake.firestore'));
       if (ck) window.__fakeRemote(ck, null); window.__fakeRemote('speltakken/' + sid, sp); window.__fakeRemote(gk, { ...s[gk], catDefs: g.catDefs, opk: g.opk }); }""", [welpen, gk, sp0, g0, ck2]); w(600)
     pg.click('.tabs.page >> text=Groep'); w(400)
+    # een afwijkend document van een andere speltak in de groepsbank (titel als getal, speltaknaam als object, bijv. via de API geschreven)
+    # legt de tab Groep en Koppelen niet plat
+    vreemd = pg.evaluate("""gk => { const s = JSON.parse(localStorage.getItem('fake.firestore')), g = s[gk], base = gk.split('/gedeeld/')[0] + '/gedeeld/';
+      window.__fakeRemote(base + 'sVreemd_o1', { ...g, sid: 'sVreemd', oid: 'o1', speltakName: 'Vreemd', updatedAt: { x: 1 }, opk: { ...g.opk, title: 5, short: { a: 1 }, blocks: [{ ...g.opk.blocks[0], title: 7, cat: 3 }] } });
+      window.__fakeRemote(base + 'sVreemd_o2', { ...g, sid: 'sVreemd', oid: 'o2', speltakName: { x: 1 }, opk: { ...g.opk, title: 'Raar spel' } });
+      return [base + 'sVreemd_o1', base + 'sVreemd_o2']; }""", gk); w(600)
+    n_err = len(errors)
+    pg.click('.tabs.page >> text=Onze bank'); w(300); pg.click('.tabs.page >> text=Groep'); w(500)
+    check(pg.locator('text=Er ging iets mis').count() == 0 and pg.locator('.bcard:has-text("Raar spel")').count() == 1 and pg.locator('.bcard:has-text("Sluipspel")').count() == 1,
+          'groepsbank: document met een titel als getal en een speltaknaam als object legt de tab Groep niet plat')
+    pg.goto(f'{BASE}/s/{welpen}/dashboard'); w(1000)
+    pg.click('.hero button:text-is("Koppelen")'); w(500)
+    check(pg.locator('.modal').count() == 1 and 'kon niet worden getoond' not in (pg.locator('.toast').all_inner_texts() or [''])[0] and pg.locator('.modal >> text=Raar spel').count() == 1,
+          'Koppelen: afwijkend document in de groepsbank geeft geen foutmelding')
+    check(len(errors) == n_err, f'afwijkend document in de groepsbank: geen fouten in de console ({errors[n_err:]})')
+    pg.keyboard.press('Escape'); w(300)
+    pg.evaluate("ks => ks.forEach(k => window.__fakeRemote(k, null))", vreemd); w(500)
+    pg.goto(f'{BASE}/s/{welpen}/opkomsten'); w(900); pg.click('.tabs.page >> text=Groep'); w(400)
     # koppelen uit de groep: de eigen bank is leeg, dus "Uit de groep" staat bovenaan; Kiezen zet een kopie in de eigen bank en plant een kopie daarvan in (zonder namen)
     pg.goto(f'{BASE}/s/{welpen}/dashboard'); w(1000)
     pg.click('.hero button:text-is("Koppelen")'); w(400)
@@ -1208,7 +1240,13 @@ with sync_playwright() as p:
     n_rows = pg.evaluate("""([sid, k]) => { const s = JSON.parse(localStorage.getItem('fake.firestore'));
       window.__fakeRemote(k, { ...s[k], fromShared: null });
       const ks = Object.keys(s).filter(k => k.startsWith('speltakken/' + sid + '/planning/') && s[k] && !s[k].opkId);
-      ks.forEach(k => window.__fakeRemote(k, { ...s[k], topic: 'Sluipspel' })); return ks.length; }""", [welpen, own_k])
+      ks.forEach(k => window.__fakeRemote(k, { ...s[k], topic: 'Sluipspel' }));
+      // Ongedaan maken hierboven haalde de rij weg die voor het inplannen was gemaakt: de eerstvolgende vaste dag krijgt weer een rij met dit onderwerp
+      const od = (s['speltakken/' + sid].settings || {}).opkDay ?? 6, d = new Date(); d.setHours(12); while (d.getDay() !== od) d.setDate(d.getDate() + 1);
+      const iso = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      const add = !Object.keys(s).some(k => k.startsWith('speltakken/' + sid + '/planning/') && s[k] && s[k].slot === iso);
+      if (add) window.__fakeRemote('speltakken/' + sid + '/planning/pl-sluip', { id: 'pl-sluip', slot: iso, date: iso, endDate: '', type: 'opkomst', topic: 'Sluipspel', start: null, end: null, planners: [], absent: [], letter: { needed: false, due: '', sent: false }, opkId: null, note: '', updatedAt: Date.now() });
+      return ks.length + (add ? 1 : 0); }""", [welpen, own_k])
     pg.reload(); w(1200)
     pg.click('.hero button:text-is("Koppelen")'); w(400)
     heads = pg.locator('.modal h3').all_inner_texts()
@@ -1588,6 +1626,14 @@ with sync_playwright() as p:
     with pg.expect_download() as dl: pg.click('button:has-text("PDF maken")')
     dl.value.save_as(f'{OUT}/accent.pdf')
     check(any('Spel met Renée' in t for _, _, t in pdf_texts(f'{OUT}/accent.pdf')), 'pdf: ontbonden accent blijft staan (Renée, niet Renee)')
+    # korte beschrijving van meer dan 3 regels zonder uitlegpagina (geen beschrijving, voorbereiding of materiaal): volledig op pagina 1
+    lang = 'Twee teams proberen elkaars vlag te veroveren zonder getikt te worden. Wie getikt wordt, moet eerst terug naar het eigen kamp.'
+    pg.click('#bf-add'); w(500); pg.fill('#bf-title', 'Vlaggenroof'); pg.fill('#bf-short', lang); w(800)
+    with pg.expect_download() as dl: pg.click('button:has-text("PDF maken")')
+    # alle tekstregels, ook de vervolgregels van een tekst over meer regels (T*)
+    dl.value.save_as(f'{OUT}/kort-lang.pdf'); KL = ' '.join(re.findall(r'\(((?:[^()\\]|\\.)*)\) Tj', open(f'{OUT}/kort-lang.pdf', 'rb').read().decode('latin-1')))
+    check('eerst terug naar het eigen kamp.' in KL and 'Vlaggenroof' in KL, 'pdf: lange korte beschrijving zonder uitlegpagina staat volledig in de tijdlijn (niet afgekapt)')
+    pg.click('.side .btn.danger'); w(500)
     pg.fill('#om-title', 'Mijn oefenopkomst'); w(700)
     # pdf-code niet te laden (tabblad stond open tijdens een update van de site): één keer vanzelf opnieuw laden;
     # was dat net al gebeurd, dan een gewone Nederlandse melding in plaats van de ruwe (Engelse) foutmelding
@@ -2831,6 +2877,13 @@ with sync_playwright() as p:
     got = []; on_dl = lambda d: got.append(d); q.on('download', on_dl)
     q.click('button:has-text("PDF maken")'); q.wait_for_timeout(1200); q.remove_listener('download', on_dl)
     check(not got and 'Voeg eerst een onderdeel toe' in q.locator('.toast').inner_text(), 'pdf van een programma met alleen de vaste blokken: melding, geen lege pdf')
+    ond = q.locator('.summary .stat:has-text("Onderdelen") b').inner_text()
+    check(ond == '0', f'bouwer: openen, ranja en sluiten tellen niet als onderdelen (Onderdelen {ond!r})')
+    # In bank zonder titel en met alleen de vaste blokken: eerst een titel of een onderdeel
+    q.fill('#om-title', ' '); q.wait_for_timeout(300); q.click('.plan-head button:has-text("In bank")'); q.wait_for_timeout(400)
+    check('Geef de opkomst eerst een titel of een onderdeel' in q.locator('.toast').inner_text() and q.locator('.modal').count() == 0,
+          'In bank: opkomst met alleen de vaste blokken en zonder titel gaat niet de bank in')
+    q.fill('#om-title', 'Lege opkomst'); q.wait_for_timeout(700)
     q.goto(BASE + '/s/oefen/jaarplanning'); q.wait_for_timeout(1000)
     q.locator('.prow:has(.plink:has-text("Testkamp")) .pdate').click(); q.wait_for_timeout(300)
     q.click('.modal >> text=Opslaan'); q.wait_for_timeout(400)
@@ -2853,6 +2906,42 @@ with sync_playwright() as p:
     d0 = date.fromisoformat(r0[0])
     check(r1 == [r0[0], (d0 + timedelta(days=2)).isoformat()] and q.locator('.ctx .ctx-misfit').count() == 0 and 'Jaarplanning aangepast' in q.locator('.toast').inner_text(),
           f'Jaarplanning aanpassen: de rij loopt nu t/m de laatste kampdag, de melding is weg ({r0} → {r1})')
+    # gewone opkomst op een kamp in de jaarplanning: Inplannen zegt het bij die datum, de melding na het inplannen ook,
+    # en in de bouwer staat het in de contextbalk; Jaarplanning aanpassen maakt er een gewone opkomst van één dag van
+    q.goto(BASE + '/wachtwoord'); q.wait_for_timeout(500)
+    q.evaluate("""(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)), P = 'speltakken/oefen/';
+      const f = n => { const d = new Date(); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+      const base = s[P + 'planning/pl-0'];
+      s[P + 'planning/pl-kampx'] = { ...base, id: 'pl-kampx', slot: null, date: f(19), endDate: f(21), type: 'kamp', topic: 'Kampweekend X', opkId: null, planners: [], absent: [], start: null, end: null };
+      s[P + 'opkomsten/opk-gewoon'] = { ...s[P + 'opkomsten/opk-jungle'], id: 'opk-gewoon', state: 'draft', title: 'Gewone test' };
+      localStorage.setItem(k, JSON.stringify(s)); })()""")
+    q.goto(BASE + '/s/oefen/bouwer/opk-gewoon'); q.wait_for_timeout(1200)
+    q.click('.plan-head button:has-text("Inplannen")'); q.wait_for_timeout(400)
+    kx = q.locator('.modal .pick:has-text("Kampweekend X")')
+    check(kx.count() == 1 and kx.locator('.err:has-text("Kamp in de jaarplanning")').count() == 1, f'Inplannen van een gewone opkomst: een kamp-rij is gemarkeerd ({kx.all_inner_texts()})')
+    kx.scroll_into_view_if_needed(); q.screenshot(path=f'{OUT}/45c-gewone-opkomst-op-kamp-inplannen.png')
+    q.set_viewport_size({'width': 390, 'height': 844}); q.wait_for_timeout(300); kx.scroll_into_view_if_needed(); q.screenshot(path=f'{OUT}/45d-gewone-opkomst-op-kamp-inplannen-mobiel.png')
+    check(q.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'Inplannen met een gemarkeerde kamp-rij mobiel: geen horizontale scroll')
+    q.set_viewport_size({'width': 1360, 'height': 900}); q.wait_for_timeout(200)
+    kx.locator('button:has-text("Hier inplannen")').click(); q.wait_for_timeout(600)
+    tt = q.locator('.toast').inner_text()
+    check('Dit is een gewone opkomst' in tt and 'een kamp van 3 dagen' in tt, f'gewone opkomst op een kamp ingepland: melding ({tt!r})')
+    mt = mf.inner_text() if mf.count() else ''
+    check('Dit is een gewone opkomst' in mt and mf.locator('button:has-text("Jaarplanning aanpassen")').count() == 1, f'bouwer: gewone opkomst op een kamp → melding in de contextbalk ({mt!r})')
+    q.screenshot(path=f'{OUT}/45e-gewone-opkomst-op-kamp-bouwer.png')
+    q.set_viewport_size({'width': 390, 'height': 844}); q.wait_for_timeout(300); mf.scroll_into_view_if_needed(); q.screenshot(path=f'{OUT}/45f-gewone-opkomst-op-kamp-bouwer-mobiel.png')
+    check(q.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'bouwer met melding gewone opkomst op een kamp mobiel: geen horizontale scroll')
+    q.set_viewport_size({'width': 1360, 'height': 900}); q.wait_for_timeout(200)
+    mf.locator('button:has-text("Jaarplanning aanpassen")').click(); q.wait_for_timeout(700)
+    kxr = oget("[s[P + 'planning/pl-kampx'].type, s[P + 'planning/pl-kampx'].endDate]")
+    check(kxr == ['opkomst', ''] and mf.count() == 0, f'Jaarplanning aanpassen bij een gewone opkomst: de rij wordt een opkomst van één dag ({kxr})')
+    q.click('.toast button:has-text("Ongedaan maken")'); q.wait_for_timeout(600)
+    kxr = oget("[s[P + 'planning/pl-kampx'].type, s[P + 'planning/pl-kampx'].endDate != '']")
+    check(kxr == ['kamp', True] and mf.count() == 1, f'Ongedaan maken: weer een kamp van drie dagen ({kxr})')
+    # opruimen vanaf een pagina buiten de oefenomgeving (die schrijft bij weggaan zijn hele stand terug)
+    q.goto(BASE + '/wachtwoord'); q.wait_for_timeout(500)
+    q.evaluate("""(() => { const k = 'opk.oefen.v1', s = JSON.parse(localStorage.getItem(k)), P = 'speltakken/oefen/';
+      delete s[P + 'planning/pl-kampx']; delete s[P + 'opkomsten/opk-gewoon']; localStorage.setItem(k, JSON.stringify(s)); })()""")
     q.goto(BASE + '/s/oefen/jaarplanning'); q.wait_for_timeout(1000)
     # kamp-rij zonder eigen tijden: vertrek en terug volgen de soort (zoals een nieuw weekendkamp), niet de opkomsttijden
     q.click('.presets >> text=Komende 3 maanden'); q.wait_for_timeout(300)
@@ -2911,8 +3000,14 @@ with sync_playwright() as p:
     q.locator('.daytab:not(.add)').nth(0).click(); q.wait_for_timeout(200)
     q.click('.dayacts >> text=Dag verwijderen'); q.wait_for_timeout(150); q.click('.dayacts >> text=Klik nogmaals: dag verwijderen'); q.wait_for_timeout(700)
     check('Het kamp heeft 3 dagen, de jaarplanning 4' in mft(), f'eerste dag weggehaald: melding, de dagen schuiven niet stil op ({mft()!r}, {ktab(0)!r})')
-    mf.locator('button:has-text("Jaarplanning aanpassen")').click(); q.wait_for_timeout(700)
     sat = kf + timedelta(days=1)
+    # nog vóór iemand met Jaarplanning de rij aanpast: het zaterdagprogramma heet zaterdag, in de bouwer én in de pdf (niet "Vrijdag")
+    with q.expect_download() as dl: q.click('button:has-text("PDF maken")')
+    dl.value.save_as(f'{OUT}/kamp-zonder-vrijdag.pdf'); T = [t for _, _, t in pdf_texts(f'{OUT}/kamp-zonder-vrijdag.pdf')]
+    check(ktab(0).startswith(f'Zaterdag {sat.day} ') and any(f'zaterdag {sat.day} t/m maandag {mon.day} ' in t for t in T)
+          and any(t.startswith(f'Zaterdag {sat.day} ') for t in T) and not any(t.startswith(f'Vrijdag {kf.day} ') for t in T),
+          f'vrijdag weggehaald, rij nog niet aangepast: bouwer en pdf noemen het zaterdagprogramma zaterdag {sat.day} ({ktab(0)!r})')
+    mf.locator('button:has-text("Jaarplanning aanpassen")').click(); q.wait_for_timeout(700)
     check(kr() == [iso(1), iso(3)] and ktab(0).startswith(f'Zaterdag {sat.day} ') and mf.count() == 0,
           f'Jaarplanning aanpassen na het weghalen van de vrijdag: de rij begint op zaterdag, het zaterdagprogramma heet weer zaterdag ({kr()}, {ktab(0)!r})')
     q.click('.toast button:has-text("Ongedaan maken")'); q.wait_for_timeout(600)
@@ -2970,6 +3065,55 @@ with sync_playwright() as p:
     check(q.locator('.toolbar').count() == 0 and q.locator('aside.side').count() == 0 and q.locator('main .btn:has-text("Nieuwe opkomst")').count() == 1
           and q.locator('h1').first.inner_text() == 'Opkomstenbank' and q.locator('.subline').inner_text() == 'Nog geen opkomsten', 'lege opkomstenbank (oefenen): uitleg met één knop')
     qc.close()
+    # --- Ongedaan maken na inplannen of koppelen: één regel (eigen oefendata). Na leiding indelen in Opkomst overnemen zet Ctrl+Z niets terug;
+    # Andere datum + Ongedaan maken laat geen lege rij achter; een concept koppelen heeft ook Ongedaan maken
+    uc = b.new_context(viewport={'width': 1360, 'height': 900}, locale='nl-NL')
+    uc.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())
+    u = uc.new_page(); u.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+    u.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' and 'ERR_FAILED' not in m.text else None)
+    uget = lambda js: u.evaluate("(() => { const s = JSON.parse(localStorage.getItem('opk.oefen.v1') || '{}'), P = 'speltakken/oefen/'; return " + js + "; })()")
+    def u_row(topic):
+        u.goto(BASE + '/s/oefen/jaarplanning'); u.wait_for_timeout(1200); u.click('.presets >> text=Komende 3 maanden'); u.wait_for_timeout(300)
+        return u.locator('.prow:not(.head)').nth(u.evaluate("t => [...document.querySelectorAll('.prow:not(.head)')].findIndex(r => r.querySelector('.ptopic')?.value === t)", topic))
+    # 1) uit de bank koppelen → Opkomst overnemen → leiding indelen → Ctrl+Z (focus op een naam in het venster): de kopie blijft staan
+    u_row('Bosspel met de Scouts').locator('.btn:has-text("Koppelen")').click(); u.wait_for_timeout(400)
+    u.locator('.modal .pick:has-text("Knopen en pionieren") button:has-text("Kiezen")').click(); u.wait_for_timeout(800)
+    cp = uget("s[P + 'planning/pl-7'].opkId")
+    nm = u.locator('.modal .tk-names .nm.off >> visible=true').first; nm.click(); u.wait_for_timeout(800)
+    u.keyboard.press('Control+z'); u.wait_for_timeout(700)
+    tt = u.locator('.toast').inner_text()
+    check(cp and 'Kan niet meer terug' in tt and u.locator('.modal h2:has-text("Opkomst overnemen")').count() == 1
+          and uget("[s[P + 'planning/pl-7'].opkId, (s[P + 'opkomsten/' + s[P + 'planning/pl-7'].opkId] || {}).state]") == [cp, 'planned'],
+          f'Opkomst overnemen: na leiding indelen zet Ctrl+Z de ingeplande kopie niet weg ({tt!r})')
+    u.click('.modal >> text=Klaar'); u.wait_for_timeout(300)
+    # 2) Inplannen op een andere datum (een woensdag zonder rij) en Ongedaan maken: geen lege rij achter, bij een concept en bij een kopie uit de bank
+    wd = date.today() + timedelta(days=(2 - date.today().weekday()) % 7 + 21); wds = wd.isoformat()
+    rows_on = lambda: uget("Object.keys(s).filter(k => k.startsWith(P + 'planning/') && s[k].date === " + json.dumps(wds) + ").length")
+    u.goto(BASE + '/s/oefen/bouwer/opk-sint'); u.wait_for_timeout(1200)
+    u.click('.plan-head button:has-text("Inplannen")'); u.wait_for_timeout(400)
+    u.fill('.modal input[placeholder^="Andere datum"]', wd.strftime('%d-%m-%Y')); u.click('.modal >> text=Op deze datum'); u.wait_for_timeout(900)
+    r1 = rows_on()
+    u.click('.toast button:has-text("Ongedaan maken")'); u.wait_for_timeout(900)
+    r2 = rows_on(); st = uget("s[P + 'opkomsten/opk-sint'].state")
+    check(r1 == 1 and r2 == 0 and st == 'draft', f'concept op een andere datum ingepland, Ongedaan maken: concept weer concept, geen lege rij ({r1} → {r2}, {st})')
+    u.goto(BASE + '/s/oefen/opkomsten'); u.wait_for_timeout(1000)
+    u.click('.bcard:has-text("Knopen en pionieren")'); u.wait_for_timeout(300); u.click('.side >> text=Inplannen'); u.wait_for_timeout(300)
+    u.fill('.modal input[placeholder^="Andere datum"]', wd.strftime('%d-%m-%Y')); u.click('.modal >> text=Op deze datum'); u.wait_for_timeout(900)
+    r1 = rows_on(); n1 = uget("Object.values(s).filter(v => v && v.state === 'planned' && v.srcId === 'opk-bank-knopen').length")
+    u.click('.toast button:has-text("Ongedaan maken")'); u.wait_for_timeout(900)
+    r2 = rows_on(); n2 = uget("Object.values(s).filter(v => v && v.state === 'planned' && v.srcId === 'opk-bank-knopen').length")
+    check(r1 == 1 and r2 == 0 and n2 == n1 - 1 and u.locator('.modal').count() == 0, f'bank-opkomst op een andere datum ingepland, Ongedaan maken: kopie weg, geen lege rij ({r1} → {r2}, kopieën {n1} → {n2})')
+    u.goto(BASE + '/s/oefen/jaarplanning'); u.wait_for_timeout(1000)
+    check(rows_on() == 0, 'jaarplanning (opnieuw geladen): na Ongedaan maken geen extra rij op die woensdag')
+    # 3) een concept koppelen (Koppelen in de jaarplanning) heeft Ongedaan maken: rij en concept weer zoals ze waren
+    u_row('Sinterklaas').locator('.btn:has-text("Koppelen")').click(); u.wait_for_timeout(400)
+    u.locator('.modal .pick:has-text("Sinterklaasopkomst") button:has-text("Kiezen")').click(); u.wait_for_timeout(900)
+    tt = u.locator('.toast').inner_text(); lk = uget("[s[P + 'planning/pl-2'].opkId, s[P + 'opkomsten/opk-sint'].state]")
+    check(lk == ['opk-sint', 'planned'] and 'Gekoppeld' in tt and u.locator('.toast button:has-text("Ongedaan maken")').count() == 1, f'concept koppelen: melding Gekoppeld met Ongedaan maken ({lk}, {tt!r})')
+    u.click('.toast button:has-text("Ongedaan maken")'); u.wait_for_timeout(900)
+    lk = uget("[s[P + 'planning/pl-2'].opkId, s[P + 'planning/pl-2'].topic, s[P + 'opkomsten/opk-sint'].state, s[P + 'opkomsten/opk-sint'].title]")
+    check(lk == [None, 'Sinterklaas', 'draft', 'Sinterklaasopkomst'], f'concept koppelen, Ongedaan maken: rij weer met zijn onderwerp, concept weer concept ({lk})')
+    uc.close()
     # --- toegankelijkheid (eigen oefendata): vaste kopbalk, volgorde in de tijdlijn, Ctrl+Z, Leiding indelen met het toetsenbord, controle, contrast
     kc = b.new_context(viewport={'width': 390, 'height': 844}, locale='nl-NL')
     kc.route('**/*', lambda r: r.continue_() if 'localhost' in r.request.url else r.abort())
@@ -3399,6 +3543,32 @@ with sync_playwright() as p:
             q.goto(BASE + '/s/oefen/jaarplanning?focus=s:2026-08-08'); q.wait_for_timeout(1200)
             check(q.locator('.rangebar .field:has(label:text-is("Van")) input').input_value() == '09-07-2026', 'datum in de zomerpauze openen: bereik eromheen, geen eindeloze lus')
         c.close()
+
+    # --- lid zonder naam (of met een getal of object als naam, bijv. via de API toegetreden): Team en Beheer blijven werken
+    nc = b.new_context(viewport={'width': 1360, 'height': 900}, locale='nl-NL')
+    nq = nc.new_page(); nq.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+    nq.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' and 'ERR_FAILED' not in m.text else None)
+    nq.goto(BASE + '/inloggen'); nq.wait_for_timeout(600)
+    nq.fill('input[type=email]', 'vluiten2907@gmail.com'); nq.fill('input[type=password]', 'demo123'); nq.click('.btn.primary'); nq.wait_for_timeout(1500)
+    nq.evaluate("""() => { const P = { plan: true, build: true, bank: true, settings: true };
+      window.__fakeRemote('groepen/gnaam', { name: 'Naamgroep', admins: { uroot: { name: 'Beheer (demo)', email: 'vluiten2907@gmail.com', since: 1 }, uz: { name: 7, email: { a: 1 }, since: 1 } }, adminIds: ['uroot', 'uz'], createdAt: 1, createdBy: 'uroot' });
+      window.__fakeRemote('speltakken/snaam', { name: 'Naamloos', groupName: 'Naamgroep', gid: 'gnaam', createdBy: 'uroot', settings: {}, tlIds: ['uroot'], memberIds: ['uroot', 'ux', 'uy', 'uw'],
+        members: { uroot: { name: 'Beheer (demo)', email: 'vluiten2907@gmail.com', role: 'teamleider', perms: P, since: 1 },
+          ux: { email: 'x@test.nl', role: 'leiding', perms: { plan: false, build: false, bank: false, settings: false }, inviteId: 'i1', since: 1 },
+          uy: { name: { x: 1 }, email: 5, role: 'leiding', perms: 'alles', since: 1 }, uw: 'geen object' } }); }""")
+    n_err = len(errors)
+    nq.goto(BASE + '/s/snaam/instellingen'); nq.wait_for_timeout(1500)
+    check(nq.locator('text=Er ging iets mis').count() == 0 and nq.locator('.member').count() == 3 and nq.locator('.member b:has-text("Naamloos")').count() == 2,
+          f'Team: leden zonder naam als tekst laten de pagina niet vallen; ze heten Naamloos ({nq.locator(".member b").all_inner_texts()})')
+    nq.screenshot(path=f'{OUT}/09d-team-lid-zonder-naam.png')
+    nq.goto(BASE + '/beheer'); nq.wait_for_timeout(1500)
+    if nq.locator('.groupcard:has-text("Naamgroep").open').count() == 0: nq.click('.groupcard:has-text("Naamgroep") .gc-head'); nq.wait_for_timeout(300)
+    sc = nq.locator('.spcard:has-text("Naamloos")').first
+    if sc.count() and 'open' not in (sc.get_attribute('class') or ''): sc.locator('.sp-head').click(); nq.wait_for_timeout(300)
+    check(nq.locator('text=Er ging iets mis').count() == 0 and nq.locator('.groupcard:has-text("Naamgroep")').count() == 1 and sc.count() == 1,
+          'Beheer (totaal): een lid of beheerder zonder naam als tekst laat Beheer niet vallen')
+    check(len(errors) == n_err, f'lid zonder naam: geen fouten in de console ({errors[n_err:]})')
+    nc.close()
 
     # --- opslag geblokkeerd (bijv. "alle cookies blokkeren"): de app werkt, alleen de laatste speltak wordt niet onthouden
     bc = b.new_context(viewport={'width': 1360, 'height': 900}, locale='nl-NL')

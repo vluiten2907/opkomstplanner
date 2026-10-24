@@ -8,7 +8,7 @@ import { makeForEntry, markFresh } from '../store/fresh';
 import { Strip, StatusPill, CatTags, PeopleChips, usePdf, PageTitle } from '../components/shared';
 import { Dot, TimePicker } from '../components/ui';
 import { addDays, cap, dayDiff, fmtLong, fmtRange, fmtShort, fmtT, fromISO, isoWeek, mon3, plural, todayISO, toISO, DAYS, MONTHS } from '../lib/time';
-import { catOf, dayTitle, entryStatus, entryTimes, isKamp, letterDue, minNeed, newKamp, newOpk, opkCatList, plannersOf, changeOpkTime, progStatus, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Opk, type Plan, type Row } from '../lib/model';
+import { catOf, dayTitle, entryStatus, entryTimes, isKamp, kampBase, letterDue, minNeed, newKamp, newOpk, opkCatList, plannersOf, changeOpkTime, progStatus, rowDate, rowEnd, rowsIn, seasonLabel, seasonOf, seasonRange, type Opk, type Plan, type Row } from '../lib/model';
 
 export default function Dashboard() {
   const S = useSpeltak();
@@ -209,7 +209,7 @@ function Hero({ r, today }: { r: Row; today: string }) {
     </div>
     {o ? <>
       <Strip o={o} />
-      <ul className="prog"><ProgList o={o} date={e ? e.date : null} /></ul>
+      <ul className="prog"><ProgList o={o} date={e ? kampBase(o, e) : null} /></ul>
       <div className="row"><button className="btn primary" onClick={() => nav(`/s/${sid}/bouwer/${o.id}`)}><ExternalLink size={16} />Openen</button>
         {can('build') && <button className="btn" onClick={() => openModal({ kind: 'takeover', oid: o.id, fresh: false })}><Users size={16} />Leiding indelen</button>}
         <button className="btn" onClick={() => pdf(o)}><Download size={16} />PDF maken</button><button className="btn ghost" onClick={gotoRow}>In jaarplanning</button></div>

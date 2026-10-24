@@ -114,6 +114,20 @@ const offlineFirst = (ref: Ref) => {
   if (ref.kind === 'coll' && /^speltakken\/[^/]+\/(opkomsten|activiteiten|planning)$/.test(ref.path)) return ms + (Number(localStorage.getItem('fake.offlineSlow')) || 0);
   return 0;
 };
+// Testhaak 'fake.offlineCached' = ms: zoals Firestore offline met een geheugencache. Het speltakdocument komt eerst als bestaand uit de cache;
+// de lijsten in de speltak komen uit de cache met wat dit tabblad al eens van de server had (anders leeg), en pas na ms van de server.
+// `seen`: paden die in dit tabblad (sinds het laden van de pagina) al een antwoord van de server kregen.
+const seen = new Set<string>();
+const offlineCached = (ref: Ref) => {
+  const ms = Number(localStorage.getItem('fake.offlineCached')) || 0;
+  if (!ms) return 0;
+  return (ref.kind === 'doc' && /^speltakken\/[^/]+$/.test(ref.path)) || (ref.kind === 'coll' && /^speltakken\/[^/]+\/(opkomsten|activiteiten|planning)$/.test(ref.path)) ? ms : 0;
+};
+const memSnap = (ref: Ref) => {
+  if (ref.kind === 'doc') return { id: ref.path.split('/').pop(), exists: () => ref.path in store, data: () => clone(store[ref.path]), metadata: { fromCache: true } };
+  const docs = seen.has(ref.path) ? docsIn(ref) : [];
+  return { docs, empty: !docs.length, size: docs.length, metadata: { fromCache: true }, docChanges: () => docs };
+};
 const cacheSnap = (ref: Ref) => ref.kind === 'doc'
   ? { id: ref.path.split('/').pop(), exists: () => false, data: () => undefined, metadata: { fromCache: true } }
   : { docs: [], empty: true, size: 0, metadata: { fromCache: true }, docChanges: () => [] };
@@ -127,11 +141,17 @@ export function onSnapshot(ref: Ref, a: any, b?: any, c?: any) {
     const g = () => { if (rootDenied(ref)) { listeners.delete(g); onErr?.(err('permission-denied')); } else cb(snap(ref)); };
     listeners.add(g); setTimeout(() => { if (listeners.has(g)) g(); }, 0); return () => listeners.delete(g);
   }
-  const l = () => cb(snap(ref));
+  const l = () => { seen.add(ref.path); cb(snap(ref)); };
   const off = offlineFirst(ref);
   if (off) {
     const t0 = setTimeout(() => cb(cacheSnap(ref)), 0);
     const t = setTimeout(() => { listeners.add(l); l(); }, off);
+    return () => { clearTimeout(t0); clearTimeout(t); listeners.delete(l); };
+  }
+  const mem = offlineCached(ref);
+  if (mem) {
+    const t0 = setTimeout(() => cb(memSnap(ref)), 0);
+    const t = setTimeout(() => { listeners.add(l); l(); }, mem);
     return () => { clearTimeout(t0); clearTimeout(t); listeners.delete(l); };
   }
   // Testhaak 'fake.delayListen' = ms: lijsten in een speltak komen later binnen, zoals bij echte Firestore (los van het speltakdocument).

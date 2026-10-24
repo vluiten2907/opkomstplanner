@@ -93,16 +93,20 @@ export function normSettings(s: any): Settings {
 
 /* ---------- Normalisatie ---------- */
 export const isFixed = (b: Pick<Block, 'cat'> | null | undefined) => !!b && typeof b.cat === 'string' && b.cat.startsWith('__');
+/** Tekstveld altijd als tekst: een getal of object (oude data, of geschreven door een andere speltak in de groepsbank) laat anders een pagina vallen. */
+export const str = (v: unknown) => typeof v === 'string' ? v : '';
 export function normBlock(b: any): Block {
-  return { id: b.id || uid(), libId: b.libId || null, title: b.title || '', start: num(b.start, 0), dur: Math.max(5, num(b.dur, 15)), cat: b.cat || '',
-    minLeaders: num(b.minLeaders, 0), location: b.location || '', short: b.short || '', desc: b.desc || '', prep: b.prep || '',
-    materials: b.materials || '', names: splitNames(b.names), pdfPage: b.pdfPage !== false };
+  b = b && typeof b === 'object' ? b : {};
+  return { id: b.id || uid(), libId: b.libId || null, title: str(b.title), start: num(b.start, 0), dur: Math.max(5, num(b.dur, 15)), cat: str(b.cat),
+    minLeaders: num(b.minLeaders, 0), location: str(b.location), short: str(b.short), desc: str(b.desc), prep: str(b.prep),
+    materials: str(b.materials), names: splitNames(b.names), pdfPage: b.pdfPage !== false };
 }
 /** Krijgt een onderdeel een eigen uitlegpagina in de pdf? Alleen als dat aan staat én er iets te lezen is (beschrijving, voorbereiding of materiaal). */
 export const hasPdfPage = (b: Pick<Block, 'pdfPage' | 'desc' | 'prep' | 'materials'>) =>
   b.pdfPage !== false && !!((b.desc || '').trim() || (b.prep || '').trim() || splitLines(b.materials).length);
 export function normDay(d: any, i = 0): Day {
-  const n: Day = { id: d.id || uid(), label: d.label || 'Dag ' + (i + 1), start: num(d.start, 480), end: num(d.end, 1380), blocks: (d.blocks || []).map(normBlock) };
+  d = d && typeof d === 'object' ? d : {};
+  const n: Day = { id: d.id || uid(), label: str(d.label) || 'Dag ' + (i + 1), start: num(d.start, 480), end: num(d.end, 1380), blocks: (Array.isArray(d.blocks) ? d.blocks : []).map(normBlock) };
   if (n.end <= n.start) n.end = n.start + 60;
   return n;
 }
@@ -124,14 +128,14 @@ export function syncKamp(o: Opk) { if (!isKamp(o) || !o.days.length) return; o.s
 export function normOpk(o: any, s?: Settings): Opk {
   const n: Opk = { id: o.id || uid(), state: ['draft', 'bank', 'planned'].includes(o.state) ? o.state : 'draft', srcId: o.srcId || null,
     kind: o.kind === 'kamp' ? 'kamp' : 'opkomst', cats: Array.isArray(o.cats) ? o.cats.filter((x: any) => typeof x === 'string') : [], lead: typeof o.lead === 'string' ? o.lead : '',
-    title: o.title || '', short: o.short || '', group: o.group || '', location: o.location || '',
+    title: str(o.title), short: str(o.short), group: str(o.group), location: str(o.location),
     start: num(o.start, 840), end: num(o.end, 990), prep: num(o.prep, s ? s.prepMin : 0), post: num(o.post, s ? s.postMin : 0),
-    days: [], blocks: (o.blocks || []).map(normBlock), createdAt: o.createdAt || Date.now(), updatedAt: o.updatedAt || Date.now(),
+    days: [], blocks: (Array.isArray(o.blocks) ? o.blocks : []).map(normBlock), createdAt: num(o.createdAt, 0) || Date.now(), updatedAt: num(o.updatedAt, 0) || Date.now(),
     shared: o.shared !== false, fromShared: typeof o.fromShared === 'string' ? o.fromShared : null };
   if (n.end <= n.start) n.end = n.start + 60;
   if (n.kind === 'kamp') {
     n.prep = 0; n.post = 0; n.blocks = [];
-    n.days = (o.days || []).map(normDay);
+    n.days = (Array.isArray(o.days) ? o.days : []).map(normDay);
     if (!n.days.length) n.days = [normDay({ label: 'Zaterdag', start: 480, end: 1380 }, 0)];
     syncKamp(n);
   }
@@ -140,8 +144,8 @@ export function normOpk(o: any, s?: Settings): Opk {
   return n;
 }
 export function normLib(l: any): Lib {
-  return { id: l.id || uid(), title: l.title || '', dur: Math.max(5, num(l.dur, 15)), cat: l.cat || '', minLeaders: Math.max(0, num(l.minLeaders, 1)),
-    location: l.location || '', short: l.short || '', desc: l.desc || '', prep: l.prep || '', materials: l.materials || '', updatedAt: l.updatedAt || Date.now() };
+  return { id: l.id || uid(), title: str(l.title), dur: Math.max(5, num(l.dur, 15)), cat: str(l.cat), minLeaders: Math.max(0, num(l.minLeaders, 1)),
+    location: str(l.location), short: str(l.short), desc: str(l.desc), prep: str(l.prep), materials: str(l.materials), updatedAt: num(l.updatedAt, 0) || Date.now() };
 }
 export function newEntry(slot: string | null, date?: string): Plan {
   return { id: uid(), slot, date: date || slot || todayISO(), endDate: '', type: 'opkomst', topic: '', start: null, end: null,
@@ -155,10 +159,10 @@ export function isBlankPlan(e: Plan) {
 export function normPlan(p: any): Plan {
   const L = p.letter || {};
   return { id: p.id || uid(), slot: p.slot || null, date: p.date || p.slot || todayISO(), endDate: p.endDate || '',
-    type: ['opkomst', 'kamp', 'geen'].includes(p.type) ? p.type : 'opkomst', topic: p.topic || '',
+    type: ['opkomst', 'kamp', 'geen'].includes(p.type) ? p.type : 'opkomst', topic: str(p.topic),
     start: p.start == null ? null : num(p.start, 0), end: p.end == null ? null : num(p.end, 0),
     planners: splitNames(p.planners), absent: splitNames(p.absent), letter: { needed: !!L.needed, due: L.due || '', sent: !!L.sent },
-    opkId: p.opkId || null, note: p.note || '', updatedAt: p.updatedAt || Date.now() };
+    opkId: p.opkId || null, note: str(p.note), updatedAt: num(p.updatedAt, 0) || Date.now() };
 }
 
 /* ---------- Bouwen ---------- */
@@ -254,10 +258,22 @@ export function kampMismatch(o: Opk, date: string, endDate?: string | null): { p
   const row = endDate && endDate > date ? dayDiff(date, endDate) + 1 : 1;
   return row === o.days.length ? null : { prog: o.days.length, row };
 }
-/** Melding als het kamp niet bij de rij past (zie kampMismatch), anders ''. */
-export function kampMismatchNote(o: Opk, date: string, endDate?: string | null) {
+/** Gewone opkomst (geen kamp) op een rij die een kamp is (soort kamp, of met een einddatum): het aantal dagen van de rij, anders null. */
+export function opkOnKamp(o: Opk, date: string, endDate?: string | null, type?: Plan['type'] | null): number | null {
+  if (!o || isKamp(o) || isNaN(fromISO(date).getTime())) return null;
+  const long = !!endDate && endDate > date;
+  if (type !== 'kamp' && !long) return null;
+  return long ? dayDiff(date, endDate!) + 1 : 1;
+}
+/**
+ * Melding als het kamp niet bij de rij past (zie kampMismatch), of als er een gewone opkomst aan een kamp in de jaarplanning hangt
+ * (zie opkOnKamp; geef dan de soort van de rij mee), anders ''.
+ */
+export function kampMismatchNote(o: Opk, date: string, endDate?: string | null, type?: Plan['type'] | null) {
   const m = kampMismatch(o, date, endDate);
-  return m ? `Het kamp heeft ${plural(m.prog, 'dag', 'dagen')}, de jaarplanning ${m.row} (${fmtRange(date, endDate)}). Controleer de data.` : '';
+  if (m) return `Het kamp heeft ${plural(m.prog, 'dag', 'dagen')}, de jaarplanning ${m.row} (${fmtRange(date, endDate)}). Controleer de data.`;
+  const n = opkOnKamp(o, date, endDate, type);
+  return n ? `Dit is een gewone opkomst (${fmtT(o.start)}–${fmtT(o.end)}); de jaarplanning heeft hier ${type === 'kamp' ? 'een kamp' : 'een rij'} van ${plural(n, 'dag', 'dagen')} (${fmtRange(date, endDate)}). Controleer de data.` : '';
 }
 /**
  * Rij in de jaarplanning gelijk trekken met het kamp (na een dag toevoegen, kopiëren of weghalen in de bouwer):
@@ -269,6 +285,14 @@ export function kampFitRow(o: Opk, date: string, endDate?: string | null): { dat
   const w = isKamp(o) && o.days.length && !isNaN(fromISO(date).getTime()) ? DAYS.indexOf((o.days[0].label || '').trim().toLowerCase()) : -1;
   if (w >= 0) { const k = (w - fromISO(date).getDay() + 7) % 7, last = endDate && endDate > date ? endDate : date; if (k > 0 && addDays(date, k) <= last) d = addDays(date, k); }
   return { date: d, endDate: isKamp(o) && o.days.length > 1 ? addDays(d, o.days.length - 1) : '' };
+}
+/**
+ * Eerste dag van een kamp zoals bouwer, dashboard en pdf hem tonen. Past het kamp bij de rij, dan gewoon de datum (de jaarplanning gaat voor,
+ * ook na verzetten of een andere dagnaam). Past het niet (bijv. de vrijdag is weggehaald en de rij is nog vr–zo), dan de datum die
+ * kampFitRow zou kiezen: het zaterdagprogramma heet dan meteen zaterdag, ook voordat iemand met Jaarplanning de rij aanpast.
+ */
+export function kampBase(o: Opk, e: Pick<Plan, 'date' | 'endDate'>) {
+  return isKamp(o) && kampMismatch(o, e.date, e.endDate) ? kampFitRow(o, e.date, e.endDate).date : e.date;
 }
 /** Dagnaam na `label`: een weekdag krijgt de volgende weekdag ("Zaterdag" → "Zondag"), anders null. */
 export const nextWeekday = (label: string) => isWeekdayLabel(label) ? cap(DAYS[(DAYS.indexOf(label.trim().toLowerCase()) + 1) % 7]) : null;

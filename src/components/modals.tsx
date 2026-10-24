@@ -6,10 +6,10 @@ import { toast, undoAction } from '../store/toast';
 import { Modal, TimePicker, Field, Chip, ConfirmBtn, useMedia } from './ui';
 import { PickOpk, copySharedToBank } from './shared';
 import { addDays, clone, fmtLong, fmtNL, fmtRange, fmtShort, parseNL, parseRange, tidyNL, fromISO, DAYS, fmtT, fmtDur, isoWeek, plural, todayISO } from '../lib/time';
-import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, defaultTimes, entryTimes, ownTimes, firstFree, fitsTopic, isBlankPlan, isKamp, kampMismatch, kampMismatchNote, kampStart, lanesLayout, minNeed, newEntry, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
+import { analyze, blockFromLib, byTitle, catOf, changeOpkTime, dayTitle, defaultTimes, entryTimes, ownTimes, firstFree, fitsTopic, isBlankPlan, isKamp, kampBase, kampMismatch, opkOnKamp, kampMismatchNote, kampStart, lanesLayout, minNeed, newEntry, opkDaysIn, opkSearchText, plannersOf, PREP_OPTS, prepLabel, relabelDays, rowsIn, syncKamp, type Opk, type Plan, type Block, type Day, rowDate } from '../lib/model';
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from './timeline';
 import { openModal, type NameSpec } from '../store/modal';
-import { makeForEntry } from '../store/fresh';
+import { makeForEntry, plannedUndo } from '../store/fresh';
 import type { Gedeeld } from '../store/groepsbank';
 
 const NO_UNLINK = 'Hier hangt een opkomst aan. Ontkoppelen kan alleen met het recht Opkomsten of Banken.';
@@ -55,7 +55,7 @@ export function DateModal({ keyId, onClose, onSaved }: { keyId: string; onClose:
       unlinkEntry(en2); en2.opkId = null; toast('De gekoppelde opkomst staat nu bij de concepten.');
     }
     // verzet kamp: dagen die een weekdag heten volgen de nieuwe datum; past de lengte niet meer bij de rij, dan een melding
-    const misfit = linked && en2.opkId && isKamp(linked) ? kampMismatchNote(linked, en2.date, en2.endDate) : '';
+    const misfit = linked && en2.opkId ? kampMismatchNote(linked, en2.date, en2.endDate, en2.type) : '';
     if (linked && en2.opkId && isKamp(linked) && can('build')) { const c = clone(linked); if (relabelDays(c, iso)) saveOpk(c); }
     savePlan(en2); onSaved?.(en2); onClose();
     if (misfit) toast(misfit, undefined, 8000);
@@ -230,7 +230,7 @@ export function LinkModal({ keyId, q0, back, onClose, onTakeover }: { keyId: str
   const openOpk = (id: string) => () => nav(`/s/${sid}/bouwer/${id}`);
   // uit de bank: een kopie zonder namen inplannen (met Opkomsten daarna Opkomst overnemen); een concept: dat concept zelf koppelen
   const pickBank = (o: Opk) => { onClose(); linkBankCopy(S, o, keyId, onTakeover, id => openOpk(id)()); };
-  const pickDraft = (o: Opk) => { onClose(); linkDraft(S, o, keyId, openOpk(o.id)); };
+  const pickDraft = (o: Opk) => { onClose(); linkDraft(S, o, keyId); };
   // uit de groep: eerst een kopie in de eigen bank (met een vrije naam), dan een kopie daarvan inplannen, zonder namen (zoals uit de eigen bank)
   // (het venster voor een andere naam kan ertussen hebben gestaan: L is de nieuwste stand). Ongedaan maken haalt alleen de ingeplande kopie weg.
   // Alleen de kopie in de bank krijgt zo nodig een andere naam (uniek in de bank); de ingeplande opkomst (en dus het onderwerp van de rij) houdt de eigen titel.
@@ -279,17 +279,20 @@ export function LinkModal({ keyId, q0, back, onClose, onTakeover }: { keyId: str
 
 type SpeltakCtx = ReturnType<typeof useSpeltak>;
 
-/** Een concept zelf koppelen aan een rij in de jaarplanning (Kiezen in Koppelen, Gebruiken in de opkomstbouwer). */
-export function linkDraft(S: SpeltakCtx, o: Opk, keyId: string, open: () => void) {
-  const en = { ...S.entryFor(keyId) }; S.linkOpk(o, en, false, true);
-  const note = kampMismatchNote(o, en.date, en.endDate);
-  if (!S.offerPlanTimes(o, en, 'Gekoppeld.')) toast(note ? 'Gekoppeld. ' + note : 'Gekoppeld', { label: 'Opkomst openen', fn: open }, note ? 9000 : undefined);
+/** Een concept zelf koppelen aan een rij in de jaarplanning (Kiezen in Koppelen, Gebruiken in de opkomstbouwer); met Ongedaan maken (zie plannedUndo). */
+export function linkDraft(S: SpeltakCtx, o: Opk, keyId: string) {
+  // vóór het koppelen: bestond de rij al, hoe was hij, en de titel (een lege titel krijgt het onderwerp)
+  const created = !S.peekEntry(keyId), en = { ...S.entryFor(keyId) }, before = { ...en }, title0 = o.title;
+  S.linkOpk(o, en, false, true);
+  const undo = plannedUndo(S, { rowId: en.id, before, created, oid: o.id, kind: 'draft', title0 });
+  const note = kampMismatchNote(o, en.date, en.endDate, en.type);
+  if (!S.offerPlanTimes(o, en, 'Gekoppeld.')) toast(note ? 'Gekoppeld. ' + note : 'Gekoppeld', undoAction(undo), note ? 9000 : undefined);
 }
 
 /** Een kopie uit de bank (zonder namen) inplannen op een rij in de jaarplanning (Kiezen in Koppelen, Gebruiken in de opkomstbouwer). */
 export function linkBankCopy(S: SpeltakCtx, o: Opk, keyId: string, onTakeover: (oid: string, fresh: boolean) => void, open: (oid: string) => void, pre = '') {
-  const en = { ...S.entryFor(keyId) }, before = { ...en }, linked = S.linkOpk(o, en, true, false);
-  afterBankCopy(S, linked, en, before, onTakeover, open, pre);
+  const created = !S.peekEntry(keyId), en = { ...S.entryFor(keyId) }, before = { ...en }, linked = S.linkOpk(o, en, true, false);
+  afterBankCopy(S, linked, en, before, created, onTakeover, open, pre);
 }
 
 /**
@@ -298,15 +301,10 @@ export function linkBankCopy(S: SpeltakCtx, o: Opk, keyId: string, onTakeover: (
  * Zonder Opkomsten alleen een melding met Bekijken: een ingeplande opkomst weghalen hoort bij Opkomsten (zo dwingen de regels het af).
  * `before`: de rij vóór het inplannen. `pre`: zin vooraf in de melding (bijv. dat er ook een kopie in de eigen bank staat).
  */
-function afterBankCopy(S: SpeltakCtx, linked: Opk, en: Plan, before: Plan, onTakeover: (oid: string, fresh: boolean) => void, open: (oid: string) => void, pre = '') {
-  // met de nieuwste stand, en alleen als de rij nog naar deze kopie wijst (de opkomst in de bank, of de kopie uit de groep, blijft)
-  const undo = () => {
-    const L = S.latest(), row = L.plans.find(p => p.id === before.id), cur = L.getO(linked.id);
-    if (!row || row.opkId !== linked.id || !cur || cur.state !== 'planned') { toast('Kan niet meer terug: de opkomst of de datum is intussen veranderd.'); return; }
-    L.savePlan({ ...row, opkId: null, topic: before.topic, type: before.type, date: before.date, endDate: before.endDate });
-    L.deleteOpk(cur.id); toast('Niet meer ingepland');
-  };
-  const note = kampMismatchNote(linked, en.date, en.endDate);
+function afterBankCopy(S: SpeltakCtx, linked: Opk, en: Plan, before: Plan, created: boolean, onTakeover: (oid: string, fresh: boolean) => void, open: (oid: string) => void, pre = '') {
+  // alleen de ingeplande kopie gaat weg (de opkomst in de bank, of de kopie uit de groep, blijft); niet meer na leiding indelen in Opkomst overnemen
+  const undo = plannedUndo(S, { rowId: before.id, before, created, oid: linked.id, kind: 'copy' });
+  const note = kampMismatchNote(linked, en.date, en.endDate, en.type);
   const msg = `${pre ? pre + ' ' : ''}Ingepland op ${fmtRange(en.date, en.endDate, true)} (zonder namen).`;
   const ms = note || pre ? 10000 : 8000;
   if (S.can('build')) {
@@ -321,7 +319,7 @@ function afterBankCopy(S: SpeltakCtx, linked: Opk, en: Plan, before: Plan, onTak
 /* ---------- Opkomst inplannen op een datum ---------- */
 export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose: () => void; onTakeover: (oid: string, fresh: boolean) => void }) {
   const S = useSpeltak();
-  const { settings, plans, getO, entryFor, entryForDate, linkOpk, offerPlanTimes, latest, sid } = S;
+  const { settings, plans, getO, peekEntry, entryFor, entryForDate, linkOpk, offerPlanTimes, sid } = S;
   const nav = useNavigate();
   const [custom, setCustom] = useState('');
   // alle hooks vóór het stoppen hieronder: de opkomst kan elders verwijderd worden terwijl dit venster open staat
@@ -336,7 +334,8 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
     if (!isKamp(o)) return fmtRange(d, end, true);
     const s = end ? d : kampStart(o, d); return fmtRange(s, o.days.length > 1 ? addDays(s, o.days.length - 1) : '', true);
   };
-  const go = (e: Plan) => {
+  // `created`: de rij is net voor deze datum gemaakt (Ongedaan maken haalt hem dan weer weg)
+  const go = (e: Plan, created: boolean) => {
     if (e.opkId) { toast('Op die datum staat al een opkomst. Ontkoppel die eerst in de jaarplanning.'); return; }
     // een dag zonder opkomst (bijv. een vakantie of trainingsweekend) niet stil overschrijven; de lijst hierboven toont ze ook niet
     if (e.type === 'geen') { toast(`Op ${fmtShort(e.date)} is geen opkomst${e.topic.trim() ? ` (${e.topic.trim()})` : ''}. Pas dat eerst aan in de jaarplanning.`, undefined, 7000); return; }
@@ -345,17 +344,11 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
     const en = { ...e }, before = { ...e }, title0 = o.title;
     const linked = linkOpk(o, en, o.state !== 'draft', keep);
     onClose();
-    if (fromBank) { afterBankCopy(S, linked, en, before, onTakeover, id => nav(`/s/${sid}/bouwer/${id}`)); return; }
-    // Ongedaan maken: de rij terug zoals hij was (onderwerp, datum, soort), het concept weer concept of de kopie weg; met de nieuwste stand
-    const undo = () => {
-      const L = latest(), row = L.plans.find(p => p.id === before.id), cur = L.getO(linked.id);
-      if (!row || row.opkId !== linked.id || !cur || cur.state !== 'planned') { toast('Kan niet meer terug: de opkomst of de datum is intussen veranderd.'); return; }
-      L.savePlan({ ...row, opkId: null, topic: before.topic, type: before.type, date: before.date, endDate: before.endDate });
-      if (linked === o) L.saveOpk({ ...cur, state: 'draft', title: !title0.trim() && cur.title === linked.title ? title0 : cur.title }); else L.deleteOpk(cur.id);
-      toast('Niet meer ingepland');
-    };
+    if (fromBank) { afterBankCopy(S, linked, en, before, created, onTakeover, id => nav(`/s/${sid}/bouwer/${id}`)); return; }
+    // Ongedaan maken: de rij terug zoals hij was (onderwerp, datum, soort), het concept weer concept of de kopie weg (zie plannedUndo)
+    const undo = plannedUndo(S, { rowId: before.id, before, created, oid: linked.id, kind: linked === o ? 'draft' : 'copy', title0 });
     const was = before.topic.trim() && before.topic.trim() !== (linked.title || '').trim() ? ` Onderwerp was "${before.topic.trim()}".` : '';
-    const msg = 'Ingepland op ' + fmtRange(en.date, en.endDate, true), note = kampMismatchNote(linked, en.date, en.endDate);
+    const msg = 'Ingepland op ' + fmtRange(en.date, en.endDate, true), note = kampMismatchNote(linked, en.date, en.endDate, en.type);
     if (offerPlanTimes(linked, en, msg + '.')) return;
     const back = undoAction(undo);
     if (linked !== o) toast(msg + '. Er is een kopie gemaakt.' + was + (note ? ' ' + note : ''), back, note ? 9000 : 8000);
@@ -368,18 +361,19 @@ export function ToPlanModal({ oid, onClose, onTakeover }: { oid: string; onClose
   type Row = (typeof rows)[number];
   const fitsRow = (r: Row) => !!(r.e && r.e.topic.trim() && fitsTopic(o, r.e.topic));
   const fitRows = rows.filter(fitsRow), otherRows = rows.filter(r => !fitsRow(r)), firstKey = (fitRows[0] || otherRows[0])?.key;
-  const row = (r: Row) => { const e = r.e, d = rowDate(r), off = e && e.endDate ? kampMismatch(o, d, e.endDate) : null, ch = change(e); return <div key={r.key} className="pick" data-date={d}><div className="info">
+  // een gewone opkomst op een kamp (of een rij van meer dagen): ook dat staat erbij, net als een kamp dat qua lengte niet past
+  const row = (r: Row) => { const e = r.e, d = rowDate(r), off = e && e.endDate ? kampMismatch(o, d, e.endDate) : null, onKamp = e ? opkOnKamp(o, d, e.endDate, e.type) : null, ch = change(e); return <div key={r.key} className="pick" data-date={d}><div className="info">
     <b>{shown(d, e && e.endDate)}</b>
     {/* het onderwerp dat er stond wordt overschreven: rustig, maar duidelijk (de signaalkleur is voor echte problemen, zoals een kamp dat niet past) */}
     {ch && <span className="pk-change"><span aria-hidden="true">{e!.topic.trim()}<ArrowRight size={14} />{o.title.trim()}</span><span className="sr-only">Onderwerp {e!.topic.trim()} wordt {o.title.trim()}</span></span>}
-    <span className="hint">{off && <><span className="err">Jaarplanning {plural(off.row, 'dag', 'dagen')} ({fmtRange(d, e!.endDate)})</span> · </>}{e && e.topic && !ch ? e.topic + ' · ' : ''}{e && e.planners.length ? 'planning: ' + e.planners.join(', ') : 'nog niemand toegewezen'}</span></div>
-    <button className={'btn sm' + (r.key === firstKey ? ' primary' : '')} onClick={() => go(entryFor(r.key))} aria-label={`Hier inplannen: ${shown(d, e && e.endDate)}`}>Hier inplannen</button></div>; };
+    <span className="hint">{off && <><span className="err">Jaarplanning {plural(off.row, 'dag', 'dagen')} ({fmtRange(d, e!.endDate)})</span> · </>}{onKamp && <><span className="err">{e!.type === 'kamp' ? 'Kamp' : plural(onKamp, 'dag', 'dagen')} in de jaarplanning ({fmtRange(d, e!.endDate)})</span> · </>}{e && e.topic && !ch ? e.topic + ' · ' : ''}{e && e.planners.length ? 'planning: ' + e.planners.join(', ') : 'nog niemand toegewezen'}</span></div>
+    <button className={'btn sm' + (r.key === firstKey ? ' primary' : '')} onClick={() => { const created = !peekEntry(r.key); go(entryFor(r.key), created); }} aria-label={`Hier inplannen: ${shown(d, e && e.endDate)}`}>Hier inplannen</button></div>; };
   return <Modal title="Inplannen" sub={o.state === 'bank' ? 'Er wordt een kopie ingepland zonder namen; de opkomst in de bank blijft zoals hij is.' : 'Kies een datum waar nog geen opkomst aan gekoppeld is. De ingedeelde leiding gaat mee.'} onClose={onClose}>
     {fitRows.length > 0 && <><h3 className="gap-lg">Past bij {o.title.trim() || 'deze opkomst'}</h3><div className="picklist fits">{fitRows.map(row)}</div>
       {otherRows.length > 0 && <h3 className="gap-lg">Andere datums</h3>}</>}
     {otherRows.length > 0 && <div className="picklist">{otherRows.map(row)}</div>}
     {!rows.length && <p className="hint">Geen vrije data gevonden in de komende maanden.</p>}
-    <div className="row"><input className="inp" value={custom} onChange={e => setCustom(e.target.value)} onBlur={() => setCustom(tidyNL(custom))} placeholder="Andere datum: dd-mm-jjjj" aria-label="Andere datum" inputMode="numeric" style={{ flex: '1 1 180px' }} /><button className="btn" onClick={() => { const iso = parseNL(custom); if (!iso) { toast('Typ de datum als dd-mm-jjjj.'); return; } go(entryForDate(iso)); }}>Op deze datum</button></div>
+    <div className="row"><input className="inp" value={custom} onChange={e => setCustom(e.target.value)} onBlur={() => setCustom(tidyNL(custom))} placeholder="Andere datum: dd-mm-jjjj" aria-label="Andere datum" inputMode="numeric" style={{ flex: '1 1 180px' }} /><button className="btn" onClick={() => { const iso = parseNL(custom); if (!iso) { toast('Typ de datum als dd-mm-jjjj.'); return; } const created = !plans.some(p => p.date === iso); go(entryForDate(iso), created); }}>Op deze datum</button></div>
   </Modal>;
 }
 
@@ -409,7 +403,7 @@ export function Takeover({ oid, fresh, onClose }: { oid: string; fresh: boolean;
   const e = entryOfOpk(o), present = e ? presentForEntry(e, o) : [...leaders];
   const A = analyze(o, present, leaders), need = minNeed(o);
   const upd = (fn: (o: Opk) => void) => { if (ro) return; fn(o); if (isKamp(o)) syncKamp(o); saveOpk({ ...o }); bump(x => x + 1); };
-  const containers = isKamp(o) ? o.days.map((d, i) => ({ d, label: dayTitle(o, i, e ? addDays(e.date, i) : null), lo: d.start, hi: d.end })) : [{ d: o as unknown as Day, label: '', lo: o.start - (o.prep || 0), hi: o.end + (o.post || 0) }];
+  const containers = isKamp(o) ? o.days.map((d, i) => ({ d, label: dayTitle(o, i, e ? addDays(kampBase(o, e), i) : null), lo: d.start, hi: d.end })) : [{ d: o as unknown as Day, label: '', lo: o.start - (o.prep || 0), hi: o.end + (o.post || 0) }];
   const toggle = (b: Block, n: string) => upd(() => { b.names = b.names.includes(n) ? b.names.filter(x => x !== n) : [...b.names, n]; });
   const pickSel = (id: string) => `.modal .tk-tl [data-bid="${CSS.escape(id)}"] .tk-pick`;
   // onderdeel kiezen of weer dichtdoen; met het toetsenbord (kb) gaat de focus naar Begin in het paneel eronder,

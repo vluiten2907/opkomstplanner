@@ -34,7 +34,7 @@ export function applyAccent(accent: string) {
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
-  const { sp, sid, loading, denied, offline: noConn, loadError, settings, isTL, isAdmin, isMember, myName, practice, resetPractice, practiceFrom, flushAll } = useSpeltak();
+  const { sp, sid, loading, denied, offline: noConn, cacheOnly, loadError, settings, isTL, isAdmin, isMember, myName, practice, resetPractice, practiceFrom, flushAll } = useSpeltak();
   const { online, queued, busy } = useSaving();
   const roles = useRoles();
   const team = isTL || isAdmin;
@@ -95,8 +95,9 @@ export default function Layout({ children }: { children: ReactNode }) {
   }, [hasBar, team]);
   if (denied) return <div className="auth-wrap"><div className="card pad stack auth-card"><h2>Geen toegang</h2><p className="hint">Je bent geen lid van deze speltak, of hij bestaat niet meer.</p><button className="btn primary" onClick={() => { lastSpeltak.clearIf(sid); nav('/speltakken'); }}>Mijn speltakken</button></div></div>;
   const reload = <button className="btn primary" onClick={() => window.location.reload()}>Opnieuw laden</button>;
-  // nog geen verbinding en de speltak staat niet in de cache: niet "Geen toegang" (en de laatste speltak niet vergeten); laadt vanzelf zodra er verbinding is
-  if (noConn && !sp) return <div className="auth-wrap"><div className="card pad stack auth-card" role="status"><h2>Geen verbinding</h2><p className="hint">De speltak kan nu niet worden geladen. We proberen het opnieuw zodra er weer verbinding is.</p><div className="row"><button className="btn" onClick={() => nav('/speltakken')}>Mijn speltakken</button></div></div></div>;
+  // nog geen verbinding en de speltak (of zijn lijsten) staat niet in de cache: niet "Geen toegang" (en de laatste speltak niet vergeten),
+  // en niet eindeloos "Speltak laden…"; laadt vanzelf zodra er verbinding is
+  if ((noConn || cacheOnly) && (loading || !sp)) return <div className="auth-wrap"><div className="card pad stack auth-card" role="status"><h2>Geen verbinding</h2><p className="hint">De speltak kan nu niet worden geladen. We proberen het opnieuw zodra er weer verbinding is.</p><div className="row"><button className="btn" onClick={() => nav('/speltakken')}>Mijn speltakken</button></div></div></div>;
   if (loadError && !sp) return <div className="auth-wrap"><div className="card pad stack auth-card"><h2>Laden mislukt</h2><p className="hint">De gegevens van deze speltak konden niet worden geladen. Probeer het over een paar minuten opnieuw.</p><div className="row">{reload}</div></div></div>;
   if (loading || !sp) return <div className="loading">Speltak laden…</div>;
   // eerst alles wegschrijven; lukt dat niet (geen verbinding), dan niet zomaar uitloggen

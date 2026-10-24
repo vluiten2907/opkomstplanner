@@ -346,7 +346,7 @@ function MemberRow({ m, isTl, me, iAmTL, isAdmin, lastTL, heir, groupAdmin, grou
   const canRemove = !me && !lastTL && (isAdmin || (iAmTL && !isTl));
   return <div className="member">
     <div className="row between" style={{ flexWrap: 'nowrap' }}>
-      <div className="row" style={{ flexWrap: 'nowrap', minWidth: 0 }}><span className="avatar">{initials(m.name)}</span><div style={{ minWidth: 0 }}><b>{m.name}{me ? ' (jij)' : ''}</b><div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}{m.email ? ' · ' : ''}{isTl ? 'Teamleider' : 'Leiding'}{groupAdmin ? ' · beheerder' : ''} · {summary}</div></div></div>
+      <div className="row" style={{ flexWrap: 'nowrap', minWidth: 0 }}><span className="avatar">{initials(m.name)}</span><div style={{ minWidth: 0 }}><b>{m.name || 'Naamloos'}{me ? ' (jij)' : ''}</b><div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}{m.email ? ' · ' : ''}{isTl ? 'Teamleider' : 'Leiding'}{groupAdmin ? ' · beheerder' : ''} · {summary}</div></div></div>
       {manage && <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
         <button className="btn sm ghost" aria-expanded={open} aria-label={`Rechten van ${m.name}${open ? ' sluiten' : ''}`} onClick={() => setOpen(o => !o)}>{open ? 'Sluiten' : 'Rechten'}</button>
         {canRemove && <ConfirmBtn className="iconbtn danger" label={<Trash2 size={15} />} confirm="Zeker?" title="Uit het team halen" ariaLabel={`${m.name} uit het team halen`} onConfirm={onRemove} />}

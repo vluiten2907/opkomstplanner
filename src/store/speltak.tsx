@@ -8,7 +8,7 @@ import { useRoles } from './roles';
 import { createInvite as mkInvite } from './beheer';
 import { addDays, clone, fmtT } from '../lib/time';
 import { toast, undoAction } from './toast';
-import { markQueued, settle, track } from './saving';
+import { markQueued, settle, track, useSaving } from './saving';
 import { ensureLid, normGedeeld, snapshotOf, sharedSig, writeShared, removeShared, sharedId, copyFromShared, countCopy, type Gedeeld } from './groepsbank';
 
 type Ctx = {
@@ -17,6 +17,8 @@ type Ctx = {
   offline: boolean;
   /** Laden mislukt om een andere reden dan rechten (bijv. de daglimiet van de database). */
   loadError: boolean;
+  /** De lijsten komen (al ruim een seconde, of zonder netwerk) alleen uit een onvolledige cache: geen verbinding met de server. */
+  cacheOnly: boolean;
   settings: Settings; opks: Opk[]; lib: Lib[]; plans: Plan[];
   leaders: string[]; myName: string; isTL: boolean; can: (p: PermKey) => boolean;
   /** Beheerder van de groep (of Beheer totaal); mag het team beheren. */
@@ -73,6 +75,13 @@ const C = createContext<Ctx>(null as any);
 
 const DEBOUNCE = 500;
 
+/**
+ * Lijsten (per gebruiker, speltak en soort) die dit tabblad al eens volledig van de server kreeg. De geheugencache van Firestore houdt ze vast,
+ * ook nadat je de speltak sloot: opnieuw openen (ook offline) mag dan meteen uit de cache tonen. Met de uid erin ziet een volgende
+ * gebruiker op hetzelfde apparaat nooit iets van een ander uit de cache.
+ */
+const synced = new Set<string>();
+
 type Ready = Record<'sp' | 'opkomsten' | 'activiteiten' | 'planning', 'wait' | 'ok' | 'fail'>;
 const WAIT: Ready = { sp: 'wait', opkomsten: 'wait', activiteiten: 'wait', planning: 'wait' };
 
@@ -107,6 +116,13 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
   const [missing, setMissing] = useState(false);
   const [offline, setOffline] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  // eerste antwoord van een lijst kwam uit de cache en dit tabblad had hem nog nooit van de server: wachten op de server.
+  // Pas na een seconde (of zonder netwerk meteen) melden: online komt een lege cache-lijst soms ook even, bijv. na een losse leesactie.
+  const [cacheOnlyRaw, setCacheOnlyRaw] = useState(false);
+  const [cacheStale, setCacheStale] = useState(false);
+  useEffect(() => { if (!cacheOnlyRaw) { setCacheStale(false); return; } const t = setTimeout(() => setCacheStale(true), 1000); return () => clearTimeout(t); }, [cacheOnlyRaw]);
+  const { online } = useSaving();
+  const cacheOnly = cacheOnlyRaw && (cacheStale || !online);
   // lokale, optimistische kopie: wijzigingen tonen direct, opslaan gebeurt met een korte vertraging
   const pending = useRef(new Map<string, { sid: string; kind: string; obj: any; t: any }>());
   const [, bump] = useState(0);
@@ -116,7 +132,8 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
 
   useEffect(() => {
     if (!user) return;
-    setReady(WAIT); setDenied(false); setMissing(false); setOffline(false); setOpksServer(false);
+    setReady(WAIT); setDenied(false); setMissing(false); setOffline(false); setOpksServer(false); setCacheOnlyRaw(false);
+    const uidNow = user.uid;
     const mark = (k: keyof Ready, v: 'ok' | 'fail') => setReady(r => r[k] === v ? r : { ...r, [k]: v });
     // ook bij een fout klaar, anders blijft de pagina eeuwig laden
     const err = (k: keyof Ready) => (e: any) => { if (e?.code === 'permission-denied') setDenied(true); else setLoadError(true); mark(k, 'fail'); };
@@ -124,6 +141,8 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
     // (bijv. "bestaat niet"), anders bleef het scherm na "Geen verbinding" hangen.
     let lastRaw = '';
     const u1 = onSnapshot(doc(db, 'speltakken', sid), { includeMetadataChanges: true }, s => {
+      // antwoord van de server: er is verbinding (de lijsten volgen)
+      if (!s.metadata?.fromCache) setCacheOnlyRaw(false);
       if (!s.exists()) {
         // Offline of slechte verbinding: Firestore meldt eerst "bestaat niet" uit een lege cache. Wachten op de server.
         if (s.metadata?.fromCache) { setOffline(true); return; }
@@ -137,14 +156,18 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
     }, err('sp'));
     const sub = (name: 'opkomsten' | 'activiteiten' | 'planning', norm: (x: any) => any, set: (v: any[]) => void) => {
       const ref = collection(db, 'speltakken', sid, name);
+      const key = uidNow + '/' + sid + '/' + name;
       let first = true;
       const next = (s: F.QuerySnapshot) => {
+        const server = !s.metadata?.fromCache;
         // opkomsten: onthouden wanneer de server ze heeft bevestigd (zie opksReady)
-        if (name === 'opkomsten' && !s.metadata?.fromCache) setOpksServer(true);
-        // Eerste antwoord alleen uit de cache (offline, of de server heeft nog niet geantwoord): zonder blijvende cache is dat
-        // (bijna) altijd leeg of onvolledig. Nog niet als geladen tellen, anders tonen de pagina's lege lijsten zodra de speltak
+        if (name === 'opkomsten' && server) setOpksServer(true);
+        if (server) { synced.add(key); setCacheOnlyRaw(false); }
+        // Eerste antwoord alleen uit de cache (offline, of de server heeft nog niet geantwoord): had dit tabblad de lijst nog nooit
+        // van de server, dan is hij leeg of onvolledig. Nog niet als geladen tellen, anders tonen de pagina's lege lijsten zodra de speltak
         // binnen is, en maakt typen in de jaarplanning een tweede rij voor dezelfde datum. Pas het eerste antwoord van de server telt.
-        if (first && s.metadata?.fromCache) return;
+        // Had dit tabblad hem wel al (synced), dan houdt de geheugencache hem vast: meteen tonen (ook offline).
+        if (first && !server && !synced.has(key)) { setCacheOnlyRaw(true); return; }
         // alleen de status veranderd: de lijst is hetzelfde gebleven
         if (!first && typeof s.docChanges === 'function' && s.docChanges().length === 0) return;
         first = false;
@@ -319,7 +342,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
     saveOpk({ ...o }); savePlan({ ...e });
     dropAbsent(e, true);
     // kamp dat niet bij de rij past (bijv. vr–zo op een rij za–zo): de dagen tellen vanaf de datum, dus melden in plaats van stil laten schuiven
-    const note = kampMismatchNote(o, e.date, e.endDate); if (note) toast(note, undefined, 8000);
+    const note = kampMismatchNote(o, e.date, e.endDate, e.type); if (note) toast(note, undefined, 8000);
     return o;
   };
   const newForEntry = (e: Plan, kamp: boolean) => {
@@ -399,7 +422,7 @@ export function SpeltakProvider({ sid, children, backend, practice = false, prac
   };
 
   const latestRef = useRef<Ctx>(null as any);
-  const value: Ctx = { sid, sp, loading, denied: denied || missing, offline, loadError, flushAll, canLink, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
+  const value: Ctx = { sid, sp, loading, denied: denied || missing, offline, loadError, cacheOnly, flushAll, canLink, settings, opks, lib, plans, leaders, myName, isTL, can, isAdmin, isMember: !!me,
     saveOpk, deleteOpk, removeOpk, saveLib, deleteLib, savePlan, deletePlan, saveSettings, setMember, removeMember, createInvite,
     getO, latestO, opkOf, getL, entryOfOpk, presentForEntry, presentFor, linkOpk, newForEntry, offerPlanTimes, unlinkEntry, entryFor, peekEntry, entryForDate, dropAbsent, shared, importShared, practice, resetPractice: onReset || null, practiceFrom,
     latest: () => latestRef.current };

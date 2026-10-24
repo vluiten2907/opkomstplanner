@@ -304,6 +304,11 @@ service cloud.firestore {
           && usedNow(request.resource.data.members[me()].inviteId)
           && request.resource.data.members[me()].role == inviteKind(i)
           && request.resource.data.members[me()].perms == i.perms
+          // naam en e-mail als tekst (de naam niet leeg, hooguit 254 tekens: de app valt terug op het e-mailadres); anders vallen Team en Beheer om
+          && request.resource.data.members[me()].get('name', null) is string
+          && request.resource.data.members[me()].name.size() > 0
+          && request.resource.data.members[me()].name.size() <= 254
+          && request.resource.data.members[me()].get('email', null) is string
           && (inviteKind(i) == 'teamleider' && hasTl(resource.data)
               // teamleider erbij in tlIds
               ? (request.resource.data.tlIds.hasAll(resource.data.tlIds)

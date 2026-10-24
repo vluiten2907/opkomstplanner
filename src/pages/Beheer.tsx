@@ -138,7 +138,7 @@ function PeopleList({ people, me, canRemove, onRemove }: { people: [string, Admi
     const mine = uid === me;
     const can = !last && (typeof canRemove === 'function' ? canRemove(uid) : canRemove);
     return <div key={uid} className="member"><div className="row between" style={{ flexWrap: 'nowrap' }}>
-      <div style={{ minWidth: 0 }}><b>{p.name || p.email}{mine ? ' (jij)' : ''}</b><div className="hint ell">{p.email}</div></div>
+      <div style={{ minWidth: 0 }}><b>{p.name || p.email || 'Naamloos'}{mine ? ' (jij)' : ''}</b><div className="hint ell">{p.email}</div></div>
       {can && <ConfirmBtn className="btn sm ghost danger" label={mine ? 'Aftreden' : 'Verwijderen'} confirm={mine ? 'Zeker? Aftreden' : 'Zeker?'} onConfirm={() => onRemove(uid)} />}
       {last && mine && <span className="hint" title="Draag je rol eerst over">laatste beheerder</span>}
     </div></div>;
@@ -513,7 +513,7 @@ function LeidingRow({ sp, g, me, uid, m, all, full }: { sp: Speltak; g: Groep; m
   };
   return <div className="subrow stack" style={{ gap: 6 }}>
     <div className="row between" style={{ flexWrap: 'wrap', gap: 6 }}>
-      <div style={{ minWidth: 0, flex: '1 1 180px' }}><b>{m.name}{uid === me.uid ? ' (jij)' : ''}</b>{full && <span className="hint"> · {full}</span>}
+      <div style={{ minWidth: 0, flex: '1 1 180px' }}><b>{m.name || 'Naamloos'}{uid === me.uid ? ' (jij)' : ''}</b>{full && <span className="hint"> · {full}</span>}
         <div className="hint ell">{m.email ? <a href={`mailto:${m.email}`}>{m.email}</a> : 'e-mailadres onbekend'} · {isTl ? 'Teamleider' : 'Leiding'}</div></div>
       <div className="row" style={{ gap: 4 }}>
         <label className="toggle-inline"><input type="checkbox" checked={isTl} onChange={e => e.target.checked
