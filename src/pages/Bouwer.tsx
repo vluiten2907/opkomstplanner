@@ -7,7 +7,7 @@ import { linkBankCopy, linkDraft } from '../components/modals';
 import { openModal, withFreeName } from '../store/modal';
 import { guardLeave, setUnsaved, useDirty } from '../store/unsaved';
 import { createFresh, isFresh, makeForEntry, watchFresh } from '../store/fresh';
-import { Strip, PickOpk, usePdf, PageTitle, SaveBar, StatusPill, askBankName } from '../components/shared';
+import { Strip, PickOpk, usePdf, PageTitle, SaveBar, StatusPill, askBankName, conceptToBank } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, TimePicker, scrollCalm, useMedia, useSheetDialog } from '../components/ui';
 import { Ticks, PrepZones, blkGeom, blkLabel, byTime, focusSoon, lanesStyle, useKeepFocus } from '../components/timeline';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
@@ -275,7 +275,8 @@ function Builder({ o: stored }: { o: Opk }) {
   const putInBank = () => {
     if (progEmpty(o) && !o.title.trim()) { toast('Geef de opkomst eerst een titel of een onderdeel.'); return; }
     // concept: gaat zelf de bank in (mag zijn eigen naam houden); ingepland: er komt een kopie in de bank (allebei zonder namen)
-    if (o.state === 'draft') return askBankName(o, bankOpks, o.id, name => { if (!can('bank')) return; saveOpk(toBank(o, name)); toast(S.sp?.gid ? 'In de opkomstenbank gezet en gedeeld met de groep, zonder namen' : 'Opgeslagen in de opkomstenbank, zonder namen van leiding'); });
+    // met het recht Opkomsten kan het concept terug met Ongedaan maken (conceptToBank); zonder dat recht is de knop een dubbele klik
+    if (o.state === 'draft') return askBankName(o, bankOpks, o.id, name => { if (!can('bank')) return; conceptToBank(o, name, latest); });
     askBankName(o, bankOpks, null, name => {
       // zonder recht Opkomsten blijft de ingeplande opkomst zelf ongemoeid (upd doet dan niets)
       const b = toBank(o, name); saveOpk(b); upd(() => { o.srcId = b.id; }); toast('Kopie opgeslagen in de opkomstenbank, zonder leiding');
@@ -292,7 +293,9 @@ function Builder({ o: stored }: { o: Opk }) {
   };
   const pdfBtn = <button className="btn primary" onClick={() => pdf(o)}><Download size={16} />PDF maken</button>;
   // Elke knop volgt zijn eigen recht: In bank en Verwijderen (bank) met Banken, Kopie en Verwijderen (concept) met Opkomsten.
-  const bankBtn = can('bank') && <button className="btn" onClick={putInBank}><Bookmark size={16} />In bank</button>;
+  const bankBtn = can('bank') && (o.state === 'draft' && !can('build')
+    ? <ConfirmBtn className="btn" label={<><Bookmark size={16} />In bank</>} confirm="Klik nogmaals: namen gaan niet mee" title="In de opkomstenbank zetten" onConfirm={putInBank} />
+    : <button className="btn" onClick={putInBank}><Bookmark size={16} />In bank</button>);
   const planBtn = canLink && <button className="btn" onClick={() => guardLeave(() => openModal({ kind: 'toplan', oid: o.id }))}><CalendarDays size={16} />Inplannen</button>;
   const actions = o.state === 'draft' ? <>{bankBtn}{planBtn}{pdfBtn}{can('build') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Concept verwijderen" onConfirm={() => { nav(`/s/${sid}/bouwer`); removeOpk(stored); }} />}</>
     : o.state === 'bank' ? <>{can('build') && <button className="btn" onClick={dup} title="Kopie als concept"><Copy size={16} />Kopie</button>}{planBtn}{pdfBtn}{can('bank') && <ConfirmBtn className="btn ghost" label={<><Trash2 size={16} />Verwijderen</>} confirm="Klik nogmaals om te verwijderen" title="Uit de opkomstenbank verwijderen" onConfirm={() => { setUnsaved(false); nav(`/s/${sid}/bouwer`); removeOpk(stored); }} />}</>
@@ -383,7 +386,7 @@ function Builder({ o: stored }: { o: Opk }) {
     </div>
     {/* telefoon: de activiteitenbank staat onder de tijdlijn; deze knop brengt je er in één tik heen (niet bij bewerken uit de bank: daar staat de opslaan-balk onderin) */}
     {narrow && !readOnly && !sel && !sideSeen && !addLow && !draft && <button className="btn primary plan-fab" onClick={() => toSide('bank')}><Plus size={16} />Activiteit</button>}
-    {draft && !readOnly && <SaveBar sticky dirty={dirty} title={o.title} taken={(n, c) => nameTaken(bankOpks, n, c ? null : o.id)} suggest={freeName(bankOpks, o.title || stored.title)} onCancel={cancelBank} onSave={saveBank} onCopy={copyBank} />}
+    {draft && !readOnly && <SaveBar sticky dirty={dirty} title={o.title} origTitle={stored.title} taken={(n, c) => nameTaken(bankOpks, n, c ? null : o.id)} suggest={freeName(bankOpks, o.title || stored.title)} onCancel={cancelBank} onSave={saveBank} onCopy={copyBank} />}
   </div>;
 }
 
@@ -585,13 +588,13 @@ function Editor({ b, ctx, upd, onClose, onDelete, onDup, saveLib }: { b: Block; 
     withFreeName(b.title, {
       title: 'Andere naam kiezen', sub: `"${b.title.trim()}" staat al in de activiteitenbank. Geef de activiteit een andere naam.`, label: 'Titel van de activiteit', okLabel: 'Bewaren in activiteitenbank',
       suggest: freeName(lib, b.title), taken: n => nameTaken(lib, n),
-      ok: name => { const l = { ...normLib({ id: uid() }), ...libFields(b), title: name }; saveLib(l); upd(() => { b.title = name; b.libId = l.id; }); toast('Opgeslagen in de activiteitenbank'); },
+      ok: name => { const l = normLib({ ...libFields(b), id: uid(), title: name }); saveLib(l); upd(() => { b.title = name; b.libId = l.id; }); toast('Opgeslagen in de activiteitenbank'); },
     });
   };
   const updLib = () => {
     if (!L) return;
     if (nameTaken(lib, b.title, L.id)) { toast(`"${b.title.trim()}" bestaat al in de activiteitenbank. Geef het onderdeel eerst een andere naam.`); return; }
-    saveLib({ ...L, ...libFields(b) }); toast('Activiteitenbank bijgewerkt');
+    saveLib(normLib({ ...L, ...libFields(b) })); toast('Activiteitenbank bijgewerkt');
   };
   const ro = readOnly;
   return <div className="pad stack">

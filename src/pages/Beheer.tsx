@@ -171,7 +171,7 @@ function NewGroup({ me, groups }: { me: Me; groups: Groep[] }) {
     {!open ? <div><button className="btn" onClick={() => setOpen(true)}><Plus size={16} />Nieuwe Scouting-groep</button></div>
       : <section className="card pad stack">
         <h2>Nieuwe Scouting-groep</h2>
-        <Field label="Naam van de groep" htmlFor="ng-name" hint="Daarna maak je de speltakken en nodig je de teamleiders uit. Een beheerder van de groep kies je uit de leiding."><input id="ng-name" value={name} onChange={e => setName(e.target.value)} placeholder="bijv. Scoutinggroep De Verkenners" /></Field>
+        <Field label="Naam van de groep" htmlFor="ng-name" hint="Daarna maak je de speltakken en nodig je de teamleiders uit. Een beheerder van de groep kies je uit de leiding."><input id="ng-name" value={name} maxLength={60} onChange={e => setName(e.target.value)} placeholder="bijv. Scoutinggroep De Verkenners" /></Field>
         <div className="row"><button className="btn primary" disabled={busy} onClick={make}>Groep aanmaken</button><button className="btn ghost" onClick={() => setOpen(false)}>Annuleren</button></div>
       </section>}
   </div>;
@@ -278,7 +278,7 @@ function GroupCard({ g, sps, loaded, invites, me, canAll, allSps, groups, onGone
       <span className="hint">{plural(sps.length, 'speltak', 'speltakken')}{mine ? ' · jij bent beheerder' : ''}</span>
     </button>
     {open && <>
-    <Field label="Naam van de groep" htmlFor={'g-' + g.id}><input id={'g-' + g.id} value={name} onChange={e => setName(e.target.value)} onBlur={saveName} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} /></Field>
+    <Field label="Naam van de groep" htmlFor={'g-' + g.id}><input id={'g-' + g.id} value={name} maxLength={60} onChange={e => setName(e.target.value)} onBlur={saveName} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} /></Field>
 
     <h3>Beheerders</h3>
     <PeopleList people={admins} me={me.uid} canRemove={uid => canAll || mine || uid === me.uid}
@@ -291,7 +291,7 @@ function GroupCard({ g, sps, loaded, invites, me, canAll, allSps, groups, onGone
 
     <h3>Speltakken</h3>
     <div className="team">{sps.map(sp => <SpeltakRow key={sp.id} sp={sp} g={g} me={me} pool={pool} all={sps} names={names} open={invites.filter(i => i.sid === sp.id)} />)}{!sps.length && <p className="hint">Nog geen speltakken.</p>}</div>
-    <div className="row"><input className="inp" value={newSp} onChange={e => setNewSp(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addSp(); }} placeholder="Naam nieuwe speltak, bijv. Welpen" aria-label="Naam nieuwe speltak" list="speltaklist-b" style={{ flex: '1 1 220px' }} />
+    <div className="row"><input className="inp" value={newSp} maxLength={60} onChange={e => setNewSp(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addSp(); }} placeholder="Naam nieuwe speltak, bijv. Welpen" aria-label="Naam nieuwe speltak" list="speltaklist-b" style={{ flex: '1 1 220px' }} />
       <datalist id="speltaklist-b">{SPELTAKKEN.map(x => <option key={x} value={x} />)}</datalist>
       <button className="btn" disabled={adding} onClick={addSp}><Plus size={16} />{adding ? 'Aanmaken…' : 'Speltak aanmaken'}</button></div>
     {canAll && <DeleteGroup g={g} sps={sps} me={me} allSps={allSps} groups={groups} onGone={onGone} />}

@@ -821,6 +821,9 @@ body { padding-top: env(safe-area-inset-top, 0px); }
 .invlist { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); min-width: 0; }
 .invrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--paper); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--edge) 40%, var(--line)); border-radius: 12px; padding: 10px 12px; flex-wrap: wrap; }
 .invrow > div:first-child { flex: 1 1 200px; }
+/* gegevens mogen afbreken (de vervaldatum moet leesbaar blijven); de datum zelf blijft heel */
+.invmeta { overflow-wrap: anywhere; }
+.invexp { white-space: nowrap; }
 .ell { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toggle-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
 .groupcard h3 { margin: 6px 0 0; }

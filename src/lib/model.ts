@@ -137,14 +137,18 @@ export function normOpk(o: any, s?: Settings): Opk {
     n.prep = 0; n.post = 0; n.blocks = [];
     n.days = (Array.isArray(o.days) ? o.days : []).map(normDay);
     if (!n.days.length) n.days = [normDay({ label: 'Zaterdag', start: 480, end: 1380 }, 0)];
+    // vaste blokken horen niet in een kamp (bijv. ooit ingepland via een vast blok uit de activiteitenbank): gewoon onderdeel, met categoriekeuze
+    n.days.forEach(d => d.blocks.forEach(b => { if (isFixed(b)) b.cat = ''; }));
     syncKamp(n);
   }
   // de opkomstenbank bevat geen namen, ook niet uit een back-up of oude data
   if (n.state === 'bank') { n.lead = ''; allBlocks(n).forEach(b => { b.names = []; }); }
   return n;
 }
+/** Activiteit uit de bank. Een vast blok (Openen, Ranja, Sluiten) is in de bank een gewone activiteit: zijn '__'-categorie valt weg. */
 export function normLib(l: any): Lib {
-  return { id: l.id || uid(), title: str(l.title), dur: Math.max(5, num(l.dur, 15)), cat: str(l.cat), minLeaders: Math.max(0, num(l.minLeaders, 1)),
+  const cat = str(l.cat);
+  return { id: l.id || uid(), title: str(l.title), dur: Math.max(5, num(l.dur, 15)), cat: cat.startsWith('__') ? '' : cat, minLeaders: Math.max(0, num(l.minLeaders, 1)),
     location: str(l.location), short: str(l.short), desc: str(l.desc), prep: str(l.prep), materials: str(l.materials), updatedAt: num(l.updatedAt, 0) || Date.now() };
 }
 export function newEntry(slot: string | null, date?: string): Plan {

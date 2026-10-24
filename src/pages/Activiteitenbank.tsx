@@ -3,7 +3,7 @@ import { guardLeave, useDirty } from '../store/unsaved';
 import { Plus, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast, undoAction } from '../store/toast';
-import { BankCard, PageTitle, SaveBar } from '../components/shared';
+import { BankCard, PageTitle, SaveBar, cardSel, focusAfter, sideInView } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, useEscapeClose, useSheetDialog } from '../components/ui';
 import { CatSelect, LocInput, NumInput } from '../components/fields';
 import { clone, fmtDur, plural, uid } from '../lib/time';
@@ -13,15 +13,20 @@ export default function Activiteitenbank() {
   const { settings, lib, opks, saveLib, deleteLib, can } = useSpeltak();
   const [q, setQ] = useState(''); const [cat, setCat] = useState(''); const [sel, setSelRaw] = useState<string | null>(null);
   const [fresh, setFresh] = useState<Lib | null>(null); // nieuwe activiteit, nog niet in de bank
-  const setSel = (id: string | null) => guardLeave(() => { setSelRaw(id); if (!id || id !== fresh?.id) setFresh(null); });
+  // breed scherm: het paneel met de opslaan-balk helemaal in beeld
+  const setSel = (id: string | null) => guardLeave(() => { setSelRaw(id); if (!id || id !== fresh?.id) setFresh(null); if (id) sideInView(); });
   const ql = q.toLowerCase();
   const items = lib.filter(l => (!cat || l.cat === cat) && (!ql || libSearchText(l).includes(ql))).sort(byTitle);
   const uses: Record<string, number> = {};
   opks.forEach(o => allBlocks(o).forEach(b => { if (b.libId) uses[b.libId] = (uses[b.libId] || 0) + 1; }));
   const edit = can('bank');
-  // terugzetten met hetzelfde id, zodat onderdelen die ernaar verwijzen weer kloppen
-  const remove = (l: Lib) => { deleteLib(l.id); if (sel === l.id) setSelRaw(null); toast(`"${l.title || 'Activiteit'}" verwijderd${uses[l.id] ? '. Opkomsten die hem gebruiken blijven staan' : ''}`, undoAction(() => saveLib(clone(l)))); };
-  const create = () => guardLeave(() => { const l = normLib({ id: uid(), cat: (settings.categories[0] || {}).id || '', minLeaders: 1 }); setFresh(l); setSelRaw(l.id); setQ(''); setCat(''); setTimeout(() => document.getElementById('lf-title')?.focus(), 30); });
+  // Ongedaan maken: terugzetten met hetzelfde id, zodat onderdelen die ernaar verwijzen weer kloppen.
+  // Daarna de focus niet kwijt naar het begin van de pagina: de volgende kaart (of de vorige), anders het zoekveld of Nieuwe activiteit
+  const remove = (l: Lib) => {
+    const i = items.findIndex(x => x.id === l.id), nb = i < 0 ? undefined : items[i + 1] || items[i - 1];
+    focusAfter(...(nb ? [cardSel(nb.id)] : []), 'input[aria-label="Zoek activiteit"]', '.btn.primary');
+    deleteLib(l.id); if (sel === l.id) setSelRaw(null); toast(`"${l.title || 'Activiteit'}" verwijderd${uses[l.id] ? '. Opkomsten die hem gebruiken blijven staan' : ''}`, undoAction(() => saveLib(clone(l)))); };
+  const create = () => guardLeave(() => { const l = normLib({ id: uid(), cat: (settings.categories[0] || {}).id || '', minLeaders: 1 }); setFresh(l); setSelRaw(l.id); setQ(''); setCat(''); setTimeout(() => document.getElementById('lf-title')?.focus(), 30); sideInView(); });
   const L = sel ? lib.find(l => l.id === sel) || (fresh && fresh.id === sel ? fresh : undefined) : undefined;
   const isNew = !!L && !lib.some(l => l.id === L.id);
   // op een smal scherm ligt het paneel als vel over de pagina: dan is het een venster (focus erin, Esc sluit, focus terug naar de kaart)
@@ -41,7 +46,7 @@ export default function Activiteitenbank() {
       <div className="catfilter" role="group" aria-label="Categorie"><Chip on={!cat} onClick={() => setCat('')}>Alle</Chip>{settings.categories.map(c => <Chip key={c.id} on={cat === c.id} onClick={() => setCat(c.id)}><Dot color={c.color} />{c.label}</Chip>)}</div>
     </div>
     <div className="bank">
-      <div>{items.length ? <div className="bank-grid">{items.map(l => { const c = catOf(settings, l.cat); return <BankCard key={l.id} what="Activiteit" title={l.title} onDelete={edit ? () => remove(l) : undefined}><button className={'bcard lift transition-[box-shadow] duration-150 ease-out' + (sel === l.id ? ' sel' : '')} onClick={() => setSel(l.id)}>
+      <div>{items.length ? <div className="bank-grid">{items.map(l => { const c = catOf(settings, l.cat); return <BankCard key={l.id} what="Activiteit" title={l.title} onDelete={edit ? () => remove(l) : undefined}><button data-id={l.id} className={'bcard lift transition-[box-shadow] duration-150 ease-out' + (sel === l.id ? ' sel' : '')} onClick={() => setSel(l.id)}>
         <span className="bt"><Dot color={c.color} /><span>{l.title || 'Naamloos'}</span></span>
         <span className="bm"><span>{c.label}</span><span className="mono">{fmtDur(l.dur)}</span>{l.minLeaders > 0 && <span>min. {l.minLeaders} leiding</span>}{l.location && <span>{l.location}</span>}</span>
         {l.short && <span className="bs">{l.short}</span>}
@@ -85,6 +90,6 @@ function LibEditor({ l, isNew, lib, readOnly, onClose, onCancelNew, onSave, onCo
     <Field label="Voorbereiding" htmlFor="lf-prep"><textarea id="lf-prep" rows={3} readOnly={readOnly} value={d.prep} onChange={e => upd(() => { d.prep = e.target.value; })} /></Field>
     <Field label="Materiaal" htmlFor="lf-mat"><textarea id="lf-mat" rows={4} readOnly={readOnly} value={d.materials} onChange={e => upd(() => { d.materials = e.target.value; })} placeholder="Eén ding per regel" /></Field>
     {!readOnly && !isNew && <div className="stack" style={{ gap: 4 }}><div className="row"><ConfirmBtn label="Uit de bank verwijderen" confirm="Klik nogmaals om te verwijderen" onConfirm={onDelete} /></div><p className="hint">Opkomsten waarin hij al staat, blijven gewoon staan.</p></div>}
-    {!readOnly && <SaveBar dirty={dirty} isNew={isNew} newHint="Geef de activiteit een titel." title={d.title} taken={taken} suggest={freeName(lib, d.title || l.title)} onCancel={cancel} onSave={save} onCopy={copy} />}
+    {!readOnly && <SaveBar dirty={dirty} isNew={isNew} newHint="Geef de activiteit een titel." title={d.title} origTitle={l.title} taken={taken} suggest={freeName(lib, d.title || l.title)} onCancel={cancel} onSave={save} onCopy={copy} />}
   </div>;
 }

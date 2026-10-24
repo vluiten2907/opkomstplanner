@@ -5,22 +5,23 @@ import { CalendarDays, Copy, ExternalLink, Plus, Users, X } from 'lucide-react';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { openModal } from '../store/modal';
-import { BankCard, Strip, CatTags, PageTitle, SaveBar, askBankName, copySharedToBank } from '../components/shared';
+import { BankCard, Strip, CatTags, PageTitle, SaveBar, askBankName, cardSel, conceptToBank, copySharedToBank, focusAfter, sideInView } from '../components/shared';
 import { Chip, ConfirmBtn, Dot, Field, useEscapeClose, useSheetDialog } from '../components/ui';
 import { fmtDur, fmtT, plural } from '../lib/time';
-import { progBlocks, isFixed, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, opkCatList, opkCatOf, opkSearchText, toBank, type Cat, type Opk } from '../lib/model';
+import { progBlocks, isFixed, byTitle, catOf, copyOpk, freeName, isKamp, nameTaken, minNeed, opkCatList, opkCatOf, opkSearchText, type Cat, type Opk } from '../lib/model';
 import { createFresh } from '../store/fresh';
 import type { Gedeeld } from '../store/groepsbank';
 
 type Tab = 'own' | 'group';
 
 export default function Opkomstenbank() {
-  const { settings, opks, saveOpk, removeOpk, sid, can, sp, shared, latest } = useSpeltak();
+  const { settings, opks, removeOpk, sid, can, sp, shared, latest } = useSpeltak();
   const nav = useNavigate();
   const [tab, setTab] = useState<Tab>('own');
   const [q, setQ] = useState(''); const [cat, setCat] = useState(''); const [from, setFrom] = useState('');
   const [sel, setSelRaw] = useState<string | null>(null);
-  const setSel = (id: string | null) => guardLeave(() => setSelRaw(id));
+  // breed scherm: het paneel met de opslaan-balk helemaal in beeld
+  const setSel = (id: string | null) => guardLeave(() => { setSelRaw(id); if (id) sideInView(); });
   const ql = q.toLowerCase();
   const groupOn = !!sp?.gid && shared !== null;
   const g = groupOn && tab === 'group';
@@ -35,7 +36,13 @@ export default function Opkomstenbank() {
   const own = opks.filter(o => o.state === 'bank');
   const total = own.length;
   const T = !g && sel ? opks.find(o => o.id === sel && o.state === 'bank') : undefined;
-  const remove = (o: Opk) => { if (sel === o.id) setSelRaw(null); removeOpk(o); };
+  // concept: de knop van het volgende (of vorige) concept; bank-opkomst: de volgende (of vorige) kaart
+  const nextOf = (o: Opk) => {
+    const list = o.state === 'bank' ? bank : drafts, i = list.findIndex(x => x.id === o.id), nb = i < 0 ? undefined : list[i + 1] || list[i - 1];
+    return !nb ? [] : o.state === 'bank' ? [cardSel(nb.id)] : [`.pick[data-oid="${CSS.escape(nb.id)}"] .to-bank`, `.pick[data-oid="${CSS.escape(nb.id)}"] .btn`];
+  };
+  // daarna de focus niet kwijt naar het begin van de pagina: de volgende kaart, anders het zoekveld of Nieuwe opkomst
+  const remove = (o: Opk) => { const to = nextOf(o); if (sel === o.id) setSelRaw(null); removeOpk(o); focusAfter(...to, '.toolbar input[type=search]', '.btn.primary'); };
 
   // groepsbank (zonder je eigen gedeelde opkomsten)
   const others = (shared || []).filter(x => x.sid !== sid);
@@ -59,9 +66,10 @@ export default function Opkomstenbank() {
     const t = `"${o.title || 'Opkomst'}" staat nu in jullie opkomstenbank`;
     // zonder recht Instellingen komen categorieën die jullie nog niet hebben er niet bij: zeg dat, met de namen
     if (!note) toast(t); else toast(t + '. ' + note, undefined, 8000);
-    setTab('own'); setSelRaw(o.id);
+    setTab('own'); setSelRaw(o.id); sideInView(); focusAfter('#tf-title');
   });
-  const draftToBank = (o: Opk) => askBankName(o, own, o.id, name => { saveOpk(toBank(o, name)); toast(groupOn ? 'In de opkomstenbank gezet en gedeeld met de groep' : 'In de opkomstenbank gezet'); });
+  // Ongedaan maken kan alleen met het recht Opkomsten (concept terug); zonder dat recht is de knop een dubbele klik
+  const draftToBank = (o: Opk) => { const to = nextOf(o); askBankName(o, own, o.id, name => { conceptToBank(o, name, latest); focusAfter(...to, cardSel(o.id)); }); };
 
   return <div className="stack pt-6 md:pt-8" style={{ gap: 18 }}>
     <PageTitle title="Opkomstenbank"
@@ -96,7 +104,7 @@ export default function Opkomstenbank() {
           : <div className="empty"><span>{others.length ? 'Niets gevonden.' : 'Andere speltakken hebben nog niets gedeeld. Wat zij in hun opkomstenbank zetten, verschijnt hier.'}</span></div>}
       </div>
         : <div className="stack" style={{ gap: 18 }}>
-          {bank.length ? <div className="bank-grid">{bank.map(t => <BankCard key={t.id} what="Opkomst" title={t.title} onDelete={can('bank') ? () => remove(t) : undefined}><button className={'bcard lift transition-[box-shadow] duration-150 ease-out' + (sel === t.id ? ' sel' : '')} onClick={() => setSel(t.id)}>
+          {bank.length ? <div className="bank-grid">{bank.map(t => <BankCard key={t.id} what="Opkomst" title={t.title} onDelete={can('bank') ? () => remove(t) : undefined}><button data-id={t.id} className={'bcard lift transition-[box-shadow] duration-150 ease-out' + (sel === t.id ? ' sel' : '')} onClick={() => setSel(t.id)}>
             <span className="bt"><span>{t.title || 'Naamloos'}</span>{groupOn && t.shared && <span className="shared-ico" title="Gedeeld met de groep" aria-label="Gedeeld met de groep"><Users size={14} /></span>}</span>
             <CatTags o={t} />
             <CardMeta o={t} />
@@ -107,13 +115,14 @@ export default function Opkomstenbank() {
             : !total ? <div className="empty"><span>{can('bank') ? 'Nog leeg. Bewaar een opkomst met "In bank".' : 'Nog leeg. In de bank zetten kan met het recht Banken.'}</span></div>
               : !drafts.length && <div className="empty"><span>Niets gevonden.</span></div>}
           {drafts.length > 0 && <section className="stack"><h2>Concepten</h2>
-            <div className="picklist">{drafts.map(o => <div key={o.id} className="pick"><div className="info"><b>{o.title || 'Naamloze opkomst'}</b><span className="hint">{isKamp(o) ? 'Weekendkamp · ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(progBlocks(o).length, 'onderdeel', 'onderdelen')}</span></div>
+            <div className="picklist">{drafts.map(o => <div key={o.id} className="pick" data-oid={o.id}><div className="info"><b>{o.title || 'Naamloze opkomst'}</b><span className="hint">{isKamp(o) ? 'Weekendkamp · ' + plural(o.days.length, 'dag', 'dagen') : fmtT(o.start) + '–' + fmtT(o.end)} · {plural(progBlocks(o).length, 'onderdeel', 'onderdelen')}</span></div>
               <div className="row"><button className="btn sm" onClick={() => nav(`/s/${sid}/bouwer/${o.id}`)}>Openen</button>
-                {can('bank') && <button className="btn sm" onClick={() => draftToBank(o)}>In bank zetten</button>}
+                {can('bank') && (can('build') ? <button className="btn sm to-bank" onClick={() => draftToBank(o)}>In bank zetten</button>
+                  : <ConfirmBtn className="btn sm to-bank" label="In bank zetten" confirm="Klik nogmaals: namen gaan niet mee" ariaLabel={`Concept ${o.title || 'Naamloze opkomst'} in de bank zetten`} onConfirm={() => draftToBank(o)} />)}
                 {can('build') && <ConfirmBtn className="btn sm ghost" label="Verwijderen" confirm="Klik nogmaals" ariaLabel={`Concept ${o.title || 'Naamloze opkomst'} verwijderen`} onConfirm={() => remove(o)} />}</div></div>)}</div></section>}
         </div>}
       <aside className={'card side sheet' + (T || G ? ' editing' : '')}>
-        {T || G ? <div ref={sheetRef} {...sheetProps}>{T ? <TplEditor key={T.id} t={T} own={own} groupOn={groupOn} onClose={() => setSel(null)} onDelete={() => remove(T)} onCopied={id => setSelRaw(id)} />
+        {T || G ? <div ref={sheetRef} {...sheetProps}>{T ? <TplEditor key={T.id} t={T} own={own} groupOn={groupOn} onClose={() => setSel(null)} onDelete={() => remove(T)} onCopied={id => { setSelRaw(id); sideInView(); focusAfter('#tf-title'); }} />
           : G && <SharedView key={G.id} x={G} copied={copied.has(G.id)} onClose={() => setSel(null)} onCopy={() => doCopy(G)} />}</div>
             : <div className="pad stack"><h2 className="h-sm">{g ? 'Uit de groepsbank' : 'Opkomst uit de bank'}</h2><p className="muted">{g ? 'Kies een opkomst om de onderdelen te zien en hem naar jullie eigen bank te kopiëren.' : 'Kies een opkomst om de onderdelen te zien, hem te openen of in te plannen.'}</p></div>}
       </aside>
@@ -162,7 +171,7 @@ function TplEditor({ t, own, groupOn, onClose, onDelete, onCopied }: { t: Opk; o
     <BlockList o={t} />
     {!ro && <div className="stack" style={{ gap: 4 }}><div className="row"><ConfirmBtn label="Uit de bank verwijderen" confirm="Klik nogmaals om te verwijderen" onConfirm={onDelete} /></div>
       <p className="hint">Ingeplande opkomsten blijven staan.{groupOn && t.shared ? ' Hij verdwijnt ook uit de groepsbank; kopieën van andere speltakken blijven.' : ''}</p></div>}
-    {!ro && <SaveBar dirty={dirty} title={d.title} taken={(n, c) => nameTaken(own, n, c ? null : t.id)} suggest={freeName(own, d.title || t.title)} onCancel={cancel} onSave={save} onCopy={copy} />}
+    {!ro && <SaveBar dirty={dirty} title={d.title} origTitle={t.title} taken={(n, c) => nameTaken(own, n, c ? null : t.id)} suggest={freeName(own, d.title || t.title)} onCancel={cancel} onSave={save} onCopy={copy} />}
   </div>;
 }
 

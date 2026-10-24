@@ -9,7 +9,7 @@ import { Chip, ConfirmBtn, Field, TimePicker, useDebouncedInput } from '../compo
 import { download, slugify } from '../lib/export';
 import { lastSpeltak } from '../lib/lastSpeltak';
 import { fmtNL, fmtT, initials, plural, todayISO, uid, DAYS, MONTHS } from '../lib/time';
-import { ACCENTS, normLib, normOpk, normPlan, normSettings, prepLabel, PREP_OPTS, SPELTAKKEN, SWATCHES, SWATCH_NAMES, type Opk, type Plan, type Settings } from '../lib/model';
+import { ACCENTS, freeName, nameTaken, normLib, normOpk, normPlan, normSettings, prepLabel, PREP_OPTS, SPELTAKKEN, SWATCHES, SWATCH_NAMES, type Opk, type Plan, type Settings } from '../lib/model';
 import { ALL_PERMS, DEFAULT_LEIDING_PERMS, PERM_HELP, PERM_LABELS, isTeamleider, type Invite, type Member, type PermKey, type Perms } from '../lib/types';
 import { ensureTlIds, inviteOnce, isEmail, releaseOwnName, removeGroupAdmin, renewInvite, setGroupAdmin, setTeamleider, stepDownTeamleider, transferJoiners, transferTeamleider } from '../store/beheer';
 import { useRoles } from '../store/roles';
@@ -185,11 +185,17 @@ function Restore() {
           if (fresh && s.logo) Object.assign(merged, { logo: s.logo, logoW: s.logoW, logoH: s.logoH });
           return merged;
         });
-        let added = 0, present = 0, taken = 0, drafts = 0;
+        let added = 0, present = 0, taken = 0, drafts = 0, renamed = 0;
         // de activiteitenbank alleen met het recht Banken (zo staat het ook in de regels)
         const libs: any[] = Array.isArray(d.lib) ? d.lib : [], skipLib = libs.length > 0 && !can('bank');
         const haveL = new Set(L.lib.map(l => l.id)), haveO = new Set(L.opks.map(o => o.id)), haveP = new Set(L.plans.map(p => p.id));
-        if (!skipLib) libs.forEach((x: any) => { const l = normLib(x); if (haveL.has(l.id)) { present++; return; } haveL.add(l.id); saveLib(l); added++; });
+        // namen in een bank zijn uniek: bestaat de naam al (bij jullie of eerder in de back-up), dan krijgt het nieuwe item een vrije naam
+        const libList: { id: string; title: string }[] = [...L.lib];
+        if (!skipLib) libs.forEach((x: any) => {
+          const l = normLib(x); if (haveL.has(l.id)) { present++; return; }
+          if (nameTaken(libList, l.title)) { l.title = freeName(libList, l.title); renamed++; }
+          haveL.add(l.id); libList.push(l); saveLib(l); added++;
+        });
         // planning: eerst bepalen welke rijen er echt bij komen
         const slots = new Set(L.plans.map(p => p.slot).filter(Boolean)), rows: Plan[] = [];
         d.plans.forEach((x: any) => {
@@ -203,11 +209,14 @@ function Restore() {
         const newOpks = new Map<string, Opk>();
         // de opkomstenbank ook alleen met het recht Banken (zo staat het ook in de regels)
         let skipBank = false;
+        // alleen de opkomstenbank heeft unieke namen; concepten en ingeplande opkomsten niet
+        const bankList: { id: string; title: string }[] = L.opks.filter(o => o.state === 'bank');
         d.opks.forEach((x: any) => {
           const o = normOpk(x, settings);
           if (haveO.has(o.id)) { present++; return; }
           if (o.state === 'bank' && !can('bank')) { skipBank = true; return; }
           haveO.add(o.id);
+          if (o.state === 'bank') { if (nameTaken(bankList, o.title)) { o.title = freeName(bankList, o.title); renamed++; } bankList.push(o); }
           if (o.state === 'planned' && !linked.has(o.id)) { o.state = 'draft'; drafts++; }
           newOpks.set(o.id, o); saveOpk(o); added++;
         });
@@ -219,10 +228,10 @@ function Restore() {
           }
           savePlan(p); added++;
         });
-        const parts = [`${added} nieuw`, ...(present ? [`${present} al aanwezig (overgeslagen)`] : []), ...(taken ? [`${plural(taken, 'datum', 'data')} al bezet (overgeslagen)`] : [])];
+        const parts = [`${added} nieuw`, ...(present ? [`${present} al aanwezig (overgeslagen)`] : []), ...(taken ? [`${plural(taken, 'datum', 'data')} al bezet (overgeslagen)`] : []), ...(renamed ? [`${renamed} hernoemd (naam bestond al)`] : [])];
         toast(`Back-up teruggezet: ${parts.join(', ')}.` + (drafts ? ` ${plural(drafts, 'opkomst', 'opkomsten')} zonder datum bij de concepten gezet.` : '')
           + (skipLib || skipBank ? ` ${skipLib && skipBank ? 'Activiteiten en opkomsten uit de bank' : skipLib ? 'Activiteiten' : 'Opkomsten uit de bank'} overgeslagen: daarvoor heb je het recht Banken nodig.` : ''),
-          undefined, present || taken || drafts || skipLib || skipBank ? 9000 : undefined);
+          undefined, present || taken || drafts || renamed || skipLib || skipBank ? 9000 : undefined);
       } catch { toast('Dit bestand kan niet worden gelezen.'); }
     };
     rd.readAsText(f);

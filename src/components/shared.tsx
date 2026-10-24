@@ -2,8 +2,9 @@ import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useSpeltak } from '../store/speltak';
 import { withFreeName } from '../store/modal';
 import type { Gedeeld } from '../store/groepsbank';
-import { progBlocks, analyze, catOf, freeName, isKamp, minNeed, nameTaken, opkCatOf, progEmpty, type Cat, type Opk, type Day } from '../lib/model';
-import { fmtDur, fmtT, plural } from '../lib/time';
+import { progBlocks, analyze, catOf, freeName, isKamp, minNeed, nameTaken, opkCatOf, progEmpty, sameName, toBank, type Cat, type Opk, type Day } from '../lib/model';
+import { clone, fmtDur, fmtT, plural } from '../lib/time';
+import { toast, undoAction } from '../store/toast';
 import { makePdf } from '../lib/export';
 import { Trash2 } from 'lucide-react';
 import { ConfirmBtn } from './ui';
@@ -43,6 +44,42 @@ export function askBankName(o: Opk, bank: Opk[], except: string | null, ok: (nam
     title: 'Andere naam kiezen', sub: o.title.trim() ? `"${o.title.trim()}" staat al in de opkomstenbank. Kies een andere naam.` : 'Geef de opkomst een titel voor de bank.', label: 'Opkomst titel', okLabel: 'In bank zetten',
     suggest: o.title.trim() ? freeName(bank, o.title) : '', taken: n => nameTaken(bank, n, except), ok,
   });
+}
+
+/**
+ * Concept zelf de bank in zetten (zonder namen; met een groep meteen gedeeld). Met het recht Opkomsten kan het terug met Ongedaan maken:
+ * de opkomst komt weer als concept mét namen. Dat gaat met verwijderen en opnieuw aanmaken, meteen na elkaar (de regels laten een
+ * bank-opkomst niet terug naar concept gaan); de synchronisatie haalt hem dan ook uit de groepsbank.
+ */
+export function conceptToBank(o: Opk, name: string, latest: () => Speltak) {
+  const S = latest(), back = clone(o);
+  S.saveOpk(toBank(o, name));
+  const msg = (S.sp?.gid ? 'In de opkomstenbank gezet en gedeeld met de groep' : 'In de opkomstenbank gezet') + ', zonder namen van leiding';
+  toast(msg, S.can('build') ? undoAction(() => {
+    const L = latest(), cur = L.getO(back.id); if (cur?.state !== 'bank') return;
+    L.deleteOpk(back.id); L.saveOpk(clone(back));
+  }) : undefined);
+}
+
+/** Focus na iets wat de knop met de focus weghaalt (verwijderen, in de bank zetten, kopiëren): het eerste element dat er dan is. */
+export const focusAfter = (...sels: string[]) => setTimeout(() => {
+  for (const q of sels) { const el = q ? document.querySelector<HTMLElement>(q) : null; if (el) { el.focus({ preventScroll: true }); el.scrollIntoView?.({ block: 'nearest' }); return; } }
+}, 30);
+/** Selector voor een kaart in een bank (data-id). */
+export const cardSel = (id: string) => `.bcard[data-id="${CSS.escape(id)}"]`;
+
+/**
+ * Breed scherm: het zijpaneel van een bank plakt pas onder de kopbalk als je wat naar beneden scrolt; bovenaan de pagina staat het lager
+ * en valt de opslaan-balk onder de rand van het scherm. Dan de pagina schuiven tot het paneel op zijn plakplek staat (zoals editorInView in de bouwer).
+ */
+export function sideInView() {
+  setTimeout(() => {
+    if (window.matchMedia?.('(max-width: 900px)').matches) return;
+    const el = document.querySelector<HTMLElement>('.bank > aside.side'); if (!el || !el.querySelector('.savebar')) return;
+    const r = el.getBoundingClientRect(), stick = parseFloat(getComputedStyle(el).top) || 80;
+    if (r.bottom <= window.innerHeight || r.top <= stick + 1) return;
+    window.scrollBy({ top: r.top - stick, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }, 30);
 }
 
 /** Paginakop. `small`: op het dashboard, zodat de komende opkomst (64 px) het grootst blijft. */
@@ -102,8 +139,11 @@ export function PickOpk({ o, label, onPick, primary = false, extra, kicker, cats
 }
 
 /** Onderbalk bij het bewerken van iets uit een bank: Annuleren / Opslaan / Opslaan als kopie (met nieuwe naam). */
-export function SaveBar({ dirty, isNew, newHint = 'Geef eerst een titel op.', title, taken, suggest, onCancel, onSave, onCopy, sticky }: {
-  dirty: boolean; isNew?: boolean; newHint?: string; title: string; taken: (name: string, copy: boolean) => boolean; suggest: string;
+export function SaveBar({ dirty, isNew, newHint = 'Geef eerst een titel op.', title, origTitle, taken, suggest, onCancel, onSave, onCopy, sticky }: {
+  dirty: boolean; isNew?: boolean; newHint?: string; title: string;
+  /** opgeslagen titel: staat die al dubbel in de bank (back-up, Ongedaan maken, twee apparaten), dan blokkeert alleen een nieuwe dubbele naam Opslaan */
+  origTitle?: string;
+  taken: (name: string, copy: boolean) => boolean; suggest: string;
   onCancel: () => void; onSave: () => void; onCopy: (name: string) => void; sticky?: boolean;
 }) {
   const [copying, setCopying] = useState(false);
@@ -118,7 +158,8 @@ export function SaveBar({ dirty, isNew, newHint = 'Geef eerst een titel op.', ti
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(set); ro?.observe(el);
     return () => { ro?.disconnect(); root.style.removeProperty('--saveh'); };
   }, []);
-  const why = (n: string, copy = false) => !n.trim() ? 'Geef een titel op.' : taken(n, copy) ? 'Deze naam bestaat al in de bank. Kies een andere naam.' : '';
+  const why = (n: string, copy = false) => !n.trim() ? 'Geef een titel op.'
+    : taken(n, copy) && (copy || isNew || origTitle === undefined || !sameName(n, origTitle)) ? 'Deze naam bestaat al in de bank. Kies een andere naam.' : '';
   // net aangemaakt en nog niets ingevuld: geen rode fout (je hebt nog niets fout gedaan), alleen een gewone aanwijzing; Opslaan kan nog niet.
   // Na de eerste invoer (ook weer leeggemaakt) wel de fout, en die leest een schermlezer dan voor.
   const pristine = !!isNew && !dirty && !title.trim();

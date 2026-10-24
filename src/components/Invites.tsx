@@ -64,7 +64,7 @@ export function InviteList({ invites, showWhere = true, renew }: { invites: Invi
     return <div key={i.id} className="invrow">
       <div style={{ minWidth: 0 }}>
         <b className="ell">{i.email}</b>
-        <div className="hint ell">{KIND_LABELS[i.kind]}{showWhere ? ` · ${where_(i)}` : ''}{i.transfer ? ' · overdracht' : ''} · {exp ? <span className="err">verlopen</span> : `geldig t/m ${validUntil(i)}`}</div>
+        <div className="hint invmeta">{KIND_LABELS[i.kind]}{showWhere ? ` · ${where_(i)}` : ''}{i.transfer ? ' · overdracht' : ''} · <span className="invexp">{exp ? <span className="err">verlopen</span> : `geldig t/m ${validUntil(i)}`}</span></div>
       </div>
       <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
         {!exp && <button className="btn sm ghost" onClick={() => copyText(inviteUrl(i.id))} title="Link kopiëren"><Copy size={14} />Link</button>}

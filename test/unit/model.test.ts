@@ -515,3 +515,13 @@ test('hasPdfPage: een uitlegpagina alleen als die aan staat en er iets te lezen 
   assert.equal(M.hasPdfPage(b({ materials: 'Touw' })), true);
   assert.equal(M.hasPdfPage(b({ desc: 'Zo gaat het', pdfPage: false })), false, 'uitgezet');
 });
+
+test('vast blok in de activiteitenbank of in een kamp wordt een gewoon onderdeel', () => {
+  assert.equal(M.normLib({ id: 'l', title: 'Openen', cat: '__open' }).cat, '', 'normLib: vaste categorie valt weg');
+  assert.equal(M.normLib({ id: 'l', title: 'Spel', cat: 'spel' }).cat, 'spel', 'gewone categorie blijft');
+  assert.equal(M.blockFromLib(M.normLib({ id: 'l', cat: '__ranja' }), 600).cat, '', 'ingepland vanuit de bank: geen vast blok');
+  const k = M.normOpk({ id: 'k', kind: 'kamp', days: [{ label: 'Zaterdag', start: 480, end: 1380, blocks: [{ id: 'b', start: 540, dur: 15, cat: '__open' }, { id: 'c', start: 600, dur: 30, cat: 'spel' }] }] });
+  assert.deepEqual(k.days[0].blocks.map(b => b.cat), ['', 'spel'], 'kamp: vast blok wordt een gewoon onderdeel');
+  const o = M.normOpk({ id: 'o', blocks: [{ id: 'b', start: 840, dur: 15, cat: '__open' }] });
+  assert.equal(o.blocks[0].cat, '__open', 'gewone opkomst houdt zijn vaste blokken');
+});

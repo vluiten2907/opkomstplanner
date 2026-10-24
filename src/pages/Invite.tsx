@@ -30,6 +30,8 @@ export default function InvitePage() {
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
   // Wachtwoord vergeten: de mail is verstuurd (melding blijft hier staan, het tabblad met de uitnodiging blijft open)
   const [resetSent, setResetSent] = useState('');
+  // registreren gaf 'al een account met dit adres': dan weten we zeker dat het account bestaat
+  const [known, setKnown] = useState(false);
   // gebruikersnaam die bij het aanmaken is gekozen, voor het toetreden na het bevestigen van het e-mailadres
   const [chosen, setChosen] = useState('');
   // Naam al bezet in deze groep (bijv. een bestaand account uit een andere groep): dan kies je hier een naam voor deze groep.
@@ -144,7 +146,7 @@ export default function InvitePage() {
         if (e?.code === 'name') setErr('Vul je gebruikersnaam in.');
         else if (e?.code === 'fullname') setErr('Vul je voor- en achternaam in.');
         // al een account met dit adres (bijv. leiding uit een andere groep): inloggen, het wachtwoord blijft staan
-        else if (mode === 'register' && String(e?.code || '').includes('email-already-in-use')) { setMode('login'); setChosen(''); setErr(HAVE_ACCOUNT); }
+        else if (mode === 'register' && String(e?.code || '').includes('email-already-in-use')) { setMode('login'); setChosen(''); setKnown(true); setErr(HAVE_ACCOUNT); }
         else failJoin(e, auth.currentUser?.displayName || '');
         setBusy(false);
       }
@@ -153,7 +155,11 @@ export default function InvitePage() {
     // Firebase zegt meestal niet of er een account is (dan komt er stil geen mail): dus voorzichtig, zoals op de inlogpagina.
     const forgot = async () => {
       setErr(''); setResetSent(''); setBusy(true);
-      try { await reset(inv.email); setResetSent(`Als er een account is met ${inv.email}, staat er nu een mail klaar om een nieuw wachtwoord te kiezen. Niets ontvangen? Kijk in je spammap, of maak hieronder een nieuw account aan.`); }
+      try {
+        await reset(inv.email);
+        setResetSent(known ? `We hebben een mail gestuurd naar ${inv.email} om een nieuw wachtwoord te kiezen. Daarna log je hier in. Niets ontvangen? Kijk in je spammap.`
+          : `Als er een account is met ${inv.email}, staat er nu een mail klaar om een nieuw wachtwoord te kiezen. Niets ontvangen? Kijk in je spammap, of maak hieronder een nieuw account aan.`);
+      }
       catch (e: any) {
         // zegt Firebase het wel: dan een account aanmaken
         if (String(e?.code || '').includes('user-not-found')) { setMode('register'); setErr(NO_ACCOUNT); }
