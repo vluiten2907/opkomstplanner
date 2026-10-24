@@ -7,7 +7,7 @@ import { useAuth } from '../store/auth';
 import { useRoles } from '../store/roles';
 import { toast } from '../store/toast';
 import PageHead from '../components/PageHead';
-import { ConfirmBtn, Field, announce } from '../components/ui';
+import { BusyButton, ConfirmBtn, Field, announce } from '../components/ui';
 import { InviteLink, InviteList, useOpenInvites, type InviteScope } from '../components/Invites';
 import { addMember, setPerms, claimName, releaseName, syncNames, createGroep, newGroepId, createInvite, inviteOnce, renewInvite, revokeInvite, createSpeltakInGroep, deleteSpeltak, deleteGroep, countOpkomsten, ensureTlIds, findAccount, readAccounts, removeFromTeam, type AccountInfo, transferTeamleider, type Person, isEmail, linkSpeltak, removeGroupAdmin, removeRootPerson, renameGroep, setGroupAdmin, setTeamleider, type Me } from '../store/beheer';
 import { DEFAULT_LEIDING_PERMS, PERM_LABELS, normPerms, normSpeltak, isTeamleider, type Admin, type Member, type PermKey, type Groep, type Invite, type Speltak } from '../lib/types';
@@ -114,7 +114,7 @@ function RootCard({ me, invites }: { me: Me; invites: Invite[] }) {
     try {
       const inp = { kind: 'totaal' as const, email, transfer };
       const r = await inviteOnce(inp, me.uid, invites, () => createInvite(inp, me));
-      setInv(r.inv); setEmail(''); if (r.reused) reusedNote(r.inv.email);
+      setInv(r.inv); setEmail(''); if (r.reused) reusedNote(r.inv.email); else announce(`Uitnodiging gemaakt voor ${em}. De link staat hieronder.`);
     } catch (e) { err(e, 'Uitnodiging maken mislukt.'); }
     setBusy(false);
   };
@@ -125,7 +125,7 @@ function RootCard({ me, invites }: { me: Me; invites: Invite[] }) {
       <h3><UserPlus size={16} style={{ verticalAlign: -3, marginRight: 6 }} />Mede-beheerder (totaal) uitnodigen of je rol overdragen</h3>
       <div className="row"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="e-mailadres" aria-label="E-mailadres" style={{ flex: '1 1 220px' }} />
         <label className="toggle-inline"><input type="checkbox" checked={transfer} onChange={e => setTransfer(e.target.checked)} />Ik draag mijn rol over</label>
-        <button className="btn primary" disabled={busy} onClick={send}><Link2 size={16} />Uitnodigingslink maken</button></div>
+        <BusyButton className="btn primary" busy={busy} onClick={send}><Link2 size={16} />Uitnodigingslink maken</BusyButton></div>
       {transfer && <p className="hint">Je blijft beheerder tot de ander de uitnodiging accepteert. Daarna tik je hierboven bij jezelf op Aftreden.</p>}
       {inv && <InviteLink key={inv.id} inv={inv} fromName={me.name} onClose={() => setInv(null)} />}
     </div>
@@ -172,7 +172,7 @@ function NewGroup({ me, groups }: { me: Me; groups: Groep[] }) {
       : <section className="card pad stack">
         <h2>Nieuwe Scouting-groep</h2>
         <Field label="Naam van de groep" htmlFor="ng-name" hint="Daarna maak je de speltakken en nodig je de teamleiders uit. Een beheerder van de groep kies je uit de leiding."><input id="ng-name" value={name} maxLength={60} onChange={e => setName(e.target.value)} placeholder="bijv. Scoutinggroep De Verkenners" /></Field>
-        <div className="row"><button className="btn primary" disabled={busy} onClick={make}>Groep aanmaken</button><button className="btn ghost" onClick={() => setOpen(false)}>Annuleren</button></div>
+        <div className="row"><BusyButton className="btn primary" busy={busy} onClick={make}>Groep aanmaken</BusyButton><button className="btn ghost" onClick={() => setOpen(false)}>Annuleren</button></div>
       </section>}
   </div>;
 }
@@ -199,7 +199,7 @@ function Unlinked({ list, groups, me }: { list: Speltak[]; groups: Groep[]; me: 
   return <section className="card pad stack">
     <div className="row between"><h2>Nog niet gekoppeld</h2><span className="hint">{plural(list.length, 'speltak', 'speltakken')}</span></div>
     <p className="hint">Deze speltakken bestonden al voor de groepen er waren. Koppel ze aan een groep; teamleiders en leiding houden hun rol.</p>
-    <div className="row"><button className="btn primary" disabled={busy} onClick={auto}>Groepen maken op groepsnaam en alles koppelen</button></div>
+    <div className="row"><BusyButton className="btn primary" busy={busy} onClick={auto}>Groepen maken op groepsnaam en alles koppelen</BusyButton></div>
     <div className="picklist">{list.map(sp => <div key={sp.id} className="pick"><div className="info"><b>{[sp.groupName || 'Zonder groepsnaam', sp.name].join(' · ')}</b>
       <span className="hint">{teamleiders(sp) || 'geen teamleider'} · {plural(sp.memberIds.length, 'lid', 'leden')}</span></div>
       {groups.length > 0 && <div className="row" style={{ gap: 6 }}><select className="inp" value={pick[sp.id] || ''} onChange={e => setPick(p => ({ ...p, [sp.id]: e.target.value }))} aria-label="Groep kiezen" style={{ width: 'auto', flex: '1 1 160px' }}><option value="">Kies groep…</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
@@ -404,7 +404,7 @@ function PersonPicker({ pool, exclude, label, emailLabel, button, groupName, onP
       </select>}
       {!sel && <input className="inp" type="email" value={email} onChange={e => { setEmail(e.target.value); setTaken(null); }} onKeyDown={e => { if (e.key === 'Enter') go(); }} placeholder={list.length ? 'of e-mailadres' : 'e-mailadres'} aria-label={emailLabel} autoComplete="off" style={{ flex: '1 1 200px' }} />}
       {children}
-      <button className="btn" disabled={busy} onClick={go}><UserPlus size={16} />{button}</button>
+      <BusyButton className="btn" busy={busy} onClick={go}><UserPlus size={16} />{button}</BusyButton>
     </div>
     {taken && <Field label={`Naam in ${groupName}`} htmlFor={'pp-name-' + taken.p.uid} hint={`${taken.tried} is al in gebruik binnen ${groupName}. Namen zijn uniek binnen een groep; kies een naam waaronder ${taken.p.email || 'deze persoon'} hier bekend is.`}>
       <input id={'pp-name-' + taken.p.uid} value={taken.name} maxLength={40} onChange={e => setTaken({ ...taken, name: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') go(); }} placeholder="bijv. Akela Welpen" autoComplete="off" />

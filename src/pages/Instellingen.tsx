@@ -1,11 +1,11 @@
-import { useEffect, useId, useRef, useState, type InputHTMLAttributes } from 'react';
+import { useEffect, useId, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Download, Link2, Trash2, UserPlus } from 'lucide-react';
 import { useAuth } from '../store/auth';
 import { useSpeltak } from '../store/speltak';
 import { toast } from '../store/toast';
 import { PageTitle } from '../components/shared';
-import { Chip, ConfirmBtn, Field, TimePicker, useDebouncedInput } from '../components/ui';
+import { BusyButton, Chip, ConfirmBtn, Field, TimePicker, announce, useDebouncedInput } from '../components/ui';
 import { download, slugify } from '../lib/export';
 import { lastSpeltak } from '../lib/lastSpeltak';
 import { fmtNL, fmtT, initials, plural, todayISO, uid, DAYS, MONTHS } from '../lib/time';
@@ -45,17 +45,15 @@ export default function Instellingen() {
     {/* kolommen lopen van boven naar beneden: volgorde = leesvolgorde (en zo zijn de kolommen ongeveer even lang) */}
     <div className="settings">
       <Team />
-      <fieldset className="card pad stack" disabled={!edit}>
-        <h2>Je groep</h2>
+      <SetCard title="Je groep" edit={edit}>
         {/* Onder een groep hoort de naam bij de groep (ook in uitnodigingen en pdf's): die past de beheerder aan in Beheer. */}
         {S.sp?.gid ? <Field label="Naam van de groep" htmlFor="gs-name" hint="Wijzigen kan de beheerder van de groep in Beheer."><input id="gs-name" value={settings.groupName} readOnly aria-readonly="true" /></Field>
           : <Field label="Naam van de groep" htmlFor="gs-name"><DebText id="gs-name" value={settings.groupName} onCommit={v => set({ groupName: v.trim() })} required="Vul de naam van de groep in." maxLength={60} placeholder="bijv. Scoutinggroep De Verkenners" /></Field>}
         <Field label="Speltak" htmlFor="gs-speltak"><DebText id="gs-speltak" list="speltaklist" value={settings.speltak} onCommit={v => set({ speltak: v.trim() })} required="Vul de naam van de speltak in." maxLength={60} placeholder="bijv. Scouts" /><datalist id="speltaklist">{SPELTAKKEN.map(x => <option key={x} value={x} />)}</datalist></Field>
         <Logo />
         <Field label="Kleur"><div className="accents">{Object.entries(ACCENTS).map(([k, a]) => <button key={k} className="acc" aria-pressed={settings.accent === k} style={{ ['--c' as any]: a.l }} onClick={() => set({ accent: k })}><i />{a.label}</button>)}</div></Field>
-      </fieldset>
-      <fieldset className="card pad stack" disabled={!edit}>
-        <h2>Standaardtijden en seizoen</h2>
+      </SetCard>
+      <SetCard title="Standaardtijden en seizoen" edit={edit}>
         <div className="two">
           <Field label="Begintijd" className="timefield"><TimePicker value={settings.defStart} from={360} to={1430} onChange={v => { const p: Partial<Settings> = { defStart: v }; if (settings.defEnd <= v) { p.defEnd = v + 60; toast('Standaard eindtijd verschoven naar ' + fmtT(v + 60)); } set(p); }} /></Field>
           <Field label="Eindtijd" className="timefield"><TimePicker value={settings.defEnd} from={365} to={1435} onChange={v => { if (v <= settings.defStart) { toast('De eindtijd moet na de begintijd liggen.'); return; } set({ defEnd: v }); }} /></Field>
@@ -69,32 +67,27 @@ export default function Instellingen() {
           <Field label="Seizoen begint in"><select value={settings.seasonStartMonth} onChange={e => set({ seasonStartMonth: +e.target.value })}>{monthOpts}</select></Field>
           <Field label="Seizoen eindigt in"><select value={settings.seasonEndMonth} onChange={e => set({ seasonEndMonth: +e.target.value })}>{monthOpts}</select></Field>
         </div>
-      </fieldset>
-      <fieldset className="card pad stack" disabled={!edit}>
-        <h2>Vaste blokken</h2>
+      </SetCard>
+      <SetCard title="Vaste blokken" edit={edit}>
         <label className="toggle"><input type="checkbox" checked={settings.fixedOn} onChange={e => set({ fixedOn: e.target.checked })} /><span><b>Vaste blokken toevoegen</b><br /><span className="hint">Openen, ranja drinken en sluiten staan dan automatisch in elke nieuwe opkomst (niet bij kampen).</span></span></label>
         {settings.fixedOn && <div className="three">{([['fixedOpen', 'Openen'], ['fixedRanja', 'Ranja drinken'], ['fixedClose', 'Sluiten']] as const).map(([k, l]) => <Field key={k} label={l}><select value={settings[k]} onChange={e => set({ [k]: +e.target.value } as Partial<Settings>)}>{[0, 5, 10, 15, 20, 25, 30].map(m => <option key={m} value={m}>{m ? m + ' min' : 'Niet'}</option>)}</select></Field>)}</div>}
-      </fieldset>
-      <fieldset className="card pad stack" disabled={!edit}>
-        <h2>Brieven</h2>
+      </SetCard>
+      <SetCard title="Brieven" edit={edit}>
         <Field label="Brief standaard versturen" hint="voor de opkomst"><select value={settings.letterDays} onChange={e => set({ letterDays: +e.target.value })}>{dayOpts([7, 10, 14, 21, 28, 42])}</select></Field>
         <Field label="Melding op het dashboard" hint="voor de verzenddatum"><select value={settings.letterNotice} onChange={e => set({ letterNotice: +e.target.value })}>{dayOpts([3, 7, 10, 14, 21])}</select></Field>
-      </fieldset>
-      <fieldset className="card pad stack" disabled={!edit}>
-        <h2>Categorieën</h2>
+      </SetCard>
+      <SetCard title="Categorieën" edit={edit}>
         <div className="stack" style={{ gap: 8 }}>{settings.categories.map(c => <CatRow key={c.id} label={c.label} color={c.color}
           onLabel={v => setCat(c.id, { label: v })} onColor={v => setCat(c.id, { color: v })} onRemove={() => set(s => ({ categories: s.categories.filter(x => x.id !== c.id) }))} />)}</div>
         <AddRow placeholder="Nieuwe categorie" onAdd={v => set(s => ({ categories: [...s.categories, { id: uid(), label: v, color: SWATCHES[s.categories.length % SWATCHES.length] }] }))} />
-      </fieldset>
-      <fieldset className="card pad stack" disabled={!edit}>
-        <h2>Extra leiding</h2>
+      </SetCard>
+      <SetCard title="Extra leiding" edit={edit}>
         <p className="hint">Leden van het team staan hierboven en zijn automatisch in te delen. Hier zet je namen van leiding of hulpouders zonder account.</p>
         <NameList items={settings.leaders} placeholder="Naam" label="Naam leiding" onChange={fn => set(s => ({ leaders: fn(s.leaders) }))} dedupe />
-      </fieldset>
-      <fieldset className="card pad stack" disabled={!edit}>
-        <h2>Locaties</h2>
+      </SetCard>
+      <SetCard title="Locaties" edit={edit}>
         <NameList items={settings.locations} placeholder="bijv. Speelveld" label="Locatie" onChange={fn => set(s => ({ locations: fn(s.locations) }))} />
-      </fieldset>
+      </SetCard>
       <section className="card pad stack">
         <h2>Back-up</h2>
         <div className="row"><button className="btn" onClick={() => {
@@ -131,6 +124,12 @@ function Logo() {
   </div></div>;
 }
 
+/** Blok instellingen: de kop geeft het blok zijn naam (een schermlezer noemt hem bij elk veld erin). Uit als je niet mag aanpassen. */
+function SetCard({ title, edit, children }: { title: string; edit: boolean; children: ReactNode }) {
+  const id = useId();
+  return <fieldset className="card pad stack" disabled={!edit} aria-labelledby={id}><h2 id={id}>{title}</h2>{children}</fieldset>;
+}
+
 /** Categorie: naam, één kleurstip (een klik klapt de kleuren uit) en verwijderen. */
 function CatRow({ label, color, onLabel, onColor, onRemove }: { label: string; color: string; onLabel: (v: string) => void; onColor: (v: string) => void; onRemove: () => void }) {
   const [open, setOpen] = useState(false);
@@ -155,7 +154,7 @@ function NameList({ items, placeholder, label, onChange, dedupe }: { items: stri
 function AddRow({ placeholder, label = placeholder, onAdd }: { placeholder: string; label?: string; onAdd: (v: string) => void }) {
   const [v, setV] = useState('');
   const add = () => { const t = v.trim(); if (!t) return; onAdd(t); setV(''); };
-  return <div className="row"><input className="inp" value={v} onChange={e => setV(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} placeholder={placeholder} aria-label={label} style={{ flex: 1 }} /><button className="btn" onClick={add}>Toevoegen</button></div>;
+  return <div className="row"><input className="inp" value={v} onChange={e => setV(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} placeholder={placeholder} aria-label={label} style={{ flex: 1 }} /><button className="btn" onClick={add} aria-label={`${label} toevoegen`}>Toevoegen</button></div>;
 }
 
 /* ---------- Back-up terugzetten (ook uit de losse versie) ---------- */
@@ -304,7 +303,9 @@ function Team() {
       // Staat er al een geldige uitnodiging met dezelfde rol en rechten voor dit adres? Dan die link, geen tweede.
       const r = await inviteOnce({ kind: k, email: em, gid: sp.gid, sid: sp.id, perms: p, transfer }, user!.uid, open, () => createInvite(em, k, p, transfer));
       setInv(r.inv); setEmail('');
+      // de link verschijnt verderop: een schermlezer hoort dat hij er is (de focus blijft op de knop)
       if (r.reused) toast(`Er stond al een uitnodiging voor ${em}. Dit is dezelfde link.`);
+      else announce(`Uitnodiging gemaakt voor ${em}. De link staat hieronder.`);
     } catch { toast('Uitnodiging maken mislukt.'); }
     finally { busyRef.current = false; setBusy(false); }
   };
@@ -332,7 +333,7 @@ function Team() {
       {needTl && <p className="hint">Er is nog geen teamleider: wie je nu uitnodigt, wordt teamleider.</p>}
       {eff === 'leiding' && <PermGrid perms={perms} onChange={(k, v) => setPerms({ ...perms, [k]: v })} />}
       {eff === 'transfer' && <p className="hint">De ander komt eerst in het team als leiding met alle rechten. Daarna staat bij die persoon de knop Rol overdragen: hij wordt teamleider, jij blijft leiding. Zit je opvolger al in het team? Draag dan direct over via Rechten bij die persoon.</p>}
-      <div className="row"><button className="btn primary" disabled={busy} onClick={invite}><Link2 size={16} />Uitnodigingslink maken</button></div>
+      <div className="row"><BusyButton className="btn primary" busy={busy} onClick={invite}><Link2 size={16} />Uitnodigingslink maken</BusyButton></div>
       {inv && <InviteLink key={inv.id} inv={inv} fromName={myName} onClose={() => setInv(null)} />}
       <h3>Openstaande uitnodigingen</h3>
       <InviteList invites={open} showWhere={false} renew={{

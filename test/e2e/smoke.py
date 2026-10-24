@@ -236,6 +236,7 @@ with sync_playwright() as p:
     check(pg.locator('input[type=email]').input_value() == 'vincent@test.nl', 'uitnodiging: e-mailadres staat vast')
     check(pg.locator('main h1:has-text("nodigt je uit")').count() == 1 and pg.locator('h2').count() == 0 and pg.title() == 'Uitnodiging · Opkomstplanner', 'uitnodiging: kop (h1) in main en eigen paginatitel')
     check(pg.locator('#i-name').get_attribute('maxlength') == '40', 'uitnodiging: gebruikersnaam hoogstens 40 tekens')
+    check(pg.locator('#i-name').get_attribute('autocomplete') == 'nickname', 'uitnodiging: de browser vult bij Gebruikersnaam geen volledige naam in (autocomplete nickname)')
     pg.evaluate("localStorage.setItem('fake.noverify','1')")
     register('Vincent Test', 'vincent@test.nl')
     check('/uitnodiging/' in pg.url and pg.locator('text=Bevestig je e-mailadres').count() == 1, 'na registreren eerst e-mailadres bevestigen'); shot('00-bevestigen')
@@ -299,9 +300,16 @@ with sync_playwright() as p:
     check(pg.locator('#gs-name').get_attribute('readonly') is not None and pg.locator('.field:has(#gs-name) .hint:has-text("Wijzigen kan de beheerder van de groep in Beheer")').count() == 1,
           'speltak in een groep: naam van de groep alleen-lezen, met uitleg')
     check(pg.locator('.invite .chip:has-text("Teamleider")').count() == 0 and pg.locator('.invite .chip:has-text("Mijn rol overdragen")').count() == 1, 'teamleider kan geen extra teamleider uitnodigen, wel overdragen')
-    pg.fill('.invite input[type=email]', 'anna@test.nl'); pg.click('text=Uitnodigingslink maken'); w(600)
+    # met het toetsenbord (Enter op de knop): de focus blijft op de knop en een schermlezer hoort dat de link er is
+    pg.fill('.invite input[type=email]', 'anna@test.nl'); pg.evaluate("localStorage.setItem('fake.lag', '300')")
+    pg.locator('.invite button:has-text("Uitnodigingslink maken")').focus(); pg.keyboard.press('Enter'); w(100)
+    busy_inv = pg.evaluate("(() => { const a = document.activeElement; return [a.textContent.trim(), a.getAttribute('aria-disabled'), a.disabled]; })()"); w(900)
+    pg.evaluate("localStorage.removeItem('fake.lag')")
     link = pg.locator('.mono-code').inner_text()
     check('/uitnodiging/' in link, 'uitnodigingslink gemaakt')
+    inv_focus = pg.evaluate("document.activeElement.textContent.trim()"); inv_live = pg.locator('#sr-live').text_content()
+    check(busy_inv == ['Uitnodigingslink maken', 'true', False] and inv_focus == 'Uitnodigingslink maken' and inv_live == 'Uitnodiging gemaakt voor anna@test.nl. De link staat hieronder.',
+          f'team: Uitnodigingslink maken houdt de focus (ook terwijl hij bezig is) en meldt de link aan een schermlezer ({busy_inv}, {inv_focus!r}, {inv_live!r})')
     bn_txt = pg.locator('.invite .banknote').inner_text()
     check(re.search(r'geldig t/m \d\d-\d\d-\d{4}', bn_txt) is not None and 'dagen geldig' not in bn_txt and pg.locator('.invite .banknote button:has-text("Mail versturen")').count() == 1,
           'eigen uitnodiging: geldig t/m een datum, met Mail versturen')
@@ -3447,14 +3455,29 @@ with sync_playwright() as p:
       const ms = getComputedStyle(m), mr = cr(P(ms.color), P(ms.backgroundColor)); if (mr < 4.5) out.push('Ingepland (pagina) ' + mr.toFixed(2));
       document.querySelectorAll('.tmp-pill').forEach(x => x.remove());
       return out; }"""
-    low = {}
+    # donker op de telefoon: het statuslabel (Morgen, 5 min vrij) staat in de gloed (koper, 40 %); wit erop blijft ≥ 4,5:1, ook waar de gloed het felst is
+    GLOWPILL = """() => {
+      const P = s => { let m = s.match(/rgba?\\(([^)]+)\\)/), f = 1; if (!m) { m = s.match(/color\\(srgb ([^)]+)\\)/); f = 255; } if (!m) return null;
+        const p = m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number); return [p[0] * f, p[1] * f, p[2] * f, p.length > 3 ? p[3] : 1]; };
+      const over = (t, u) => [0, 1, 2].map(i => t[i] * t[3] + u[i] * (1 - t[3])).concat(1);
+      const L = c => { const f = v => (v /= 255) <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; return .2126 * f(c[0]) + .7152 * f(c[1]) + .0722 * f(c[2]); };
+      const cr = (a, u) => (Math.max(L(a), L(u)) + .05) / (Math.min(L(a), L(u)) + .05);
+      const hero = document.querySelector('.hero'), t = document.createElement('i'); t.style.cssText = 'position:absolute;background:var(--hero-bg)'; hero.appendChild(t);
+      const base = P(getComputedStyle(t).backgroundColor); t.remove();
+      const pop = P(getComputedStyle(hero.querySelector('.glow')).backgroundColor), glow = over([pop[0], pop[1], pop[2], .4], base);
+      return [...hero.querySelectorAll('.hero-eyebrow .pill.acc, .hero-eyebrow .pill.neutral')].map(e => { const st = getComputedStyle(e), bg = over(P(st.backgroundColor), glow);
+        return e.textContent.trim() + ' ' + cr(over(P(st.color), bg), bg).toFixed(2); }); }"""
+    low, glowp = {}, {}
     for acc in ['Marine', 'Groen', 'Blauw', 'Rood', 'Paars', 'Oranje', 'Grijs']:
         k.click('header.bar nav a[href$="/instellingen"]'); kw(500); k.click(f'.accents .acc:has-text("{acc}")'); kw(300)
         k.click('header.bar nav a[href$="/dashboard"]'); kw(600)
         r = k.evaluate(LOW)
         if r: low[acc] = r[:4]
         if acc == 'Oranje': k.screenshot(path=f'{OUT}/36b-dashboard-oranje.png')
+        k.emulate_media(color_scheme='dark'); kw(150); glowp[acc] = k.evaluate(GLOWPILL); k.emulate_media(color_scheme='light'); kw(100)
     check(not low, f'contrast: tekst en status op de kaart van de komende opkomst en Ingepland ≥ 4,5:1 bij elk accent ({low})')
+    gl_low = {a: v for a, v in glowp.items() if not v or any(float(x.rsplit(' ', 1)[1]) < 4.5 for x in v)}
+    check(not gl_low, f'donker: statuslabel op de kaart van de komende opkomst ≥ 4,5:1 boven de gloed, bij elk accent ({gl_low or glowp["Grijs"]})')
     kc.close()
     # --- toegankelijkheid (eigen oefendata): contrast licht en donker, groepen keuzeknoppen, namen van herhaalde knoppen, koppen, bevestigen met twee klikken
     ac = b.new_context(viewport={'width': 1360, 'height': 900}, locale='nl-NL', color_scheme='dark')
@@ -3527,6 +3550,52 @@ with sync_playwright() as p:
     a.mouse.move(5, 300); aw(3400); ms_off = cb.get_attribute('data-armed') is None
     check([kb_hold, kb_off, ms_hold, ms_off] == [True] * 4 and a.locator('.catrow').count() == n_cat,
           f'twee keer klikken: de vraag blijft staan met focus of muis erop (en wordt voorgelezen), verdwijnt 3 s daarna; niets verwijderd ({[kb_hold, kb_off, ms_hold, ms_off]})')
+    # instellingen: elk blok heeft zijn kop als naam, de drie knoppen Toevoegen zeggen waaraan
+    fsn = a.evaluate("[...document.querySelectorAll('main fieldset')].map(f => (document.getElementById(f.getAttribute('aria-labelledby') || '')?.textContent || '').trim())")
+    addn = a.evaluate("[...document.querySelectorAll('main fieldset .btn')].filter(b => b.textContent.trim() === 'Toevoegen').map(b => b.getAttribute('aria-label'))")
+    check(len(fsn) >= 7 and all(fsn) and 'Categorieën' in fsn and addn == ['Nieuwe categorie toevoegen', 'Nieuwe naam leiding toevoegen', 'Nieuwe locatie toevoegen'],
+          f'instellingen: blokken heten naar hun kop, Toevoegen zegt waaraan ({fsn}, {addn})')
+    # menu: de focusring valt binnen de link (het menu schuift en zou hem boven en onder afknippen)
+    a.goto(BASE + '/s/oefen/dashboard'); aw(1000)
+    a.locator('header.bar nav a').first.focus(); a.keyboard.press('Tab'); aw(100)
+    nfo = a.evaluate("(() => { const e = document.activeElement, n = e.closest('.nav'), r = e.getBoundingClientRect(), q = n && n.getBoundingClientRect(), st = getComputedStyle(e), o = parseFloat(st.outlineOffset) + parseFloat(st.outlineWidth);"
+                     " return [!!n, e.matches(':focus-visible'), st.outlineStyle, n ? r.top - o >= q.top - .5 && r.bottom + o <= q.bottom + .5 : null]; })()")
+    check(nfo == [True, True, 'solid', True], f'menu: focusring helemaal zichtbaar binnen het menu ({nfo})')
+    # telefoon: Geen opkomst-rij is doorzichtig, de opmerking staat op de gloed (licht en donker ≥ 4,5:1); categorieën in de banken: ruimte voor de focusring
+    a.set_viewport_size({'width': 390, 'height': 844}); geen = {}
+    for scheme in ('light', 'dark'):
+        a.emulate_media(color_scheme=scheme); a.goto(BASE + '/s/oefen/jaarplanning'); aw(1000); a.click('.presets >> text=Dit seizoen'); aw(400)
+        geen[scheme] = a.evaluate(LOWC, [['.prow.geen .pnote'], True])
+    a.emulate_media(color_scheme='light')
+    check(all(n >= 1 and not o for n, o in geen.values()), f'jaarplanning telefoon: opmerking bij Geen opkomst ≥ 4,5:1 op de gloed ({geen})')
+    clip = {}
+    for path in ('activiteiten', 'opkomsten'):
+        a.goto(BASE + '/s/oefen/' + path); aw(1000)
+        clip[path] = a.evaluate("(() => { const f = document.querySelector('.toolbar .catfilter'), q = f.getBoundingClientRect(), cs = [...f.querySelectorAll('.chip')];"
+                                " return [cs.length, cs.filter(c => { const r = c.getBoundingClientRect(); return r.top - 4 < q.top - .5 || r.bottom + 4 > q.bottom + .5; }).length]; })()")
+    check(all(n > 3 and bad == 0 for n, bad in clip.values()), f'banken telefoon: de focusring van een categorie valt niet buiten de schuifrij ({clip})')
+    # een melding (Ongedaan maken) terwijl Opkomst overnemen open staat: met Tab komt niets in het venster onder de melding, ook de laatste knoppen niet
+    def toast_cover(vw, vh):
+        a.set_viewport_size({'width': vw, 'height': vh}); a.goto(BASE + '/s/oefen/jaarplanning'); aw(1200)
+        a.locator('button[aria-label^="Koppelen"]').first.focus(); a.keyboard.press('Enter'); aw(500)
+        a.locator('.modal h3:has-text("Uit de opkomstenbank") + .picklist button[aria-label^="Kiezen"]').first.focus(); a.keyboard.press('Enter'); aw(400)
+        ok = a.locator('.modal h2:has-text("Opkomst overnemen")').count() == 1 and a.locator('.toast.show').count() == 1
+        cov, n = [], 0
+        for _ in range(70):
+            a.keyboard.press('Tab')
+            c = a.evaluate("""(() => { const e = document.activeElement, t = document.querySelector('.toast.show'); if (!t || !e || t.contains(e) || !e.closest('.modal')) return null;
+              const r = e.getBoundingClientRect(), q = t.getBoundingClientRect(); if (!r.height) return null;
+              return r.bottom > q.top && r.top < q.bottom && r.right > q.left && r.left < q.right ? (e.getAttribute('aria-label') || e.textContent).trim().slice(0, 24) : ''; })()""")
+            if c is not None: n += 1
+            if c: cov.append(c)
+        if vw == 390: a.screenshot(path=f'{OUT}/38-melding-in-venster-390.png')
+        undo = a.locator('.toast.show button:has-text("Ongedaan maken")')
+        if undo.count(): undo.click(); aw(600)
+        a.keyboard.press('Escape'); aw(300)
+        return [ok, n, cov[:4]]
+    tc_res = {vw: toast_cover(vw, vh) for vw, vh in ((1360, 900), (390, 844))}
+    check(all(ok and n > 20 and not cov for ok, n, cov in tc_res.values()), f'Opkomst overnemen met een melding eronder: met Tab staat niets onder de melding (breed en telefoon) ({tc_res})')
+    a.set_viewport_size({'width': 1360, 'height': 900})
     ac.close()
     # --- toegankelijkheid (eigen oefendata): contrast op de pagina zelf, focus niet onder de opslaan-balk of de tabbladen, focus na een reeks
     #     vensters, na Locatie toevoegen en naar het zijpaneel, namen van herhaalde knoppen, Teruggezet na Ongedaan maken, geen knop in een knop

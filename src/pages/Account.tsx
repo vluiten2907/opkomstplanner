@@ -6,7 +6,7 @@ import { useAuth, authError } from '../store/auth';
 import { useRoles } from '../store/roles';
 import { saveProfile } from '../store/beheer';
 import { toast } from '../store/toast';
-import { Field } from '../components/ui';
+import { BusyButton, Field } from '../components/ui';
 import { lastSpeltak } from '../lib/lastSpeltak';
 import PageHead from '../components/PageHead';
 
@@ -46,7 +46,7 @@ export default function AccountPage() {
           <Field label="Achternaam" htmlFor="ac-last"><input id="ac-last" value={last} onChange={e => setLast(e.target.value)} autoComplete="family-name" /></Field>
         </div>
         <p className="hint">Zo weten de beheerders van je groep wie je bent. Je naam is niet geheim: andere leiding kan hem ook zien.</p>
-        <div className="row"><button className="btn primary" disabled={busy} onClick={save}><Save size={16} />Opslaan</button><button className="btn ghost" disabled={pwBusy} onClick={newPw}><KeyRound size={16} />{pwBusy ? 'Versturen…' : 'Wachtwoord wijzigen'}</button></div>
+        <div className="row"><BusyButton className="btn primary" busy={busy} onClick={save}><Save size={16} />Opslaan</BusyButton><BusyButton className="btn ghost" busy={pwBusy} onClick={newPw}><KeyRound size={16} />{pwBusy ? 'Versturen…' : 'Wachtwoord wijzigen'}</BusyButton></div>
       </section>
     </div>
   </main>;

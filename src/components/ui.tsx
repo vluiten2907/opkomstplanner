@@ -1,4 +1,4 @@
-import { Children, cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from 'react';
+import { Children, cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { isUndo, useToast } from '../store/toast';
 import { pad2 } from '../lib/time';
@@ -35,11 +35,29 @@ export function Toast() {
     };
     document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h);
   }, [undo, hide]);
-  return <div className={'toast' + (msg ? ' show' : '') + (act ? ' has-act' : '')} role="status" aria-live="polite"
+  // hoogte van de melding als --toasth: een venster houdt daarmee de focus boven de melding (styles.css, .modal-card)
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = box.current, root = document.documentElement; if (!el) return;
+    const set = () => root.style.setProperty('--toasth', Math.ceil(el.getBoundingClientRect().height) + 'px');
+    set();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(set) : null; ro?.observe(el);
+    return () => { ro?.disconnect(); root.style.removeProperty('--toasth'); };
+  }, []);
+  return <div ref={box} className={'toast' + (msg ? ' show' : '') + (act ? ' has-act' : '')} role="status" aria-live="polite"
     onMouseEnter={() => set('hover', true)} onMouseLeave={() => set('hover', false)} onFocus={() => set('focus', true)} onBlur={() => set('focus', false)}>
     <span>{msg}</span>{act && <button type="button" onClick={() => { hide(); if (undo) runUndo(act.fn); else act.fn(); }}
       title={undo ? (MAC ? 'Of ⌘Z' : 'Of Ctrl+Z') : undefined} aria-keyshortcuts={undo ? (MAC ? 'Meta+Z' : 'Control+Z') : undefined}>{act.label}</button>}
   </div>;
+}
+
+/**
+ * Knop die even bezig is (opslaan, uitnodiging maken): geen `disabled`, want dan haalt de browser de focus weg en sta je met het
+ * toetsenbord ineens bovenaan de pagina. Tijdens het werk is hij aria-disabled en doet een klik niets.
+ */
+export function BusyButton({ busy, onClick, className = 'btn', children, ...rest }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'disabled'> & { busy: boolean }) {
+  return <button type="button" {...rest} className={className} aria-disabled={busy || undefined} aria-busy={busy || undefined}
+    onClick={e => { if (busy) { e.preventDefault(); return; } onClick?.(e); }}>{children}</button>;
 }
 
 /** Eén gedeeld, onzichtbaar meldvak voor schermlezers, direct in body (zo maakt een open venster het nooit onbereikbaar). */
