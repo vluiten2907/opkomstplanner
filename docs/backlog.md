@@ -4,10 +4,12 @@ Opdrachten van Vincent en open punten. Claude houdt dit bij: nieuw → *Open*, m
 
 ## Bezig
 
-_(niets)_
+- **Code- en design-review (4 rondes)** — 10 reviewers (logica, data, beveiliging, schermen, beheer, banken, codekwaliteit, toegankelijkheid, gebruiksgemak, uiterlijk), elke vondst door een tweede controleur nagelopen. 297 verbeteringen op branch `claude/project-thread-ycuy7a`, alle reviewers op 4 sterren. Wacht op Vincents akkoord om live te zetten; nieuwe `firestore.rules` (232 emulatortests) in `/mnt/project-files/code-review/`.
 
 
 ## Open
+
+- **Voorstellen uit de code-review** (vragen een beslissing): tegelijk werken zonder elkaars wijzigingen te overschrijven, offline wachtende wijzigingen bewaren na sluiten, voor- en achternaam alleen voor beheerders leesbaar, namen wijzigen door de beheerder, bouwer compacter op desktop/laptop, kopbalk op de telefoon niet vast, rustigere schaduwen, https/HSTS/CSP op de server, potloodknoppen i.p.v. dubbelklik op de dashboardkaart, oude rijen met 14:00–16:30 bijwerken na nieuwe standaardtijden, Team: bestaand account direct toevoegen.
 
 - **Live controle met echt account** — registreren, speltak aanmaken en uitnodiging accepteren op conqueston.nl/opkomst door Vincent (bevestigt e-mail/wachtwoord-login en de gepubliceerde regels).
 
